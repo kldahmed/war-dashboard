@@ -2,15 +2,23 @@
   "name": "war-news-dashboard",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://localhost:3001",
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1"
   },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test"
+    "test": "react-scripts test",
+    "server": "node server.js",
+    "dev": "concurrently -n API,CRA -c cyan,green \"node server.js\" \"react-scripts start\""
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],

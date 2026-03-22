@@ -4,3 +4,20 @@
 
 # Dynamic plugins .dll
 bin/
+
+# Node / React
+node_modules/
+war-dashboard/node_modules/
+war-dashboard/build/
+
+# Environment — NEVER commit real keys
+.env.local
+war-dashboard/.env.local
+*.env.local
+
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
