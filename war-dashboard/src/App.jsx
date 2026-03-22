@@ -300,14 +300,28 @@ export default function Dashboard() {
   const [updated, setUpdated]     = useState(null);
   const nCache = useRef({});
   const vCache = useRef({});
+  const newsReqId = useRef(0);
+  const videosReqId = useRef(0);
+  const newsControllerRef = useRef(null);
+  const videosControllerRef = useRef(null);
+
+  const getNewsKey = (item) =>
+    item?.id || item?.url || `${item?.category || "news"}:${item?.time || ""}:${item?.title || ""}`;
+
+  const getVideoKey = (item) =>
+    item?.id || item?.url || item?.youtubeId || `${item?.category || "video"}:${item?.title || ""}`;
 
   const fetchNews = useCallback(async (c) => {
     if (nCache.current[c]) { setNews(nCache.current[c]); return; }
-    setLoadN(true); setErrN(null);
+    const reqId = ++newsReqId.current;
+    newsControllerRef.current?.abort();
     const controller = new AbortController();
+    newsControllerRef.current = controller;
+    setLoadN(true); setErrN(null);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const items = await callProxy("news", c, controller.signal);
+      if (controller.signal.aborted || reqId !== newsReqId.current) return;
       clearTimeout(timer);
       nCache.current[c] = items;
       setNews(items);
@@ -315,33 +329,49 @@ export default function Dashboard() {
       setTicker(items.map(i => `🔴 ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
     } catch (err) {
       clearTimeout(timer);
+      if (controller.signal.aborted || reqId !== newsReqId.current) return;
       setErrN(err.name === "AbortError"
         ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
         : (err.message || "تعذّر تحميل الأخبار — حاول مجدداً"));
       setTicker("⚠️ تعذّر تحميل الأخبار");
-    } finally { setLoadN(false); }
+    } finally {
+      clearTimeout(timer);
+      if (reqId === newsReqId.current) setLoadN(false);
+    }
   }, []);
 
   const fetchVideos = useCallback(async (c) => {
     if (vCache.current[c]) { setVideos(vCache.current[c]); return; }
-    setLoadV(true); setErrV(null);
+    const reqId = ++videosReqId.current;
+    videosControllerRef.current?.abort();
     const controller = new AbortController();
+    videosControllerRef.current = controller;
+    setLoadV(true); setErrV(null);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const items = await callProxy("videos", c, controller.signal);
+      if (controller.signal.aborted || reqId !== videosReqId.current) return;
       clearTimeout(timer);
       vCache.current[c] = items;
       setVideos(items);
     } catch (err) {
       clearTimeout(timer);
+      if (controller.signal.aborted || reqId !== videosReqId.current) return;
       setErrV(err.name === "AbortError"
         ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
         : (err.message || "تعذّر تحميل الفيديوهات — حاول مجدداً"));
-    } finally { setLoadV(false); }
+    } finally {
+      clearTimeout(timer);
+      if (reqId === videosReqId.current) setLoadV(false);
+    }
   }, []);
 
   useEffect(() => { fetchNews(cat); }, [cat, fetchNews]);
   useEffect(() => { if (tab === "videos") fetchVideos(cat); }, [tab, cat, fetchVideos]);
+  useEffect(() => () => {
+    newsControllerRef.current?.abort();
+    videosControllerRef.current?.abort();
+  }, []);
 
   const changeCat = (id) => {
     if (id === cat) return;
@@ -452,7 +482,7 @@ export default function Dashboard() {
                   <span style={{ color:"#282828", fontSize:"12px", marginRight:"auto" }}>{news.length} خبر</span>
                 </div>
                 <div className="news-grid">
-                  {news.map((item,i) => <NewsCard key={i} item={item} index={i} />)}
+                  {news.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
                 </div>
               </>
             )}
@@ -471,7 +501,7 @@ export default function Dashboard() {
             )}
             {!loadV && !errV && videos.length > 0 && (
               <div className="vid-grid">
-                {videos.map((v,i) => <VideoCard key={i} item={v} index={i} />)}
+                {videos.map((v,i) => <VideoCard key={getVideoKey(v)} item={v} index={i} />)}
               </div>
             )}
             {!loadV && !errV && videos.length === 0 && (

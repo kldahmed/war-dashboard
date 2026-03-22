@@ -9,6 +9,7 @@
 
 const VALID_CATEGORIES  = new Set(['all', 'iran', 'gulf', 'usa', 'israel']);
 const VALID_PROMPT_TYPES = new Set(['news', 'videos']);
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
 
 const NEWS_PROMPTS = {
   all:    'آخر 6 أخبار عاجلة عن التوترات بين إيران ودول الخليج وأمريكا وإسرائيل. أعد JSON فقط بلا markdown: [{"title":"...","summary":"...","category":"iran|gulf|usa|israel","urgency":"high|medium|low","time":"منذ X ساعة"}]',
@@ -30,6 +31,78 @@ const VIDEO_PROMPTS = {
 
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const DURATION_RE   = /^\d{1,2}:\d{2}(:\d{2})?$/;
+
+function parseAllowedOrigins() {
+  return String(process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  const allowedOrigins = parseAllowedOrigins();
+
+  if (origin) {
+    const isAllowed = allowedOrigins.length > 0
+      ? allowedOrigins.includes(origin)
+      : LOCAL_ORIGIN_RE.test(origin);
+    if (isAllowed) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function parseJsonArrayStrict(text) {
+  const raw = String(text || '').trim();
+  if (!raw) throw new Error('EMPTY_TEXT');
+  if (!raw.startsWith('[') || !raw.endsWith(']')) throw new Error('NOT_PURE_JSON_ARRAY');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_err) {
+    throw new Error('INVALID_JSON');
+  }
+  if (!Array.isArray(parsed)) throw new Error('NOT_ARRAY');
+  return parsed;
+}
+
+function hasOnlyAllowedKeys(item, allowedKeys) {
+  return Object.keys(item).every(k => allowedKeys.includes(k));
+}
+
+function isStrictNewsShape(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  if (!hasOnlyAllowedKeys(item, ['title', 'summary', 'category', 'urgency', 'time'])) return false;
+  if (typeof item.title !== 'string' || typeof item.summary !== 'string' || typeof item.time !== 'string') return false;
+  if (!VALID_CATEGORIES.has(item.category) || item.category === 'all') return false;
+  if (!['high', 'medium', 'low'].includes(item.urgency)) return false;
+  return true;
+}
+
+function isStrictVideoShape(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  if (!hasOnlyAllowedKeys(item, ['title', 'description', 'youtubeId', 'category', 'duration'])) return false;
+  if (typeof item.title !== 'string' || typeof item.description !== 'string' || typeof item.youtubeId !== 'string') return false;
+  if (typeof item.duration !== 'string') return false;
+  if (!VALID_CATEGORIES.has(item.category) || item.category === 'all') return false;
+  if (!YOUTUBE_ID_RE.test(item.youtubeId)) return false;
+  if (item.duration && !DURATION_RE.test(item.duration)) return false;
+  return true;
+}
+
+function validateRawItemsStructure(promptType, raw) {
+  const shapeValidator = promptType === 'news' ? isStrictNewsShape : isStrictVideoShape;
+  for (let i = 0; i < raw.length; i += 1) {
+    if (!shapeValidator(raw[i])) {
+      throw new Error(`INVALID_ITEM_SHAPE_AT_${i}`);
+    }
+  }
+}
 
 /** Strip HTML tags and truncate. React escapes on render, but we sanitize early. */
 function safeStr(val, max) {
@@ -76,7 +149,11 @@ module.exports = async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Access-Control-Allow-Origin', 'same-origin');
+  applyCors(req, res);
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -103,6 +180,9 @@ module.exports = async function handler(req, res) {
 
   const PROMPTS = promptType === 'news' ? NEWS_PROMPTS : VIDEO_PROMPTS;
   const prompt  = PROMPTS[category]; // prompt built server-side, not from user input
+  const responseSchemaHint = promptType === 'news'
+    ? '[{"title":"string","summary":"string","category":"iran|gulf|usa|israel","urgency":"high|medium|low","time":"string"}]'
+    : '[{"title":"string","description":"string","youtubeId":"11-char","category":"iran|gulf|usa|israel","duration":"X:XX"}]';
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 28_000);
@@ -119,6 +199,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model:      'claude-sonnet-4-20250514',
         max_tokens: 1200,
+        system:     `Return JSON only. No markdown, no prose, no code fences. Output must be exactly one JSON array matching this schema: ${responseSchemaHint}`,
         tools:      [{ type: 'web_search_20250305', name: 'web_search' }],
         messages:   [{ role: 'user', content: prompt }],
       }),
@@ -136,26 +217,26 @@ module.exports = async function handler(req, res) {
 
     const data = await upstream.json();
 
-    // Use the LAST text block (Claude may emit multiple after tool use)
     const blocks = Array.isArray(data.content) ? data.content : [];
-    const txt    = blocks.filter(b => b.type === 'text').pop()?.text ?? '';
+    const txt = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
 
-    const match = txt.match(/\[[\s\S]*?]/);
-    if (!match) {
-      console.error('[/api/claude] No JSON array found. stop_reason:', data.stop_reason,
-        '| text sample:', txt.slice(0, 300));
-      return res.status(502).json({ error: 'استجابة AI غير منتظرة — حاول مجدداً' });
-    }
-
-    let raw;
-    try { raw = JSON.parse(match[0]); }
-    catch (e) {
-      console.error('[/api/claude] JSON parse failed:', e.message, '| raw:', match[0].slice(0, 200));
-      return res.status(502).json({ error: 'فشل تحليل بيانات AI — حاول مجدداً' });
-    }
-
-    if (!Array.isArray(raw)) {
-      return res.status(502).json({ error: 'بيانات AI بصيغة غير صالحة' });
+    let raw = null;
+    try {
+      raw = parseJsonArrayStrict(txt);
+      validateRawItemsStructure(promptType, raw);
+    } catch (e) {
+      console.error('[/api/claude] Strict JSON validation failed:', e.message,
+        '| stop_reason:', data.stop_reason, '| text sample:', txt.slice(0, 300));
+      const errMsgMap = {
+        EMPTY_TEXT: 'استجابة AI فارغة — حاول مجدداً',
+        NOT_PURE_JSON_ARRAY: 'استجابة AI يجب أن تكون JSON فقط بصيغة مصفوفة',
+        INVALID_JSON: 'تعذر تحليل JSON من AI — حاول مجدداً',
+        NOT_ARRAY: 'صيغة JSON غير صالحة — يجب أن تكون مصفوفة',
+      };
+      if (e.message.startsWith('INVALID_ITEM_SHAPE_AT_')) {
+        return res.status(502).json({ error: 'بنية العناصر غير صالحة في استجابة AI' });
+      }
+      return res.status(502).json({ error: errMsgMap[e.message] || 'استجابة AI غير متوافقة مع البنية المطلوبة' });
     }
 
     const sanitize = promptType === 'news' ? sanitizeNewsItem : sanitizeVideoItem;
