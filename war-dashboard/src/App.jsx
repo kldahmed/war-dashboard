@@ -132,6 +132,50 @@ function getConfidenceHint(item) {
   return "ثقة محدودة";
 }
 
+function getClusterSizeHint(item) {
+  const corroboration = Number(item?.provenance?.cluster?.corroboration_count || 0);
+  return `${Math.max(1, corroboration + 1)} داخل القصة`;
+}
+
+function getLastUpdateHint(item) {
+  const rawValue = item?.provenance?.published_at_source || item?.provenance?.fetched_at;
+  if (!rawValue) return "تحديث غير واضح";
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) return "تحديث غير واضح";
+  return `آخر تحديث ${parsed.toLocaleString("ar-SA")}`;
+}
+
+function getWhyThisStory(item) {
+  const urgency = item?.urgency;
+  const priority = item?.provenance?.editorial?.priority;
+  const verificationState = item?.provenance?.verification?.state;
+  const corroboration = Number(item?.provenance?.cluster?.corroboration_count || 0);
+  const contradictionFlag = Boolean(item?.provenance?.cluster?.contradiction_flag);
+
+  if (urgency === "high") return "قصة بارزة بسبب الإلحاح الزمني.";
+  if (priority === "high" || priority === "review") return "قصة مرفوعة تحريرياً للمتابعة المباشرة.";
+  if (contradictionFlag) return "القصة تحتاج متابعة لأن الروايات ليست متطابقة بالكامل.";
+  if (verificationState === "corroborated" && corroboration > 1) return "القصة مدعومة بعدة إشارات متقاطعة.";
+  if (verificationState === "partially_corroborated") return "القصة ظهرت في أكثر من إشارة وتحتاج متابعة إضافية.";
+  return "القصة ظاهرة لأنها الأعلى ترتيباً ضمن السياق الحالي.";
+}
+
+function getTimelineHint(item) {
+  const decision = item?.provenance?.editorial?.decision;
+  if (decision === "update") return "مسار التحديث مفتوح";
+  if (decision === "merge") return "مرشحة للدمج مع تحديثات قريبة";
+  return "جاهزة لخط زمني خفيف";
+}
+
+function getStoryMetaHints(item) {
+  const cluster = item?.provenance?.cluster || {};
+  return [
+    getClusterSizeHint(item),
+    `${Number(cluster.corroboration_count || 0)} تعزيز`,
+    getLastUpdateHint(item),
+  ];
+}
+
 function dedupeVisualItems(items) {
   const seen = new Set();
   return (Array.isArray(items) ? items : []).filter((item) => {
@@ -178,6 +222,9 @@ const NewsCard = memo(({ item, index }) => {
   const editorialPriority = item?.provenance?.editorial?.priority || "normal";
   const verificationTone = getVerificationColor(verificationState);
   const editorialTone = getEditorialColor(editorialPriority);
+  const storyMetaHints = getStoryMetaHints(item);
+  const whyThisStory = getWhyThisStory(item);
+  const timelineHint = getTimelineHint(item);
 
   return (
     <div
@@ -233,15 +280,29 @@ const NewsCard = memo(({ item, index }) => {
         <h3 style={{ color:"#f0ece4", fontSize:"14.5px", fontWeight:"700", lineHeight:"1.65", margin:0, direction:"rtl", textAlign:"right" }}>
           {item.title}
         </h3>
+        <div style={{ marginTop:"8px", color:"#746b63", fontSize:"11.5px", lineHeight:"1.8", direction:"rtl", textAlign:"right" }}>
+          لماذا هذه القصة: {whyThisStory}
+        </div>
+        <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginTop:"8px", justifyContent:"flex-start" }}>
+          {storyMetaHints.map((hint) => (
+            <span key={`${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", color:"#6e6a66", borderRadius:"999px", padding:"3px 8px", fontSize:"10px", fontWeight:"700" }}>
+              {hint}
+            </span>
+          ))}
+        </div>
         {open && (
-          <p style={{
-            color:"#777", fontSize:"13px", lineHeight:"1.9", margin:"10px 0 0",
-            direction:"rtl", textAlign:"right",
-            borderTop:`1px solid ${col.accent}33`, paddingTop:"10px",
-            animation:"expandIn .2s ease",
-          }}>
-            {item.summary}
-          </p>
+          <div style={{ borderTop:`1px solid ${col.accent}33`, paddingTop:"10px", marginTop:"10px", animation:"expandIn .2s ease" }}>
+            <p style={{
+              color:"#777", fontSize:"13px", lineHeight:"1.9", margin:"0 0 10px",
+              direction:"rtl", textAlign:"right",
+            }}>
+              {item.summary}
+            </p>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:"8px", flexWrap:"wrap", color:"#615a53", fontSize:"11px" }}>
+              <span>{timelineHint}</span>
+              <span>{getLastUpdateHint(item)}</span>
+            </div>
+          </div>
         )}
         <div style={{ color:"#2e2e2e", fontSize:"10px", textAlign:"center", marginTop:"8px" }}>{open ? "▲" : "▼"}</div>
       </div>
@@ -258,6 +319,7 @@ const HeroStory = memo(({ item }) => {
   const editorialDecision = item?.provenance?.editorial?.decision || "publish";
   const verificationTone = getVerificationColor(verificationState);
   const editorialTone = getEditorialColor(editorialPriority);
+  const storyMetaHints = getStoryMetaHints(item);
 
   return (
     <div style={{
@@ -286,12 +348,24 @@ const HeroStory = memo(({ item }) => {
           <p style={{ color:"#9b9187", fontSize:"14px", lineHeight:"2", direction:"rtl", textAlign:"right", margin:"0 0 14px" }}>
             {item.summary}
           </p>
+          <div style={{ color:"#c0b7ac", fontSize:"12px", lineHeight:"1.9", direction:"rtl", textAlign:"right", margin:"0 0 12px" }}>
+            لماذا هذه القصة: {getWhyThisStory(item)}
+          </div>
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
+            {storyMetaHints.map((hint) => (
+              <span key={`hero:${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", color:"#a89d91", borderRadius:"999px", padding:"4px 10px", fontSize:"10.5px", fontWeight:"700" }}>
+                {hint}
+              </span>
+            ))}
+          </div>
           <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", color:"#7c746b", fontSize:"12px" }}>
             <span>{item.time}</span>
             <span>•</span>
             <span>{getConfidenceHint(item)}</span>
             <span>•</span>
             <span>{item?.provenance?.cluster?.corroboration_count || 0} تعزيز</span>
+            <span>•</span>
+            <span>{getTimelineHint(item)}</span>
           </div>
         </div>
         <div style={{ minHeight:"240px", position:"relative", background:`linear-gradient(160deg, ${col.accent}22, transparent)` }}>
@@ -332,9 +406,19 @@ function PriorityRail({ items }) {
                 <span style={{ color:"#5d6d7e", fontSize:"10.5px", fontWeight:"700" }}>{getVerificationLabel(verification.state)}</span>
               </div>
               <div style={{ color:"#efebe3", fontSize:"13px", fontWeight:"700", lineHeight:"1.7", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>{item.title}</div>
+              <div style={{ color:"#6e665f", fontSize:"11px", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>
+                {getWhyThisStory(item)}
+              </div>
               <div style={{ display:"flex", justifyContent:"space-between", color:"#5b5b5b", fontSize:"11px" }}>
                 <span>{getConfidenceHint(item)}</span>
                 <span>{item.time}</span>
+              </div>
+              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginTop:"8px" }}>
+                {getStoryMetaHints(item).slice(0, 2).map((hint) => (
+                  <span key={`rail-hint:${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", color:"#64605b", borderRadius:"999px", padding:"3px 8px", fontSize:"10px", fontWeight:"700" }}>
+                    {hint}
+                  </span>
+                ))}
               </div>
             </div>
           );
