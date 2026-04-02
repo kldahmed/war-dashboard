@@ -29,6 +29,16 @@ function mapToUiItem(row) {
       fetched_at: row.fetched_at,
       published_at_source: row.published_at_source,
       normalized_hash: row.normalized_hash,
+      cluster: {
+        id: row.cluster_id || null,
+        corroboration_count: Number.isFinite(row.corroboration_count) ? row.corroboration_count : 0,
+        source_diversity: Number.isFinite(row.source_diversity) ? row.source_diversity : 1,
+        contradiction_flag: Boolean(row.contradiction_flag),
+      },
+      verification: {
+        state: row.verification_state || 'single_source',
+        confidence_score: Number.isFinite(row.confidence_score) ? row.confidence_score : 0.35,
+      },
     },
   };
 }
@@ -78,7 +88,27 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
 
   const [result, lastJob] = await Promise.all([
     query(
-    `WITH ranked_items AS (
+    `WITH cluster_signals AS (
+       SELECT
+         ce.cluster_id,
+         GREATEST(COUNT(*)::int - 1, 0) AS corroboration_count,
+         COUNT(DISTINCT ni.source_id)::int AS source_diversity,
+         BOOL_OR(
+           LOWER(COALESCE(ni.canonical_title, '') || ' ' || COALESCE(ni.canonical_body, ''))
+             ~ '(^|[^a-z])(deny|denies|denied|reject|rejects|rejected|dispute|disputes|disputed|contradict|contradicts|contradicted|false|fake|hoax)([^a-z]|$)'
+         )
+         AND
+         BOOL_OR(
+           LOWER(COALESCE(ni.canonical_title, '') || ' ' || COALESCE(ni.canonical_body, ''))
+             ~ '(^|[^a-z])(confirm|confirms|confirmed|verify|verified|corroborate|corroborated|evidence|admit|admits|admitted)([^a-z]|$)'
+         ) AS contradiction_flag,
+         ROUND(AVG(COALESCE(ce.duplicate_risk_hint, 0.35))::numeric, 4) AS average_duplicate_risk,
+         ROUND(AVG(COALESCE(ce.novelty_hint, 0.5))::numeric, 4) AS average_novelty
+       FROM cluster_events ce
+       JOIN normalized_items ni ON ni.id = ce.normalized_item_id
+       GROUP BY ce.cluster_id
+     ),
+     ranked_items AS (
        SELECT
          ni.id AS normalized_id,
          ni.raw_item_id,
@@ -99,6 +129,26 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          ce.cluster_id,
          ce.duplicate_risk_hint,
          ce.novelty_hint,
+         COALESCE(cs.corroboration_count, 0) AS corroboration_count,
+         COALESCE(cs.source_diversity, 1) AS source_diversity,
+         COALESCE(cs.contradiction_flag, FALSE) AS contradiction_flag,
+         CASE
+           WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 'needs_review'
+           WHEN COALESCE(cs.source_diversity, 1) >= 3 AND COALESCE(cs.corroboration_count, 0) >= 2 THEN 'corroborated'
+           WHEN COALESCE(cs.source_diversity, 1) >= 2 THEN 'partially_corroborated'
+           ELSE 'single_source'
+         END AS verification_state,
+         GREATEST(
+           0.05,
+           LEAST(
+             0.99,
+             COALESCE(s.trust_score / 100.0, 0.5) * 0.35
+             + COALESCE(cs.average_duplicate_risk, COALESCE(ce.duplicate_risk_hint, 0.35)) * 0.3
+             + (LEAST(COALESCE(cs.source_diversity, 1), 4) / 4.0) * 0.2
+             + (1 - COALESCE(cs.average_novelty, COALESCE(ce.novelty_hint, 0.5))) * 0.15
+             - CASE WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 0.25 ELSE 0 END
+           )
+         ) AS confidence_score,
          sc.last_seen_at AS cluster_last_seen_at,
          ROW_NUMBER() OVER (
            PARTITION BY COALESCE(ce.cluster_id, -ni.id)
@@ -112,7 +162,8 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        JOIN raw_items ri ON ri.id = ni.raw_item_id
        JOIN sources s ON s.id = ni.source_id
        LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
-        LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
+       LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
+       LEFT JOIN cluster_signals cs ON cs.cluster_id = ce.cluster_id
        WHERE ni.status = 'ready'
          AND ni.canonical_title IS NOT NULL
          AND LENGTH(TRIM(ni.canonical_title)) > 0
@@ -137,6 +188,12 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        source_domain,
        source_category,
        trust_score,
+       cluster_id,
+       corroboration_count,
+       source_diversity,
+       contradiction_flag,
+       verification_state,
+       confidence_score,
        cluster_last_seen_at
      FROM ranked_items
      WHERE cluster_rank = 1
