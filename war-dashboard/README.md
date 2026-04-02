@@ -149,6 +149,10 @@ npm run check:integration:sprint1
 
 هدف هذا الـ runbook هو التأكد أن المسار الإنتاجي يعمل من stored feed وليس fallback.
 
+لإطلاق ناعم محدث ومختصر راجع أيضًا:
+
+- [docs/soft-launch-runbook.md](docs/soft-launch-runbook.md)
+
 ### 1) تحقق من Health على Vercel
 
 افتح:

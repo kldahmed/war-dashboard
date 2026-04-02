@@ -21,3 +21,8 @@ See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode de
 {"ts":"2026-04-02T19:41:05.895Z","level":"info","message":"http_request","correlationId":"ae82ef38-f1e3-403b-a1f4-5d3d569c280a","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":1360}
 {"ts":"2026-04-02T19:41:06.093Z","level":"info","message":"http_request","correlationId":"35dd5561-3534-4615-8a5d-6f30bcc3c49d","method":"GET","path":"/health/streams","statusCode":200,"latencyMs":196}
 {"ts":"2026-04-02T19:41:07.466Z","level":"info","message":"http_request","correlationId":"4f74fa73-3d3b-4c24-b21d-eda9d0c93db9","method":"GET","path":"/health/newsroom","statusCode":200,"latencyMs":1371}
+{"ts":"2026-04-02T19:45:32.472Z","level":"info","message":"http_request","correlationId":"fc8c3815-5905-4447-8577-256c8654a479","method":"GET","path":"/health","statusCode":200,"latencyMs":1320}
+{"ts":"2026-04-02T19:45:33.856Z","level":"info","message":"http_request","correlationId":"75d9edfa-90df-4531-8a97-926a87b755ab","method":"GET","path":"/health/metrics-basic","statusCode":200,"latencyMs":1382}
+{"ts":"2026-04-02T19:45:34.055Z","level":"info","message":"http_request","correlationId":"3ebd56cd-b50f-4eb4-987c-8672815d6697","method":"GET","path":"/health/streams","statusCode":200,"latencyMs":198}
+{"ts":"2026-04-02T19:45:34.254Z","level":"info","message":"http_request","correlationId":"6bb489ee-2fb2-4fe1-a859-0197c8d5259f","method":"GET","path":"/health/newsroom","statusCode":200,"latencyMs":197}
+{"ts":"2026-04-02T19:45:34.458Z","level":"info","message":"http_request","correlationId":"28ba164a-f4cc-4d0d-832a-71a0fca041c0","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":200}
