@@ -97,14 +97,22 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          s.category AS source_category,
          s.trust_score,
          ce.cluster_id,
+         ce.duplicate_risk_hint,
+         ce.novelty_hint,
+         sc.last_seen_at AS cluster_last_seen_at,
          ROW_NUMBER() OVER (
            PARTITION BY COALESCE(ce.cluster_id, -ni.id)
-           ORDER BY ni.published_at_source DESC NULLS LAST, ri.fetched_at DESC, ni.id DESC
+           ORDER BY COALESCE(ce.novelty_hint, 0) DESC,
+                    COALESCE(ce.duplicate_risk_hint, 0) ASC,
+                    ni.published_at_source DESC NULLS LAST,
+                    ri.fetched_at DESC,
+                    ni.id DESC
          ) AS cluster_rank
        FROM normalized_items ni
        JOIN raw_items ri ON ri.id = ni.raw_item_id
        JOIN sources s ON s.id = ni.source_id
        LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
+        LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
        WHERE ni.status = 'ready'
          AND ni.canonical_title IS NOT NULL
          AND LENGTH(TRIM(ni.canonical_title)) > 0
@@ -128,10 +136,11 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        source_name,
        source_domain,
        source_category,
-       trust_score
+       trust_score,
+       cluster_last_seen_at
      FROM ranked_items
      WHERE cluster_rank = 1
-     ORDER BY published_at_source DESC NULLS LAST, fetched_at DESC
+     ORDER BY COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST, fetched_at DESC
      LIMIT $1`,
     params,
     ),

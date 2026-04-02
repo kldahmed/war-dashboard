@@ -6,6 +6,7 @@ const { query } = require('../../lib/db');
 const SCORE_PRECISION = 4;
 const DEFAULT_DUPLICATE_RISK = 0.08;
 const DEFAULT_NOVELTY = 0.92;
+const ATTACH_TO_CLUSTER_THRESHOLD = 0.78;
 const TOKEN_STOPWORDS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'over', 'under', 'after', 'before', 'about',
   'into', 'onto', 'near', 'than', 'then', 'they', 'them', 'their', 'have', 'has', 'had', 'were', 'will',
@@ -56,6 +57,10 @@ function timeDistanceScore(leftTime, rightTime) {
   return 0.2;
 }
 
+function isSameTimeBucket(leftTimeBucket, rightTimeBucket) {
+  return Boolean(leftTimeBucket && rightTimeBucket && leftTimeBucket === rightTimeBucket);
+}
+
 function buildClusterKey(item) {
   const base = [
     item.title_fingerprint || '',
@@ -66,19 +71,72 @@ function buildClusterKey(item) {
   return createHash('sha256').update(base).digest('hex');
 }
 
+function computeNoveltyScore({ duplicateRisk, titleSimilarity, bodySimilarity, timeScore, exactHashMatch }) {
+  if (exactHashMatch) return 0.005;
+
+  const novelty = (
+    (1 - bodySimilarity) * 0.5
+    + (1 - titleSimilarity) * 0.2
+    + (1 - timeScore) * 0.15
+    + (1 - duplicateRisk) * 0.15
+  );
+
+  return roundScore(Math.max(0.02, Math.min(0.98, novelty)));
+}
+
+function isLikelySameStory(scores) {
+  if (scores.exactHashMatch) return true;
+  if (scores.sameTitleFingerprint && (scores.sameTimeBucket || scores.timeScore >= 0.65)) return true;
+  if (scores.sameContentFingerprint && scores.timeScore >= 0.65) return true;
+  return scores.duplicateRisk >= ATTACH_TO_CLUSTER_THRESHOLD
+    && (scores.titleSimilarity >= 0.6 || scores.bodySimilarity >= 0.72);
+}
+
 function scoreDuplicateRisk(target, candidate) {
   if (!candidate) {
-    return { duplicateRisk: DEFAULT_DUPLICATE_RISK, noveltyScore: DEFAULT_NOVELTY, titleSimilarity: 0, bodySimilarity: 0 };
+    return {
+      duplicateRisk: DEFAULT_DUPLICATE_RISK,
+      noveltyScore: DEFAULT_NOVELTY,
+      titleSimilarity: 0,
+      bodySimilarity: 0,
+      timeScore: 0.35,
+      sameTitleFingerprint: false,
+      sameContentFingerprint: false,
+      sameTimeBucket: false,
+      exactHashMatch: false,
+    };
   }
 
   if (target.normalized_hash && target.normalized_hash === candidate.normalized_hash) {
-    return { duplicateRisk: 0.995, noveltyScore: 0.005, titleSimilarity: 1, bodySimilarity: 1 };
+    return {
+      duplicateRisk: 0.995,
+      noveltyScore: 0.005,
+      titleSimilarity: 1,
+      bodySimilarity: 1,
+      timeScore: 1,
+      sameTitleFingerprint: true,
+      sameContentFingerprint: true,
+      sameTimeBucket: isSameTimeBucket(target.time_bucket_30m, candidate.time_bucket_30m),
+      exactHashMatch: true,
+    };
   }
 
-  const titleSimilarity = target.title_fingerprint && target.title_fingerprint === candidate.title_fingerprint
+  const sameTitleFingerprint = Boolean(
+    target.title_fingerprint
+    && candidate.title_fingerprint
+    && target.title_fingerprint === candidate.title_fingerprint,
+  );
+  const sameContentFingerprint = Boolean(
+    target.content_fingerprint
+    && candidate.content_fingerprint
+    && target.content_fingerprint === candidate.content_fingerprint,
+  );
+  const sameTimeBucket = isSameTimeBucket(target.time_bucket_30m, candidate.time_bucket_30m);
+
+  const titleSimilarity = sameTitleFingerprint
     ? 1
     : jaccardSimilarity(target.canonical_title, candidate.canonical_title);
-  const bodySimilarity = target.content_fingerprint && target.content_fingerprint === candidate.content_fingerprint
+  const bodySimilarity = sameContentFingerprint
     ? 1
     : jaccardSimilarity(target.canonical_body, candidate.canonical_body);
   const timeScore = timeDistanceScore(
@@ -86,16 +144,32 @@ function scoreDuplicateRisk(target, candidate) {
     candidate.published_at_source || candidate.created_at,
   );
 
-  let duplicateRisk = (titleSimilarity * 0.55) + (bodySimilarity * 0.3) + (timeScore * 0.15);
-  if (titleSimilarity === 1) duplicateRisk = Math.max(duplicateRisk, 0.92);
-  if (bodySimilarity === 1) duplicateRisk = Math.max(duplicateRisk, 0.88);
+  let duplicateRisk = (titleSimilarity * 0.5) + (bodySimilarity * 0.25) + (timeScore * 0.15) + (sameTimeBucket ? 0.1 : 0);
+  if (sameTitleFingerprint && (sameTimeBucket || timeScore >= 0.65)) duplicateRisk = Math.max(duplicateRisk, 0.88);
+  if (sameTitleFingerprint && bodySimilarity >= 0.45) duplicateRisk = Math.max(duplicateRisk, 0.92);
+  if (sameContentFingerprint && timeScore >= 0.65) duplicateRisk = Math.max(duplicateRisk, 0.82);
+  if (titleSimilarity < 0.35 && bodySimilarity < 0.25) duplicateRisk = Math.min(duplicateRisk, 0.32);
+  if (!sameTitleFingerprint && titleSimilarity < 0.5) duplicateRisk = Math.min(duplicateRisk, 0.68);
 
   const roundedRisk = roundScore(duplicateRisk);
+  const noveltyScore = computeNoveltyScore({
+    duplicateRisk: roundedRisk,
+    titleSimilarity,
+    bodySimilarity,
+    timeScore,
+    exactHashMatch: false,
+  });
+
   return {
     duplicateRisk: roundedRisk,
-    noveltyScore: roundScore(1 - roundedRisk),
+    noveltyScore,
     titleSimilarity: roundScore(titleSimilarity),
     bodySimilarity: roundScore(bodySimilarity),
+    timeScore: roundScore(timeScore),
+    sameTitleFingerprint,
+    sameContentFingerprint,
+    sameTimeBucket,
+    exactHashMatch: false,
   };
 }
 
@@ -116,6 +190,7 @@ async function listClusterCandidates(target) {
   const res = await query(
     `SELECT
        ni.id AS normalized_id,
+       ni.source_id,
        ni.canonical_title,
        ni.canonical_body,
        ni.title_fingerprint,
@@ -126,16 +201,20 @@ async function listClusterCandidates(target) {
        ni.time_bucket_30m,
        ni.created_at,
        ce.cluster_id,
-       sc.cluster_key
+       ce.duplicate_risk_hint,
+       ce.novelty_hint,
+       sc.cluster_key,
+       sc.item_count,
+       sc.last_seen_at
      FROM normalized_items ni
      LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
      LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
      WHERE ni.id <> $1
        AND ni.status = 'ready'
        AND ($2::text IS NULL OR ni.category = $2 OR ni.category IS NULL)
-       AND COALESCE(ni.published_at_source, ni.created_at) >= COALESCE($3::timestamptz, NOW()) - INTERVAL '7 days'
+       AND COALESCE(ni.published_at_source, ni.created_at) >= COALESCE($3::timestamptz, NOW()) - INTERVAL '5 days'
      ORDER BY COALESCE(ni.published_at_source, ni.created_at) DESC
-     LIMIT 60`,
+     LIMIT 80`,
     [target.id, target.category || null, target.published_at_source || target.created_at || null],
   );
   return res.rows;
@@ -219,15 +298,20 @@ async function ensureBaselineArticleVersion(previousItem) {
   );
 }
 
-function detectChangeReason(previousItem, nextItem) {
+function detectChangeReason(previousItem, nextItem, similarity = {}) {
   const titleChanged = previousItem.title_fingerprint !== nextItem.title_fingerprint;
   const bodyChanged = previousItem.content_fingerprint !== nextItem.content_fingerprint;
-  if (titleChanged && bodyChanged) return 'story_update';
+  const titleSimilarity = similarity.titleSimilarity ?? jaccardSimilarity(previousItem.canonical_title, nextItem.canonical_title);
+  const bodySimilarity = similarity.bodySimilarity ?? jaccardSimilarity(previousItem.canonical_body, nextItem.canonical_body);
+
+  if (titleChanged && bodySimilarity < 0.7) return 'material_story_update';
+  if (titleChanged && bodyChanged) return 'title_reframe';
+  if (bodyChanged && bodySimilarity < 0.82) return 'major_body_update';
   if (titleChanged) return 'title_update';
-  return 'body_update';
+  return 'body_refresh';
 }
 
-async function recordArticleVersionIfNeeded(previousItem, nextItem) {
+async function recordArticleVersionIfNeeded(previousItem, nextItem, options = {}) {
   if (!previousItem || !nextItem) return false;
   if (
     previousItem.title_fingerprint === nextItem.title_fingerprint
@@ -238,9 +322,10 @@ async function recordArticleVersionIfNeeded(previousItem, nextItem) {
 
   const bodySimilarity = jaccardSimilarity(previousItem.canonical_body, nextItem.canonical_body);
   const titleSimilarity = jaccardSimilarity(previousItem.canonical_title, nextItem.canonical_title);
-  const significant = previousItem.title_fingerprint !== nextItem.title_fingerprint
-    || bodySimilarity < 0.88
-    || titleSimilarity < 0.9;
+  const significant = options.force === true
+    || previousItem.title_fingerprint !== nextItem.title_fingerprint
+    || bodySimilarity < 0.94
+    || titleSimilarity < 0.95;
 
   if (!significant) return false;
 
@@ -277,7 +362,7 @@ async function recordArticleVersionIfNeeded(previousItem, nextItem) {
       nextItem.canonical_body,
       nextItem.title_fingerprint,
       nextItem.content_fingerprint,
-      detectChangeReason(previousItem, nextItem),
+      options.changeReason || detectChangeReason(previousItem, nextItem, { titleSimilarity, bodySimilarity }),
     ],
   );
 
@@ -293,7 +378,7 @@ async function assignStoryCluster(normalizedItem) {
       0.99,
       0.01,
       {
-        algorithm: 'wave2_batch1',
+        algorithm: 'wave2_batch2',
         reason: 'existing_cluster',
         eventTime: normalizedItem.published_at_source || normalizedItem.created_at || new Date().toISOString(),
       },
@@ -307,13 +392,17 @@ async function assignStoryCluster(normalizedItem) {
 
   for (const candidate of candidates) {
     const scores = scoreDuplicateRisk(normalizedItem, candidate);
-    if (!bestScores || scores.duplicateRisk > bestScores.duplicateRisk) {
+    const currentSelectionScore = scores.duplicateRisk + (candidate.cluster_id && Number(candidate.item_count || 0) > 1 ? 0.02 : 0);
+    const bestSelectionScore = bestScores
+      ? bestScores.duplicateRisk + (bestCandidate?.cluster_id && Number(bestCandidate?.item_count || 0) > 1 ? 0.02 : 0)
+      : -1;
+    if (!bestScores || currentSelectionScore > bestSelectionScore) {
       bestCandidate = candidate;
       bestScores = scores;
     }
   }
 
-  const shouldAttachToExistingStory = bestScores && bestScores.duplicateRisk >= 0.72;
+  const shouldAttachToExistingStory = Boolean(bestScores && isLikelySameStory(bestScores));
   const clusterSeed = shouldAttachToExistingStory && bestCandidate ? bestCandidate : normalizedItem;
   const clusterKey = bestCandidate?.cluster_key || buildClusterKey(clusterSeed);
   const cluster = await upsertCluster(clusterKey, clusterSeed);
@@ -325,7 +414,7 @@ async function assignStoryCluster(normalizedItem) {
       0.9,
       0.1,
       {
-        algorithm: 'wave2_batch1',
+        algorithm: 'wave2_batch2',
         reason: 'backfill_cluster_seed',
         eventTime: bestCandidate.published_at_source || bestCandidate.created_at || new Date().toISOString(),
       },
@@ -342,13 +431,48 @@ async function assignStoryCluster(normalizedItem) {
     scores.duplicateRisk,
     scores.noveltyScore,
     {
-      algorithm: 'wave2_batch1',
+      algorithm: 'wave2_batch2',
       matchedNormalizedItemId: bestCandidate?.normalized_id || null,
       titleSimilarity: scores.titleSimilarity,
       bodySimilarity: scores.bodySimilarity,
+      timeScore: scores.timeScore,
+      sameTitleFingerprint: scores.sameTitleFingerprint,
+      sameContentFingerprint: scores.sameContentFingerprint,
+      sameTimeBucket: scores.sameTimeBucket,
       eventTime: normalizedItem.published_at_source || normalizedItem.created_at || new Date().toISOString(),
     },
   );
+
+  if (
+    shouldAttachToExistingStory
+    && bestCandidate
+    && scores.noveltyScore >= 0.12
+    && (scores.bodySimilarity < 0.97 || scores.titleSimilarity < 0.99)
+  ) {
+    await recordArticleVersionIfNeeded(
+      {
+        id: bestCandidate.normalized_id,
+        canonical_title: bestCandidate.canonical_title,
+        canonical_body: bestCandidate.canonical_body,
+        title_fingerprint: bestCandidate.title_fingerprint,
+        content_fingerprint: bestCandidate.content_fingerprint,
+      },
+      normalizedItem,
+      {
+        force: true,
+        changeReason: detectChangeReason(
+          {
+            canonical_title: bestCandidate.canonical_title,
+            canonical_body: bestCandidate.canonical_body,
+            title_fingerprint: bestCandidate.title_fingerprint,
+            content_fingerprint: bestCandidate.content_fingerprint,
+          },
+          normalizedItem,
+          { titleSimilarity: scores.titleSimilarity, bodySimilarity: scores.bodySimilarity },
+        ),
+      },
+    );
+  }
 
   return {
     clusterId: cluster.id,
