@@ -20,3 +20,9 @@ To create a production build, use [36mnpm run build[39m.
 
 webpack compiled [1m[32msuccessfully[39m[22m
 (node:15802) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+Compiling...
+[32mCompiled successfully![39m
+webpack compiled [1m[32msuccessfully[39m[22m
+Compiling...
+[32mCompiled successfully![39m
+webpack compiled [1m[32msuccessfully[39m[22m

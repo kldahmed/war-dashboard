@@ -88,6 +88,84 @@ async function callProxy(promptType, category, signal) {
   return items;
 }
 
+function getVerificationLabel(state) {
+  switch (state) {
+    case "corroborated": return "موثّق";
+    case "partially_corroborated": return "مدعوم";
+    case "needs_review": return "قيد المراجعة";
+    default: return "مصدر واحد";
+  }
+}
+
+function getVerificationColor(state) {
+  switch (state) {
+    case "corroborated": return { fg: "#16a085", bg: "rgba(22,160,133,.14)", border: "rgba(22,160,133,.36)" };
+    case "partially_corroborated": return { fg: "#2980b9", bg: "rgba(41,128,185,.14)", border: "rgba(41,128,185,.36)" };
+    case "needs_review": return { fg: "#c0392b", bg: "rgba(192,57,43,.14)", border: "rgba(192,57,43,.36)" };
+    default: return { fg: "#7f8c8d", bg: "rgba(127,140,141,.14)", border: "rgba(127,140,141,.3)" };
+  }
+}
+
+function getEditorialLabel(priority) {
+  switch (priority) {
+    case "high": return "أولوية عالية";
+    case "review": return "تحريرياً";
+    case "elevated": return "متابعة";
+    default: return "نشر";
+  }
+}
+
+function getEditorialColor(priority) {
+  switch (priority) {
+    case "high": return { fg: "#f39c12", bg: "rgba(243,156,18,.14)", border: "rgba(243,156,18,.35)" };
+    case "review": return { fg: "#e74c3c", bg: "rgba(231,76,60,.14)", border: "rgba(231,76,60,.35)" };
+    case "elevated": return { fg: "#9b59b6", bg: "rgba(155,89,182,.14)", border: "rgba(155,89,182,.35)" };
+    default: return { fg: "#95a5a6", bg: "rgba(149,165,166,.12)", border: "rgba(149,165,166,.3)" };
+  }
+}
+
+function getConfidenceHint(item) {
+  const confidence = item?.provenance?.verification?.confidence_score;
+  const corroboration = item?.provenance?.cluster?.corroboration_count;
+  if (Number.isFinite(corroboration) && corroboration > 0) return `${corroboration} تعزيز`;
+  if (Number.isFinite(confidence)) return `ثقة ${Math.round(confidence * 100)}%`;
+  return "ثقة محدودة";
+}
+
+function dedupeVisualItems(items) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const clusterId = item?.provenance?.cluster?.id;
+    const fingerprint = item?.provenance?.normalized_hash || item?.title;
+    const key = clusterId ? `cluster:${clusterId}` : `item:${fingerprint}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getRankScore(item) {
+  return Number(item?.provenance?.editorial?.rank_score || 0);
+}
+
+function pickHeroStory(items) {
+  const deduped = dedupeVisualItems(items);
+  return [...deduped].sort((left, right) => getRankScore(right) - getRankScore(left))[0] || null;
+}
+
+function pickPriorityRail(items, heroItem) {
+  const heroKey = heroItem?.id || heroItem?.title;
+  return dedupeVisualItems(items)
+    .filter((item) => (item?.id || item?.title) !== heroKey)
+    .filter((item) => {
+      const priority = item?.provenance?.editorial?.priority;
+      const urgency = item?.urgency;
+      return priority === "high" || priority === "review" || priority === "elevated" || urgency === "high";
+    })
+    .sort((left, right) => getRankScore(right) - getRankScore(left))
+    .slice(0, 4);
+}
+
 // ── Components ───────────────────────────────────────────────────────────────
 
 const NewsCard = memo(({ item, index }) => {
@@ -96,6 +174,10 @@ const NewsCard = memo(({ item, index }) => {
   const col = CAT_COLORS[item.category] || CAT_COLORS.all;
   const urg = URGENCY_MAP[item.urgency] || URGENCY_MAP.medium;
   const cat = CATEGORIES.find(c => c.id === item.category);
+  const verificationState = item?.provenance?.verification?.state || "single_source";
+  const editorialPriority = item?.provenance?.editorial?.priority || "normal";
+  const verificationTone = getVerificationColor(verificationState);
+  const editorialTone = getEditorialColor(editorialPriority);
 
   return (
     <div
@@ -137,6 +219,17 @@ const NewsCard = memo(({ item, index }) => {
       )}
       <div style={{ padding:"14px 16px 10px" }}>
         <div style={{ color:"#484848", fontSize:"11px", marginBottom:"6px", textAlign:"right", fontFamily:"monospace" }}>{item.time}</div>
+        <div style={{ display:"flex", gap:"6px", justifyContent:"flex-start", flexWrap:"wrap", marginBottom:"8px" }}>
+          <span style={{ background:verificationTone.bg, border:`1px solid ${verificationTone.border}`, color:verificationTone.fg, borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
+            {getVerificationLabel(verificationState)}
+          </span>
+          <span style={{ background:editorialTone.bg, border:`1px solid ${editorialTone.border}`, color:editorialTone.fg, borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
+            {getEditorialLabel(editorialPriority)}
+          </span>
+          <span style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", color:"#8c8c8c", borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
+            {getConfidenceHint(item)}
+          </span>
+        </div>
         <h3 style={{ color:"#f0ece4", fontSize:"14.5px", fontWeight:"700", lineHeight:"1.65", margin:0, direction:"rtl", textAlign:"right" }}>
           {item.title}
         </h3>
@@ -156,6 +249,100 @@ const NewsCard = memo(({ item, index }) => {
     </div>
   );
 });
+
+const HeroStory = memo(({ item }) => {
+  if (!item) return null;
+  const col = CAT_COLORS[item.category] || CAT_COLORS.all;
+  const verificationState = item?.provenance?.verification?.state || "single_source";
+  const editorialPriority = item?.provenance?.editorial?.priority || "normal";
+  const editorialDecision = item?.provenance?.editorial?.decision || "publish";
+  const verificationTone = getVerificationColor(verificationState);
+  const editorialTone = getEditorialColor(editorialPriority);
+
+  return (
+    <div style={{
+      background:`linear-gradient(145deg, ${col.bg} 0%, #111 100%)`,
+      border:`1px solid ${col.accent}55`, borderRadius:"18px", overflow:"hidden",
+      boxShadow:`0 0 24px ${col.glow}`,
+      marginBottom:"18px",
+      position:"relative",
+    }}>
+      <div style={{ display:"grid", gridTemplateColumns:"1.25fr .9fr", gap:"0", alignItems:"stretch" }}>
+        <div style={{ padding:"20px 22px" }}>
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
+            <span style={{ background:urgencyBadge(item).bg, color:urgencyBadge(item).fg, border:`1px solid ${urgencyBadge(item).border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
+              {urgencyBadge(item).label}
+            </span>
+            <span style={{ background:verificationTone.bg, color:verificationTone.fg, border:`1px solid ${verificationTone.border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
+              {getVerificationLabel(verificationState)}
+            </span>
+            <span style={{ background:editorialTone.bg, color:editorialTone.fg, border:`1px solid ${editorialTone.border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
+              {editorialDecision}
+            </span>
+          </div>
+          <h2 style={{ color:"#f4efe8", fontSize:"25px", lineHeight:"1.6", margin:"0 0 12px", fontWeight:"900", direction:"rtl", textAlign:"right" }}>
+            {item.title}
+          </h2>
+          <p style={{ color:"#9b9187", fontSize:"14px", lineHeight:"2", direction:"rtl", textAlign:"right", margin:"0 0 14px" }}>
+            {item.summary}
+          </p>
+          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", color:"#7c746b", fontSize:"12px" }}>
+            <span>{item.time}</span>
+            <span>•</span>
+            <span>{getConfidenceHint(item)}</span>
+            <span>•</span>
+            <span>{item?.provenance?.cluster?.corroboration_count || 0} تعزيز</span>
+          </div>
+        </div>
+        <div style={{ minHeight:"240px", position:"relative", background:`linear-gradient(160deg, ${col.accent}22, transparent)` }}>
+          <img src={getImg(item.category, 0)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:"brightness(.55) saturate(.9)" }} loading="lazy" />
+          <div style={{ position:"absolute", inset:0, background:`linear-gradient(90deg, transparent 0%, ${col.bg} 100%)` }} />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function urgencyBadge(item) {
+  const urg = URGENCY_MAP[item?.urgency] || URGENCY_MAP.medium;
+  return {
+    label: urg.label,
+    fg: urg.color,
+    bg: `${urg.color}14`,
+    border: `${urg.color}44`,
+  };
+}
+
+function PriorityRail({ items }) {
+  if (!items.length) return null;
+  return (
+    <div style={{ marginBottom:"18px" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
+        <h3 style={{ color:"#e8e4dc", fontSize:"15px", fontWeight:"800" }}>المسار الساخن</h3>
+        <span style={{ color:"#555", fontSize:"11px" }}>أولوية تحريرية</span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:"12px" }}>
+        {items.map((item) => {
+          const editorial = item?.provenance?.editorial || {};
+          const verification = item?.provenance?.verification || {};
+          return (
+            <div key={`rail:${item.id || item.title}`} style={{ background:"#0f0f0f", border:"1px solid rgba(255,255,255,.07)", borderRadius:"14px", padding:"12px 14px" }}>
+              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginBottom:"8px" }}>
+                <span style={{ color:"#f39c12", fontSize:"10.5px", fontWeight:"800" }}>{getEditorialLabel(editorial.priority)}</span>
+                <span style={{ color:"#5d6d7e", fontSize:"10.5px", fontWeight:"700" }}>{getVerificationLabel(verification.state)}</span>
+              </div>
+              <div style={{ color:"#efebe3", fontSize:"13px", fontWeight:"700", lineHeight:"1.7", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>{item.title}</div>
+              <div style={{ display:"flex", justifyContent:"space-between", color:"#5b5b5b", fontSize:"11px" }}>
+                <span>{getConfidenceHint(item)}</span>
+                <span>{item.time}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
@@ -358,6 +545,11 @@ export default function Dashboard() {
     return null;
   })();
 
+  const displayNews = dedupeVisualItems(news);
+  const heroStory = pickHeroStory(displayNews);
+  const priorityRail = pickPriorityRail(displayNews, heroStory);
+  const remainingNews = displayNews.filter((item) => (item?.id || item?.title) !== (heroStory?.id || heroStory?.title));
+
   const fetchNews = useCallback(async (c) => {
     if (nCache.current[c]) { setNews(nCache.current[c]); return; }
     const reqId = ++newsReqId.current;
@@ -550,7 +742,7 @@ export default function Dashboard() {
               <>
                 <div style={{ display:"flex", gap:"9px", marginBottom:"16px", flexWrap:"wrap", alignItems:"center" }}>
                   {["high","medium","low"].map(u => {
-                    const n = news.filter(x => x.urgency===u).length;
+                    const n = displayNews.filter(x => x.urgency===u).length;
                     if (!n) return null;
                     return (
                       <div key={u} style={{ background:URGENCY_MAP[u].color+"14", border:`1px solid ${URGENCY_MAP[u].color}33`, borderRadius:"8px", padding:"4px 11px", display:"flex", alignItems:"center", gap:"6px" }}>
@@ -559,10 +751,12 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
-                  <span style={{ color:"#282828", fontSize:"12px", marginRight:"auto" }}>{news.length} خبر</span>
+                  <span style={{ color:"#282828", fontSize:"12px", marginRight:"auto" }}>{displayNews.length} خبر</span>
                 </div>
+                <HeroStory item={heroStory} />
+                <PriorityRail items={priorityRail} />
                 <div className="news-grid">
-                  {news.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
+                  {remainingNews.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
                 </div>
               </>
             )}
