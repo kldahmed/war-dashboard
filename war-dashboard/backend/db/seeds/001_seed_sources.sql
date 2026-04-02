@@ -1,8 +1,9 @@
 INSERT INTO sources (name, domain, region, language, category, official_flag, trust_score, status)
 VALUES
-  ('Reuters World', 'reuters.com', 'global', 'en', 'general', FALSE, 82.00, 'active'),
+  ('Reuters World', 'reuters.com', 'global', 'en', 'general', FALSE, 82.00, 'inactive'),
   ('Al Jazeera Arabic', 'aljazeera.net', 'mena', 'ar', 'general', FALSE, 78.00, 'active'),
-  ('US Department of State', 'state.gov', 'usa', 'en', 'official', TRUE, 88.00, 'active')
+  ('US Department of State', 'state.gov', 'usa', 'en', 'official', TRUE, 88.00, 'inactive'),
+  ('BBC World', 'bbc.co.uk', 'global', 'en', 'general', FALSE, 84.00, 'active')
 ON CONFLICT (domain) DO UPDATE
 SET
   name = EXCLUDED.name,
@@ -15,13 +16,14 @@ SET
   updated_at = NOW();
 
 INSERT INTO source_feeds (source_id, feed_type, endpoint, polling_interval_sec, status)
-SELECT s.id, 'rss', x.endpoint, x.polling_interval_sec, 'active'
+SELECT s.id, 'rss', x.endpoint, x.polling_interval_sec, x.status
 FROM (
   VALUES
-    ('reuters.com', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best', 300),
-    ('aljazeera.net', 'https://www.aljazeera.net/aljazeerarss/ar.xml', 300),
-    ('state.gov', 'https://www.state.gov/feed/', 600)
-) AS x(domain, endpoint, polling_interval_sec)
+    ('reuters.com', 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best', 300, 'inactive'),
+    ('aljazeera.net', 'https://www.aljazeera.net/aljazeerarss/ar.xml', 300, 'active'),
+    ('state.gov', 'https://www.state.gov/feed/', 600, 'inactive'),
+    ('bbc.co.uk', 'https://feeds.bbci.co.uk/news/world/rss.xml', 300, 'active')
+) AS x(domain, endpoint, polling_interval_sec, status)
 JOIN sources s ON s.domain = x.domain
 ON CONFLICT (source_id, endpoint) DO UPDATE
 SET

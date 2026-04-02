@@ -71,7 +71,25 @@ async function listActiveRssFeeds() {
 async function upsertRawItem(feedId, jobId, item) {
   const externalId = item.guid ? String(item.guid).trim() : null;
   const sourceUrl = item.link ? String(item.link).trim() : null;
+  const title = item.title ? String(item.title) : null;
+  const publishedAtSource = toIsoDate(item.isoDate || item.pubDate);
+  const rawPayloadJson = JSON.stringify(item);
   const hash = hashRawItem(item);
+
+  const params = [
+    feedId,
+    externalId,
+    sourceUrl,
+    title,
+    publishedAtSource,
+    rawPayloadJson,
+    hash,
+    jobId,
+  ];
+
+  const conflictClause = externalId
+    ? `ON CONFLICT (source_feed_id, external_id) WHERE external_id IS NOT NULL`
+    : `ON CONFLICT (source_feed_id, content_hash_raw)`;
 
   const result = await query(
     `INSERT INTO raw_items (
@@ -79,19 +97,19 @@ async function upsertRawItem(feedId, jobId, item) {
       fetched_at, raw_payload_json, content_hash_raw, ingest_job_id, status
     )
     VALUES ($1,$2,$3,$4,$5,NOW(),$6::jsonb,$7,$8,'ingested')
-    ON CONFLICT (source_feed_id, content_hash_raw)
-    DO UPDATE SET updated_at = NOW(), ingest_job_id = EXCLUDED.ingest_job_id
+    ${conflictClause}
+    DO UPDATE SET
+      source_url = EXCLUDED.source_url,
+      title = EXCLUDED.title,
+      published_at_source = EXCLUDED.published_at_source,
+      fetched_at = NOW(),
+      raw_payload_json = EXCLUDED.raw_payload_json,
+      content_hash_raw = EXCLUDED.content_hash_raw,
+      ingest_job_id = EXCLUDED.ingest_job_id,
+      status = 'ingested',
+      updated_at = NOW()
     RETURNING id, (xmax = 0) AS inserted`,
-    [
-      feedId,
-      externalId,
-      sourceUrl,
-      item.title ? String(item.title) : null,
-      toIsoDate(item.isoDate || item.pubDate),
-      JSON.stringify(item),
-      hash,
-      jobId,
-    ],
+    params,
   );
 
   return {

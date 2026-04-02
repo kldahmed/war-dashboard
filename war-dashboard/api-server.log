@@ -1,0 +1,26 @@
+
+⚡ Dev API server → http://localhost:3001
+   ANTHROPIC_API_KEY: ❌ NOT SET — add it to .env.local
+   FEED_MODE: stored
+   FEED_FALLBACK_ENABLED: false
+   DATABASE_URL configured: true
+
+   ⚠️  Copy .env.example → .env.local and set your key.
+
+(node:15767) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ts":"2026-04-02T18:34:32.507Z","level":"info","message":"http_request","correlationId":"6264dbd0-9c10-4721-92d4-260222078b18","method":"GET","path":"/health","statusCode":200,"latencyMs":1438}
+{"ts":"2026-04-02T18:34:47.508Z","level":"info","message":"http_request","correlationId":"70e4e4be-447d-4488-bd9a-3771a07d1882","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":1552}
+{"ts":"2026-04-02T18:34:54.170Z","level":"info","message":"http_request","correlationId":"7287ec29-57e4-4fff-a850-107a41914cb9","method":"GET","path":"/health","statusCode":200,"latencyMs":193}
+{"ts":"2026-04-02T18:34:54.373Z","level":"info","message":"http_request","correlationId":"96c1ceb6-050a-4650-bbf3-9ac439b17f4e","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":201}
+{"ts":"2026-04-02T18:47:24.754Z","level":"info","message":"http_request","correlationId":"ec796011-5551-4383-a03b-d635a012215b","method":"HEAD","path":"/","statusCode":404,"latencyMs":1}
+{"ts":"2026-04-02T18:47:24.766Z","level":"info","message":"http_request","correlationId":"f10ce03f-440d-493f-a749-85e3487ff7e9","method":"GET","path":"/","statusCode":404,"latencyMs":0}
+{"ts":"2026-04-02T18:49:41.580Z","level":"info","message":"http_request","correlationId":"69ae19ef-9ccb-4ff0-9399-2caf3dac9e34","method":"GET","path":"/health","statusCode":200,"latencyMs":1342}
+{"ts":"2026-04-02T18:49:42.928Z","level":"info","message":"http_request","correlationId":"00fa05d0-e2dc-439d-b4ac-bfdaa67a217f","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":1346}

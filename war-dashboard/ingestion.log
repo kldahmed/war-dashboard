@@ -1,0 +1,43 @@
+
+> war-news-dashboard@1.0.0 ingest:rss
+> node backend/jobs/run-ingestion.js
+
+(node:12734) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ts":"2026-04-02T18:28:09.140Z","level":"info","message":"rss_ingestion_completed","correlationId":"6765780e-6dfa-4802-a155-b06e1f6741d3","summary":{"jobId":"3","feedsTotal":3,"feedsSucceeded":0,"feedsFailed":3,"rawInserted":0,"rawUpdated":9,"normalizedUpserted":9,"errors":[{"feedId":"1","endpoint":"https://www.reutersagency.com/feed/?best-topics=world&post_type=best","message":"Status code 404"},{"feedId":"2","endpoint":"https://www.aljazeera.net/aljazeerarss/ar.xml","message":"duplicate key value violates unique constraint \"idx_raw_items_feed_external_unique\""},{"feedId":"3","endpoint":"https://www.state.gov/feed/","message":"Invalid character in entity name\nLine: 7\nColumn: 87\nChar: ="}]}}
+{
+  "ok": true,
+  "summary": {
+    "jobId": "3",
+    "feedsTotal": 3,
+    "feedsSucceeded": 0,
+    "feedsFailed": 3,
+    "rawInserted": 0,
+    "rawUpdated": 9,
+    "normalizedUpserted": 9,
+    "errors": [
+      {
+        "feedId": "1",
+        "endpoint": "https://www.reutersagency.com/feed/?best-topics=world&post_type=best",
+        "message": "Status code 404"
+      },
+      {
+        "feedId": "2",
+        "endpoint": "https://www.aljazeera.net/aljazeerarss/ar.xml",
+        "message": "duplicate key value violates unique constraint \"idx_raw_items_feed_external_unique\""
+      },
+      {
+        "feedId": "3",
+        "endpoint": "https://www.state.gov/feed/",
+        "message": "Invalid character in entity name\nLine: 7\nColumn: 87\nChar: ="
+      }
+    ]
+  }
+}
