@@ -2,6 +2,7 @@
 
 const { createHash } = require('node:crypto');
 const { query } = require('../../lib/db');
+const { assignStoryCluster, recordArticleVersionIfNeeded } = require('./cluster-service');
 
 function sanitizeWhitespace(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
@@ -57,6 +58,14 @@ async function normalizeRawItem(rawItemId) {
 
   if (res.rowCount === 0) return null;
   const row = res.rows[0];
+  const previousNormalizedRes = await query(
+    `SELECT id, canonical_title, canonical_body, title_fingerprint, content_fingerprint
+     FROM normalized_items
+     WHERE raw_item_id = $1
+     LIMIT 1`,
+    [rawItemId],
+  );
+  const previousNormalized = previousNormalizedRes.rowCount > 0 ? previousNormalizedRes.rows[0] : null;
   const payload = row.raw_payload_json || {};
   const title = normalizeUnicode(row.title || payload.title || 'Untitled');
   const body = normalizeUnicode(payload.contentSnippet || payload.content || payload.summary || payload.description || title);
@@ -101,6 +110,22 @@ async function normalizeRawItem(rawItemId) {
       payload.category ? String(payload.category).toLowerCase() : null,
     ],
   );
+
+  const normalizedItem = {
+    id: insert.rows[0].id,
+    canonical_title: title || 'Untitled',
+    canonical_body: body || title || 'No content',
+    title_fingerprint: titleFingerprint,
+    content_fingerprint: contentFingerprint,
+    normalized_hash: normalizedHash,
+    category: payload.category ? String(payload.category).toLowerCase() : null,
+    published_at_source: row.published_at_source,
+    time_bucket_30m: timeBucket30m,
+    created_at: new Date().toISOString(),
+  };
+
+  await recordArticleVersionIfNeeded(previousNormalized, normalizedItem);
+  await assignStoryCluster(normalizedItem);
 
   return insert.rows[0];
 }

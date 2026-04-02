@@ -78,33 +78,60 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
 
   const [result, lastJob] = await Promise.all([
     query(
-    `SELECT
-      ni.id AS normalized_id,
-      ni.raw_item_id,
-      ni.canonical_title,
-      ni.canonical_body,
-      ni.category,
-      ni.published_at_source,
-      ni.normalized_hash,
-      ni.created_at,
-      ri.source_feed_id,
-      ri.source_url,
-      ri.fetched_at,
-      s.id AS source_id,
-      s.name AS source_name,
-      s.domain AS source_domain,
-      s.category AS source_category,
-      s.trust_score
-     FROM normalized_items ni
-     JOIN raw_items ri ON ri.id = ni.raw_item_id
-     JOIN sources s ON s.id = ni.source_id
-     WHERE ni.status = 'ready'
-       AND ni.canonical_title IS NOT NULL
-       AND LENGTH(TRIM(ni.canonical_title)) > 0
-       AND ni.canonical_body IS NOT NULL
-       AND LENGTH(TRIM(ni.canonical_body)) > 0
-       ${categoryClause}
-     ORDER BY ni.published_at_source DESC NULLS LAST, ri.fetched_at DESC
+    `WITH ranked_items AS (
+       SELECT
+         ni.id AS normalized_id,
+         ni.raw_item_id,
+         ni.canonical_title,
+         ni.canonical_body,
+         ni.category,
+         ni.published_at_source,
+         ni.normalized_hash,
+         ni.created_at,
+         ri.source_feed_id,
+         ri.source_url,
+         ri.fetched_at,
+         s.id AS source_id,
+         s.name AS source_name,
+         s.domain AS source_domain,
+         s.category AS source_category,
+         s.trust_score,
+         ce.cluster_id,
+         ROW_NUMBER() OVER (
+           PARTITION BY COALESCE(ce.cluster_id, -ni.id)
+           ORDER BY ni.published_at_source DESC NULLS LAST, ri.fetched_at DESC, ni.id DESC
+         ) AS cluster_rank
+       FROM normalized_items ni
+       JOIN raw_items ri ON ri.id = ni.raw_item_id
+       JOIN sources s ON s.id = ni.source_id
+       LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
+       WHERE ni.status = 'ready'
+         AND ni.canonical_title IS NOT NULL
+         AND LENGTH(TRIM(ni.canonical_title)) > 0
+         AND ni.canonical_body IS NOT NULL
+         AND LENGTH(TRIM(ni.canonical_body)) > 0
+         ${categoryClause}
+     )
+     SELECT
+       normalized_id,
+       raw_item_id,
+       canonical_title,
+       canonical_body,
+       category,
+       published_at_source,
+       normalized_hash,
+       created_at,
+       source_feed_id,
+       source_url,
+       fetched_at,
+       source_id,
+       source_name,
+       source_domain,
+       source_category,
+       trust_score
+     FROM ranked_items
+     WHERE cluster_rank = 1
+     ORDER BY published_at_source DESC NULLS LAST, fetched_at DESC
      LIMIT $1`,
     params,
     ),

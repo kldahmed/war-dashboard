@@ -1,0 +1,21 @@
+
+⚡ Dev API server → http://localhost:3001
+   ANTHROPIC_API_KEY: ❌ NOT SET — add it to .env.local
+   FEED_MODE: stored
+   FEED_FALLBACK_ENABLED: false
+   DATABASE_URL configured: true
+
+   ⚠️  Copy .env.example → .env.local and set your key.
+
+(node:26118) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ts":"2026-04-02T18:58:27.832Z","level":"info","message":"http_request","correlationId":"365e25cb-38ae-4fd1-8912-bc25d463cf4f","method":"GET","path":"/health","statusCode":200,"latencyMs":1423}
+{"ts":"2026-04-02T18:58:28.029Z","level":"info","message":"http_request","correlationId":"479a0644-f62f-4108-8f34-1ea69282db29","method":"GET","path":"/health","statusCode":200,"latencyMs":194}
+{"ts":"2026-04-02T18:58:29.434Z","level":"info","message":"http_request","correlationId":"9a0b003c-3b6d-4180-896d-cd6f6738765e","method":"GET","path":"/news/feed","statusCode":200,"latencyMs":1401}
