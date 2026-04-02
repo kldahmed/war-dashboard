@@ -33,6 +33,41 @@ function mapToUiItem(row) {
   };
 }
 
+function buildFreshness(rows, lastIngestionAt) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      latest_item_at: null,
+      oldest_item_at: null,
+      data_age_sec: null,
+      last_ingestion_at: lastIngestionAt,
+    };
+  }
+
+  const timestamps = rows
+    .map((row) => row.published_at_source || row.fetched_at || row.created_at)
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value));
+
+  if (timestamps.length === 0) {
+    return {
+      latest_item_at: null,
+      oldest_item_at: null,
+      data_age_sec: null,
+      last_ingestion_at: lastIngestionAt,
+    };
+  }
+
+  const latestMs = Math.max(...timestamps);
+  const oldestMs = Math.min(...timestamps);
+  return {
+    latest_item_at: new Date(latestMs).toISOString(),
+    oldest_item_at: new Date(oldestMs).toISOString(),
+    data_age_sec: Math.max(0, Math.floor((Date.now() - latestMs) / 1000)),
+    last_ingestion_at: lastIngestionAt,
+  };
+}
+
 router.get('/news/feed', asyncHandler(async (req, res) => {
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
   const category = typeof req.query.category === 'string' ? req.query.category.toLowerCase() : null;
@@ -41,7 +76,8 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
   const categoryClause = category && category !== 'all' ? 'AND COALESCE(ni.category, s.category) = $2' : '';
   if (categoryClause) params.push(category);
 
-  const result = await query(
+  const [result, lastJob] = await Promise.all([
+    query(
     `SELECT
       ni.id AS normalized_id,
       ni.raw_item_id,
@@ -71,11 +107,28 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
      ORDER BY ni.published_at_source DESC NULLS LAST, ri.fetched_at DESC
      LIMIT $1`,
     params,
-  );
+    ),
+    query(
+      `SELECT ended_at
+       FROM processing_jobs
+       WHERE job_type = 'rss_ingestion'
+         AND status IN ('completed', 'completed_with_errors')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    ),
+  ]);
+
+  const lastIngestionAt = lastJob.rowCount > 0 && lastJob.rows[0].ended_at
+    ? new Date(lastJob.rows[0].ended_at).toISOString()
+    : null;
 
   res.json({
     mode: 'stored',
-    count: result.rowCount,
+    fallback_used: false,
+    freshness: buildFreshness(result.rows, lastIngestionAt),
+    item_count: result.rowCount,
+    correlation_id: req.correlationId || null,
+    error_reason: null,
     items: result.rows.map(mapToUiItem),
   });
 }));

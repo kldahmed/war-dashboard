@@ -145,6 +145,93 @@ npm run check:integration:sprint1
 - `GET /api/health`
 - `GET /api/health/metrics-basic`
 
+## Wave 1 — Production Readiness Runbook
+
+هدف هذا الـ runbook هو التأكد أن المسار الإنتاجي يعمل من stored feed وليس fallback.
+
+### 1) تحقق من Health على Vercel
+
+افتح:
+
+- `/api/health`
+
+يجب أن ترى:
+
+- `status: "ok"`
+- `db: true`
+- `runtime: "vercel"`
+- `feed_mode`
+- `feed_fallback_enabled`
+- `verify_mode`
+- `correlation_id`
+
+### 2) تحقق من Metrics على Vercel
+
+افتح:
+
+- `/api/health/metrics-basic`
+
+يجب أن ترى:
+
+- `counters.raw_items`
+- `counters.normalized_items`
+- `last_job`
+- `runtime: "vercel"`
+- `feed_mode`
+- `verify_mode`
+- `correlation_id`
+
+### 3) تحقق من Feed Stored Path
+
+افتح:
+
+- `/api/news/feed?limit=10`
+
+يجب أن ترى:
+
+- `mode: "stored"`
+- `fallback_used: false`
+- `freshness`
+- `item_count`
+- `correlation_id`
+- `error_reason` (null عند النجاح)
+
+### 4) تحقق واجهة المستخدم
+
+في تبويب الأخبار ستظهر badges مباشرة:
+
+- `Stored Production` عند نجاح stored feed.
+- `Legacy Fallback` إذا تم fallback.
+- `Verify Mode` عند تفعيل التحقق الصارم.
+
+وتظهر metadata إضافية:
+
+- عمر البيانات
+- آخر ingestion
+- source mode
+
+### 5) سيناريو Verify Strict
+
+في Vercel Environment Variables:
+
+- `REACT_APP_FEED_MODE=stored`
+- `REACT_APP_PRODUCTION_VERIFY_MODE=true`
+- `REACT_APP_FEED_FALLBACK=true`
+
+في هذا الوضع سيتم تعطيل fallback الصامت تلقائياً عند فشل stored path، ويظهر فشل واضح في الواجهة بدلاً من التبديل الخفي.
+
+### 6) فحص آلي سريع لـ Wave 1
+
+شغّل:
+
+```bash
+WAVE1_BASE_URL=https://your-app.vercel.app npm run check:vercel:wave1
+```
+
+النتيجة المتوقعة:
+
+- `wave1 vercel check passed`
+
 ### ما تم بناؤه فعلياً
 
 - تخزين دائم للمصادر والأخبار الخام والمطبّعة.

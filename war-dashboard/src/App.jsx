@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from "react";
-import { fetchNewsItems } from "./data/newsAdapter";
+import { fetchNewsFeedEnvelope } from "./data/newsAdapter";
 
 const TABS = [
   { id: "news",   label: "الأخبار",  icon: "📰" },
@@ -299,6 +299,20 @@ export default function Dashboard() {
   const [liveCh, setLiveCh]       = useState(LIVE_CHANNELS[0]);
   const [ticker, setTicker]       = useState("⚡ جارٍ تحميل الأخبار...");
   const [updated, setUpdated]     = useState(null);
+  const [feedMeta, setFeedMeta]   = useState({
+    mode: "legacy",
+    fallback_used: false,
+    verify_mode: false,
+    item_count: 0,
+    freshness: {
+      latest_item_at: null,
+      oldest_item_at: null,
+      data_age_sec: null,
+      last_ingestion_at: null,
+    },
+    correlation_id: null,
+    error_reason: null,
+  });
   const nCache = useRef({});
   const vCache = useRef({});
   const newsReqId = useRef(0);
@@ -312,6 +326,38 @@ export default function Dashboard() {
   const getVideoKey = (item) =>
     item?.id || item?.url || item?.youtubeId || `${item?.category || "video"}:${item?.title || ""}`;
 
+  const formatAge = (seconds) => {
+    if (!Number.isFinite(seconds)) return "غير متاح";
+    if (seconds < 60) return `${seconds}ث`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}د`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}س`;
+    return `${Math.floor(seconds / 86400)}ي`;
+  };
+
+  const sourceBadge = (() => {
+    if (feedMeta.verify_mode && feedMeta.mode === "stored" && !feedMeta.fallback_used) {
+      return { label: "Verify Mode", color: "#f39c12", bg: "rgba(243,156,18,.14)", border: "rgba(243,156,18,.42)" };
+    }
+    if (feedMeta.fallback_used) {
+      return { label: "Legacy Fallback", color: "#e67e22", bg: "rgba(230,126,34,.14)", border: "rgba(230,126,34,.42)" };
+    }
+    if (feedMeta.mode === "stored") {
+      return { label: "Stored Production", color: "#16a085", bg: "rgba(22,160,133,.14)", border: "rgba(22,160,133,.42)" };
+    }
+    return { label: "Legacy", color: "#7f8c8d", bg: "rgba(127,140,141,.14)", border: "rgba(127,140,141,.42)" };
+  })();
+
+  const newsErrorHint = (() => {
+    if (!errN) return null;
+    if (feedMeta?.verify_mode && feedMeta?.mode === "stored" && !feedMeta?.fallback_used) {
+      return "Stored failure في وضع Verify: تم تعطيل fallback الصامت. تحقق من /api/news/feed و ingestion.";
+    }
+    if (feedMeta?.fallback_used) {
+      return "تم التحويل إلى Legacy Fallback بعد فشل stored path. راجع سبب الفشل التشغيلي.";
+    }
+    return null;
+  })();
+
   const fetchNews = useCallback(async (c) => {
     if (nCache.current[c]) { setNews(nCache.current[c]); return; }
     const reqId = ++newsReqId.current;
@@ -321,16 +367,23 @@ export default function Dashboard() {
     setLoadN(true); setErrN(null);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
-      const items = await fetchNewsItems(c, controller.signal);
+      const envelope = await fetchNewsFeedEnvelope(c, controller.signal);
+      const items = envelope.items;
       if (controller.signal.aborted || reqId !== newsReqId.current) return;
       clearTimeout(timer);
       nCache.current[c] = items;
       setNews(items);
+      setFeedMeta(envelope.metadata);
       setUpdated(new Date().toLocaleTimeString("ar-SA"));
-      setTicker(items.map(i => `🔴 ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
+      if (items.length === 0) {
+        setTicker("⚠️ لا توجد بيانات مخزنة بعد — شغّل ingestion");
+      } else {
+        setTicker(items.map(i => `🔴 ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
+      }
     } catch (err) {
       clearTimeout(timer);
       if (controller.signal.aborted || reqId !== newsReqId.current) return;
+      if (err?.feedMeta) setFeedMeta(err.feedMeta);
       setErrN(err.name === "AbortError"
         ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
         : (err.message || "تعذّر تحميل الأخبار — حاول مجدداً"));
@@ -426,6 +479,26 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
+          <div style={{ background:sourceBadge.bg, border:`1px solid ${sourceBadge.border}`, color:sourceBadge.color, borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px", fontWeight:"700" }}>
+            {sourceBadge.label}
+          </div>
+          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
+            source mode: {feedMeta.mode}
+          </div>
+          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
+            عمر البيانات: {formatAge(feedMeta?.freshness?.data_age_sec)}
+          </div>
+          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
+            آخر ingestion: {feedMeta?.freshness?.last_ingestion_at ? new Date(feedMeta.freshness.last_ingestion_at).toLocaleString("ar-SA") : "غير متاح"}
+          </div>
+          {feedMeta?.correlation_id && (
+            <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#6a6a6a", borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontFamily:"monospace" }}>
+              cid: {feedMeta.correlation_id.slice(0, 8)}
+            </div>
+          )}
+        </div>
+
         {/* Tabs */}
         <div style={{ display:"flex", gap:"4px", marginBottom:"10px" }}>
           {TABS.map(t => (
@@ -464,6 +537,12 @@ export default function Dashboard() {
             {errN && !loadN && (
               <div style={{ textAlign:"center", padding:"40px" }}>
                 <p style={{ color:"#e74c3c", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>⚠️ {errN}</p>
+                {newsErrorHint && (
+                  <p style={{ color:"#a36f2b", fontSize:"12px", marginBottom:"14px", direction:"rtl" }}>
+                    {newsErrorHint}
+                    {feedMeta?.error_reason ? ` (${feedMeta.error_reason})` : ""}
+                  </p>
+                )}
                 <button className="retry-btn" onClick={() => { delete nCache.current[cat]; fetchNews(cat); }}>🔄 إعادة المحاولة</button>
               </div>
             )}
@@ -486,6 +565,18 @@ export default function Dashboard() {
                   {news.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
                 </div>
               </>
+            )}
+            {!loadN && !errN && news.length === 0 && (
+              <div style={{ textAlign:"center", padding:"40px" }}>
+                <p style={{ color:"#f39c12", fontSize:"14px", marginBottom:"8px", direction:"rtl" }}>
+                  ⚠️ {feedMeta?.fallback_used ? "لا توجد بيانات fallback حالياً" : "لا توجد بيانات مخزنة بعد"}
+                </p>
+                <p style={{ color:"#555", fontSize:"12px", direction:"rtl" }}>
+                  {feedMeta?.fallback_used
+                    ? "Legacy fallback مفعل لكن لا توجد عناصر صالحة حالياً."
+                    : "شغّل ingestion ثم أعد التحديث. في وضع Verify لا يتم fallback الصامت."}
+                </p>
+              </div>
             )}
           </>
         )}

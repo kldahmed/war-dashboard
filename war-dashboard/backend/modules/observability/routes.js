@@ -9,7 +9,15 @@ const router = express.Router();
 
 router.get('/health', asyncHandler(async (_req, res) => {
   const db = await query('SELECT 1 AS ok');
-  res.json({ status: 'ok', db: db.rows[0].ok === 1, time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    db: db.rows[0].ok === 1,
+    feed_mode: process.env.FEED_MODE || process.env.REACT_APP_FEED_MODE || 'legacy',
+    feed_fallback_enabled: String(process.env.FEED_FALLBACK_ENABLED || process.env.REACT_APP_FEED_FALLBACK || 'true').toLowerCase() === 'true',
+    verify_mode: String(process.env.REACT_APP_PRODUCTION_VERIFY_MODE || 'false').toLowerCase() === 'true',
+    correlation_id: _req.correlationId || null,
+    time: new Date().toISOString(),
+  });
 }));
 
 router.get('/health/metrics-basic', asyncHandler(async (_req, res) => {
@@ -32,6 +40,10 @@ router.get('/health/metrics-basic', asyncHandler(async (_req, res) => {
       normalized_items: normalizedItems.rows[0].count,
     },
     last_job: lastJob.rowCount > 0 ? lastJob.rows[0] : null,
+    feed_mode: process.env.FEED_MODE || process.env.REACT_APP_FEED_MODE || 'legacy',
+    feed_fallback_enabled: String(process.env.FEED_FALLBACK_ENABLED || process.env.REACT_APP_FEED_FALLBACK || 'true').toLowerCase() === 'true',
+    verify_mode: String(process.env.REACT_APP_PRODUCTION_VERIFY_MODE || 'false').toLowerCase() === 'true',
+    correlation_id: _req.correlationId || null,
     runtime_metrics: metrics.snapshot(),
   });
 }));
