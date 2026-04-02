@@ -39,6 +39,11 @@ function mapToUiItem(row) {
         state: row.verification_state || 'single_source',
         confidence_score: Number.isFinite(row.confidence_score) ? row.confidence_score : 0.35,
       },
+      editorial: {
+        decision: row.editorial_decision || 'publish',
+        priority: row.editorial_priority || 'normal',
+        rank_score: Number.isFinite(row.rank_score) ? row.rank_score : 0.35,
+      },
     },
   };
 }
@@ -93,6 +98,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          ce.cluster_id,
          GREATEST(COUNT(*)::int - 1, 0) AS corroboration_count,
          COUNT(DISTINCT ni.source_id)::int AS source_diversity,
+         COUNT(DISTINCT av.id)::int AS article_version_count,
          BOOL_OR(
            LOWER(COALESCE(ni.canonical_title, '') || ' ' || COALESCE(ni.canonical_body, ''))
              ~ '(^|[^a-z])(deny|denies|denied|reject|rejects|rejected|dispute|disputes|disputed|contradict|contradicts|contradicted|false|fake|hoax)([^a-z]|$)'
@@ -106,9 +112,10 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          ROUND(AVG(COALESCE(ce.novelty_hint, 0.5))::numeric, 4) AS average_novelty
        FROM cluster_events ce
        JOIN normalized_items ni ON ni.id = ce.normalized_item_id
+       LEFT JOIN article_versions av ON av.normalized_item_id = ni.id
        GROUP BY ce.cluster_id
      ),
-     ranked_items AS (
+     scored_items AS (
        SELECT
          ni.id AS normalized_id,
          ni.raw_item_id,
@@ -131,6 +138,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          ce.novelty_hint,
          COALESCE(cs.corroboration_count, 0) AS corroboration_count,
          COALESCE(cs.source_diversity, 1) AS source_diversity,
+         COALESCE(cs.article_version_count, 0) AS article_version_count,
          COALESCE(cs.contradiction_flag, FALSE) AS contradiction_flag,
          CASE
            WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 'needs_review'
@@ -149,15 +157,48 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
              - CASE WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 0.25 ELSE 0 END
            )
          ) AS confidence_score,
-         sc.last_seen_at AS cluster_last_seen_at,
-         ROW_NUMBER() OVER (
-           PARTITION BY COALESCE(ce.cluster_id, -ni.id)
-           ORDER BY COALESCE(ce.novelty_hint, 0) DESC,
-                    COALESCE(ce.duplicate_risk_hint, 0) ASC,
-                    ni.published_at_source DESC NULLS LAST,
-                    ri.fetched_at DESC,
-                    ni.id DESC
-         ) AS cluster_rank
+         CASE
+           WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 'hold'
+           WHEN COALESCE(cs.article_version_count, 0) > 0 AND COALESCE(cs.average_novelty, COALESCE(ce.novelty_hint, 0.5)) >= 0.12 THEN 'update'
+           WHEN COALESCE(cs.corroboration_count, 0) > 0 AND COALESCE(cs.average_duplicate_risk, COALESCE(ce.duplicate_risk_hint, 0.35)) >= 0.82 THEN 'merge'
+           ELSE 'publish'
+         END AS editorial_decision,
+         CASE
+           WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 'review'
+           WHEN COALESCE(cs.source_diversity, 1) >= 3 OR COALESCE(cs.article_version_count, 0) > 0 THEN 'high'
+           WHEN COALESCE(cs.corroboration_count, 0) > 0 THEN 'elevated'
+           ELSE 'normal'
+         END AS editorial_priority,
+         GREATEST(
+           0.05,
+           LEAST(
+             0.99,
+             (
+               GREATEST(
+                 0,
+                 1 - (EXTRACT(EPOCH FROM (NOW() - COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at))) / 86400.0) / 7.0
+               ) * 0.3
+             )
+             + (
+               GREATEST(
+                 0.05,
+                 LEAST(
+                   0.99,
+                   COALESCE(s.trust_score / 100.0, 0.5) * 0.35
+                   + COALESCE(cs.average_duplicate_risk, COALESCE(ce.duplicate_risk_hint, 0.35)) * 0.3
+                   + (LEAST(COALESCE(cs.source_diversity, 1), 4) / 4.0) * 0.2
+                   + (1 - COALESCE(cs.average_novelty, COALESCE(ce.novelty_hint, 0.5))) * 0.15
+                   - CASE WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 0.25 ELSE 0 END
+                 )
+               ) * 0.3
+             )
+             + LEAST(COALESCE(cs.corroboration_count, 0), 4) / 4.0 * 0.15
+             + COALESCE(cs.average_novelty, COALESCE(ce.novelty_hint, 0.5)) * 0.15
+             + (1 - COALESCE(cs.average_duplicate_risk, COALESCE(ce.duplicate_risk_hint, 0.35))) * 0.1
+             - CASE WHEN COALESCE(cs.contradiction_flag, FALSE) THEN 0.2 ELSE 0 END
+           )
+         ) AS rank_score,
+         sc.last_seen_at AS cluster_last_seen_at
        FROM normalized_items ni
        JOIN raw_items ri ON ri.id = ni.raw_item_id
        JOIN sources s ON s.id = ni.source_id
@@ -170,6 +211,20 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          AND ni.canonical_body IS NOT NULL
          AND LENGTH(TRIM(ni.canonical_body)) > 0
          ${categoryClause}
+     ),
+     ranked_items AS (
+       SELECT
+         scored_items.*,
+         ROW_NUMBER() OVER (
+           PARTITION BY COALESCE(scored_items.cluster_id, -scored_items.normalized_id)
+           ORDER BY scored_items.rank_score DESC,
+                    COALESCE(scored_items.novelty_hint, 0) DESC,
+                    COALESCE(scored_items.duplicate_risk_hint, 0) ASC,
+                    scored_items.published_at_source DESC NULLS LAST,
+                    scored_items.fetched_at DESC,
+                    scored_items.normalized_id DESC
+         ) AS cluster_rank
+       FROM scored_items
      )
      SELECT
        normalized_id,
@@ -191,13 +246,19 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        cluster_id,
        corroboration_count,
        source_diversity,
+      article_version_count,
        contradiction_flag,
        verification_state,
        confidence_score,
+       editorial_decision,
+       editorial_priority,
+       rank_score,
        cluster_last_seen_at
      FROM ranked_items
      WHERE cluster_rank = 1
-     ORDER BY COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST, fetched_at DESC
+         ORDER BY rank_score DESC,
+        COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST,
+        fetched_at DESC
      LIMIT $1`,
     params,
     ),
