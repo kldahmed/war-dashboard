@@ -42,6 +42,128 @@ npm run dev
 
 ---
 
+## Sprint 1 — Operating Backend (تم التنفيذ)
+
+تمت إضافة backend مرحلي (modular monolith) داخل المشروع مع تخزين دائم وفصل ingestion عن العرض، مع الحفاظ على المسار القديم كـ fallback.
+
+### البنية الجديدة المضافة
+
+```
+backend/
+	app/
+	modules/
+		sources/
+		ingestion/
+		normalization/
+		news-feed/
+		observability/
+	jobs/
+	db/
+		migrations/
+		seeds/
+	config/
+	lib/
+```
+
+### تجهيز Postgres محلياً
+
+1. شغّل PostgreSQL محلياً (أو container).
+2. انسخ `.env.example` إلى `.env.local` وحدّث `DATABASE_URL`.
+
+### أوامر Sprint 1
+
+```bash
+# تثبيت الاعتماديات
+npm install
+
+# تطبيق migrations
+npm run migrate:up
+
+# إدخال seed أولي للمصادر وRSS feeds
+npm run seed
+
+# تشغيل السيرفر والواجهة
+npm run dev
+
+# تشغيل ingestion يدوي
+npm run ingest:rss
+
+# فحوصات smoke أساسية
+npm run smoke:backend
+
+# فحص تكاملي end-to-end لسبرنت 1
+npm run check:integration:sprint1
+```
+
+### Hardening Review Checklist (Sprint 1)
+
+نفّذ هذا التسلسل قبل إغلاق Sprint 1:
+
+```bash
+# 1) rollback ثم up للتأكد من up/down
+npm run migrate:down
+npm run migrate:up
+
+# 2) seed
+npm run seed
+
+# 3) backend smoke checks
+npm run smoke:backend
+
+# 4) تشغيل السيرفر
+npm run server
+
+# 5) تحقق endpoints
+curl -s http://localhost:3001/api/health | jq .
+curl -s http://localhost:3001/api/health/metrics-basic | jq .
+curl -s 'http://localhost:3001/api/news/feed?limit=10' | jq .
+
+# 6) تشغيل ingestion يدوي
+curl -s -X POST http://localhost:3001/api/ingestion/jobs/run | jq .
+
+# 7) فحص تكاملي تلقائي
+npm run check:integration:sprint1
+```
+
+### Feature Flags (Legacy vs Stored)
+
+- `REACT_APP_FEED_MODE=legacy|stored`
+- `REACT_APP_FEED_FALLBACK=true|false`
+- `FEED_MODE=legacy|stored` (للتوافق التشغيلي)
+- `FEED_FALLBACK_ENABLED=true|false`
+
+الوضع الافتراضي الآمن: `legacy`.
+
+### Endpoints الجديدة في Sprint 1
+
+- `GET /api/sources`
+- `POST /api/sources`
+- `POST /api/source-feeds`
+- `POST /api/ingestion/jobs/run`
+- `GET /api/ingestion/jobs/:id`
+- `GET /api/news/feed`
+- `GET /api/health`
+- `GET /api/health/metrics-basic`
+
+### ما تم بناؤه فعلياً
+
+- تخزين دائم للمصادر والأخبار الخام والمطبّعة.
+- RSS ingestion worker بسيط مع job tracking.
+- Normalization v1 يجهز البيانات لـ dedup لاحقاً.
+- Structured logging + correlation ids + latency basics.
+- Data adapter في الواجهة للتبديل بين stored feed وlegacy.
+- الإبقاء على `POST /api/claude` بدون حذف.
+
+### خارج نطاق Sprint 1 (غير مبني بعد)
+
+- dedup semantic كامل.
+- clustering كامل.
+- verification engine حقيقي.
+- decision engine تحريري كامل.
+- stream monitoring احترافي.
+
+---
+
 ## النشر على Vercel (3 خطوات)
 
 ### الخطوة 1 — رفع المشروع على GitHub

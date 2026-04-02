@@ -4,9 +4,11 @@
   "private": true,
   "proxy": "http://localhost:3001",
   "dependencies": {
+    "pg": "^8.13.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1"
+    "react-scripts": "5.0.1",
+    "rss-parser": "^3.13.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -18,7 +20,13 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "server": "node server.js",
-    "dev": "concurrently -n API,CRA -c cyan,green \"node server.js\" \"react-scripts start\""
+    "dev": "concurrently -n API,CRA -c cyan,green \"node server.js\" \"react-scripts start\"",
+    "migrate:up": "node backend/db/migrate.js up",
+    "migrate:down": "node backend/db/migrate.js down",
+    "seed": "node backend/db/seed.js",
+    "ingest:rss": "node backend/jobs/run-ingestion.js",
+    "smoke:backend": "node scripts/smoke-checks.js",
+    "check:integration:sprint1": "node scripts/integration-sprint1.js"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],

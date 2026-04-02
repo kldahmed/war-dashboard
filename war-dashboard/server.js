@@ -10,30 +10,18 @@
 
 require('dotenv').config({ path: '.env.local' });
 
-const express = require('express');
-const claudeHandler = require('./api/claude');
+const createApp = require('./backend/app/createApp');
+const env = require('./backend/config/env');
 
-const app  = express();
-const PORT = 3001;
+const app = createApp();
 
-app.use(express.json());
-
-// Mount the exact same handler used by Vercel
-app.post('/api/claude', claudeHandler);
-
-// Health-check (optional, useful for debugging)
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status:   'ok',
-    keySet:   !!process.env.ANTHROPIC_API_KEY,
-    time:     new Date().toISOString(),
-  });
-});
-
-app.listen(PORT, () => {
+app.listen(env.port, () => {
   const keySet = !!process.env.ANTHROPIC_API_KEY;
-  console.log(`\n⚡ Dev API server → http://localhost:${PORT}`);
+  console.log(`\n⚡ Dev API server → http://localhost:${env.port}`);
   console.log(`   ANTHROPIC_API_KEY: ${keySet ? '✅ loaded from .env.local' : '❌ NOT SET — add it to .env.local'}`);
+  console.log(`   FEED_MODE: ${env.feedMode}`);
+  console.log(`   FEED_FALLBACK_ENABLED: ${env.feedFallbackEnabled}`);
+  console.log(`   DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
   if (!keySet) {
     console.warn('\n   ⚠️  Copy .env.example → .env.local and set your key.\n');
   }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import { fetchNewsItems } from "./data/newsAdapter";
 
 const TABS = [
   { id: "news",   label: "الأخبار",  icon: "📰" },
@@ -320,7 +321,7 @@ export default function Dashboard() {
     setLoadN(true); setErrN(null);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
-      const items = await callProxy("news", c, controller.signal);
+      const items = await fetchNewsItems(c, controller.signal);
       if (controller.signal.aborted || reqId !== newsReqId.current) return;
       clearTimeout(timer);
       nCache.current[c] = items;
