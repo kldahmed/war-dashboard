@@ -3,7 +3,7 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "functions": {
-    "api/*.js": { "runtime": "nodejs18.x" }
+    "api/**/*.js": { "runtime": "nodejs18.x" }
   },
   "headers": [
     {

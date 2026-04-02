@@ -173,6 +173,7 @@ npm run check:integration:sprint1
 ### الخطوة 2 — ربط Vercel
 1. افتح [vercel.com](https://vercel.com) → Sign Up with GitHub
 2. اضغط **Add New Project** → اختر `war-dashboard` → **Deploy**
+3. اضبط **Root Directory** على `war-dashboard`
 
 ### الخطوة 3 — إضافة متغيرات البيئة
 في Vercel → Project → Settings → **Environment Variables**:
@@ -180,6 +181,10 @@ npm run check:integration:sprint1
 | الاسم | القيمة |
 |---|---|
 | `ANTHROPIC_API_KEY` | `sk-ant-...` (مفتاحك الحقيقي) |
+| `DATABASE_URL` | اتصال PostgreSQL الإنتاجي |
+| `REACT_APP_FEED_MODE` | `stored` |
+| `REACT_APP_FEED_FALLBACK` | `true` (أو `false` أثناء التحقق الصارم) |
+| `REACT_APP_PRODUCTION_VERIFY_MODE` | `true` لتعطيل fallback الصامت أثناء التحقق |
 
 في الإنتاج على Vercel، ملف `api/claude.js` يعمل تلقائياً كـ serverless function.
 

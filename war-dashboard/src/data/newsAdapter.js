@@ -1,14 +1,18 @@
 const DEFAULT_LIMIT = 20;
 
 export function resolveFeedMode({ mode, fallbackEnabled = true } = {}) {
+  const verifyProductionMode = String(process.env.REACT_APP_PRODUCTION_VERIFY_MODE || "false").toLowerCase() === "true";
   const normalizedMode = String(mode || process.env.REACT_APP_FEED_MODE || "legacy").toLowerCase();
   const fallback = String(
     fallbackEnabled !== undefined ? fallbackEnabled : (process.env.REACT_APP_FEED_FALLBACK || "true")
   ).toLowerCase() === "true";
+  const normalizedResolvedMode = normalizedMode === "stored" ? "stored" : "legacy";
 
   return {
-    mode: normalizedMode === "stored" ? "stored" : "legacy",
-    fallbackEnabled: fallback,
+    mode: normalizedResolvedMode,
+    // Verification mode disables silent fallback while validating stored path in production.
+    fallbackEnabled: verifyProductionMode && normalizedResolvedMode === "stored" ? false : fallback,
+    verifyProductionMode,
   };
 }
 
