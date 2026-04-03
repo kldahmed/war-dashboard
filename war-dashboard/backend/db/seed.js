@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config({ path: require('node:path').join(__dirname, '../../.env.local') });
+
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { query, pool } = require('../lib/db');
