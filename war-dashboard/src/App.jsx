@@ -1,1344 +1,1146 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchNewsFeedEnvelope } from "./data/newsAdapter";
 
-const TABS = [
-  { id: "news",   label: "الأخبار",  icon: "📰" },
-  { id: "videos", label: "فيديوهات", icon: "🎬" },
-  { id: "live",   label: "بث مباشر", icon: "📡" },
+const TAB_ITEMS = [
+  { id: "news", label: "غرفة الأخبار", icon: "🗞️" },
+  { id: "videos", label: "الفيديو", icon: "🎞️" },
+  { id: "live", label: "القنوات", icon: "📡" },
+  { id: "ops", label: "Newsroom Pro", icon: "🧭" },
 ];
 
-const LIVE_FILTERS = [
-  { id: "playable", label: "قابل للتشغيل" },
-  { id: "external", label: "خارجي فقط" },
+const NEWS_CATEGORIES = [
+  { id: "all", label: "الكل", icon: "🌐" },
+  { id: "breaking", label: "عاجل", icon: "🚨" },
+  { id: "war", label: "نزاعات", icon: "🛡️" },
+  { id: "politics", label: "سياسة", icon: "🏛️" },
+  { id: "economy", label: "اقتصاد", icon: "💹" },
+  { id: "energy", label: "طاقة", icon: "⚡" },
+  { id: "technology", label: "تقنية", icon: "🧠" },
+  { id: "analysis", label: "تحليل", icon: "📊" },
+  { id: "iran", label: "إيران", icon: "🇮🇷" },
+  { id: "gulf", label: "الخليج", icon: "🌍" },
+  { id: "israel", label: "إسرائيل", icon: "🇮🇱" },
+  { id: "usa", label: "أمريكا", icon: "🇺🇸" },
+  { id: "world", label: "العالم", icon: "🗺️" },
 ];
 
-const CATEGORIES = [
-  { id: "all", label: "الكل", emoji: "🌐" },
-  { id: "breaking", label: "عاجل", emoji: "🚨" },
-  { id: "politics", label: "سياسة", emoji: "🏛️" },
-  { id: "economy", label: "اقتصاد", emoji: "💹" },
-  { id: "war", label: "حروب", emoji: "🛡️" },
-  { id: "gulf", label: "الخليج", emoji: "🌍" },
-  { id: "iran", label: "إيران", emoji: "🇮🇷" },
-  { id: "israel", label: "إسرائيل", emoji: "🇮🇱" },
-  { id: "usa", label: "أمريكا", emoji: "🇺🇸" },
-  { id: "world", label: "العالم", emoji: "🗺️" },
-  { id: "energy", label: "طاقة", emoji: "⚡" },
-  { id: "analysis", label: "تحليل", emoji: "🧭" },
-  { id: "technology", label: "تقنية", emoji: "🧠" },
+const LIVE_CATEGORY_LABELS = {
+  all: "الكل",
+  news: "أخبار",
+  sports: "رياضة",
+  entertainment: "ترفيه",
+  economy: "اقتصاد",
+  documentary: "وثائقي",
+  analysis: "تحليل",
+  general: "عام",
+};
+
+const URGENCY_META = {
+  high: { label: "عاجل", color: "#ff5449" },
+  medium: { label: "مهم", color: "#f39c12" },
+  low: { label: "متابعة", color: "#7f8c8d" },
+};
+
+const BG_GRADIENTS = [
+  "radial-gradient(1400px 620px at 5% -10%, rgba(244,94,10,.22) 0%, rgba(8,8,12,0) 50%), radial-gradient(980px 520px at 95% 0%, rgba(11,123,146,.18) 0%, rgba(8,8,12,0) 55%), linear-gradient(160deg, #07090d 0%, #09070a 45%, #0c1117 100%)",
+  "radial-gradient(1100px 560px at -10% 20%, rgba(225,29,72,.18) 0%, rgba(7,7,10,0) 55%), radial-gradient(1200px 640px at 110% 10%, rgba(16,185,129,.16) 0%, rgba(7,7,10,0) 50%), linear-gradient(160deg, #07080b 0%, #0a0b10 45%, #081015 100%)",
+  "radial-gradient(900px 460px at 12% 4%, rgba(59,130,246,.2) 0%, rgba(8,8,12,0) 60%), radial-gradient(1250px 690px at 98% -4%, rgba(245,158,11,.16) 0%, rgba(8,8,12,0) 58%), linear-gradient(160deg, #070a10 0%, #0a0c11 48%, #0e0b12 100%)",
 ];
 
-const CAT_COLORS = {
-  all: { accent:"#c0392b", glow:"rgba(192,57,43,.35)", light:"#e74c3c", bg:"#0d0d0d" },
-  breaking: { accent:"#e74c3c", glow:"rgba(231,76,60,.35)", light:"#ff8d7c", bg:"#1a0a0a" },
-  politics: { accent:"#8e44ad", glow:"rgba(142,68,173,.35)", light:"#c792ea", bg:"#120b18" },
-  economy: { accent:"#d68910", glow:"rgba(214,137,16,.35)", light:"#f5c26b", bg:"#181208" },
-  war: { accent:"#b03a2e", glow:"rgba(176,58,46,.35)", light:"#f1948a", bg:"#170b0a" },
-  gulf: { accent:"#16a085", glow:"rgba(22,160,133,.35)", light:"#66d9c4", bg:"#081813" },
-  iran: { accent:"#c0392b", glow:"rgba(192,57,43,.35)", light:"#f28b82", bg:"#180808" },
-  israel: { accent:"#2471a3", glow:"rgba(36,113,163,.35)", light:"#7fb8e6", bg:"#080f18" },
-  usa: { accent:"#2980b9", glow:"rgba(41,128,185,.35)", light:"#7cc6ff", bg:"#08121a" },
-  world: { accent:"#117a65", glow:"rgba(17,122,101,.35)", light:"#63d7bf", bg:"#081413" },
-  energy: { accent:"#ca6f1e", glow:"rgba(202,111,30,.35)", light:"#f8b26a", bg:"#181108" },
-  analysis: { accent:"#7d3c98", glow:"rgba(125,60,152,.35)", light:"#c8a2dc", bg:"#120914" },
-  technology: { accent:"#148f77", glow:"rgba(20,143,119,.35)", light:"#79e0cb", bg:"#081514" },
-};
-
-const URGENCY_MAP = {
-  high:   { label:"عاجل",   color:"#e74c3c", pulse:true  },
-  medium: { label:"مهم",    color:"#f39c12", pulse:false },
-  low:    { label:"متابعة", color:"#7f8c8d", pulse:false },
-};
-
-const CAT_UNSPLASH = {
-  breaking: ["photo-1495020689067-958852a7765e","photo-1516321318423-f06f85e504b3","photo-1521295121783-8a321d551ad2"],
-  politics: ["photo-1541872703-74c5e44368f9","photo-1529107386315-e1a2ed48a620","photo-1495020689067-958852a7765e"],
-  economy: ["photo-1520607162513-77705c0f0d4a","photo-1559526324-593bc073d938","photo-1454165804606-c3d57bc86b40"],
-  war: ["photo-1541872703-74c5e44368f9","photo-1501594907352-04cda38ebc29","photo-1515187029135-18ee286d815b"],
-  iran:   ["photo-1597852074816-d57796d60ea6","photo-1564419320461-6870880221ad","photo-1576086213369-97a306d36557"],
-  gulf:   ["photo-1512632578888-169bbbc64f33","photo-1555448248-2571daf6344b","photo-1469041797191-50ace28483c3"],
-  usa:    ["photo-1515187029135-18ee286d815b","photo-1501594907352-04cda38ebc29","photo-1473091534298-04dcbce3278c"],
-  israel: ["photo-1544967082-d9d25d867d66","photo-1582555172866-f73bb12a2ab3","photo-1570957392122-7768e3cfc3d6"],
-  world: ["photo-1489515217757-5fd1be406fef","photo-1464037866556-6812c9d1c72e","photo-1500530855697-b586d89ba3ee"],
-  energy: ["photo-1473448912268-2022ce9509d8","photo-1497436072909-60f360e1d4b1","photo-1446776709462-d6b525c57bd3"],
-  analysis: ["photo-1454165804606-c3d57bc86b40","photo-1520607162513-77705c0f0d4a","photo-1516321318423-f06f85e504b3"],
-  technology: ["photo-1518770660439-4636190af475","photo-1519389950473-47ba0277781c","photo-1485827404703-89b55fcc595e"],
-};
-
-// AI prompts are defined server-side in /api/claude.js — not exposed in client bundle.
-
-function getImg(catId, seed) {
-  const arr = CAT_UNSPLASH[catId] || CAT_UNSPLASH.iran;
-  const id = arr[seed % arr.length];
-  return `https://images.unsplash.com/${id}?w=480&q=70&auto=format&fit=crop`;
-}
-
-function asValidDate(value) {
-  if (!value) return null;
+function formatDate(value) {
+  if (!value) return "غير متاح";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function safeLocaleFormat(value, locale, formatter, fallback = "غير متاح") {
-  const parsed = asValidDate(value);
-  if (!parsed) return fallback;
+  if (Number.isNaN(parsed.getTime())) return "غير متاح";
   try {
-    return formatter(parsed, locale);
+    return parsed.toLocaleString("ar-SA");
   } catch (_error) {
-    try {
-      return formatter(parsed);
-    } catch (_innerError) {
-      return fallback;
-    }
+    return parsed.toISOString();
   }
 }
 
-function formatDateTime(value, fallback = "غير متاح") {
-  return safeLocaleFormat(value, "ar-SA", (date, locale) => date.toLocaleString(locale), fallback);
+function elapsedSince(value) {
+  if (!value) return "الآن";
+  const parsedMs = new Date(value).getTime();
+  if (Number.isNaN(parsedMs)) return "الآن";
+  const sec = Math.max(1, Math.floor((Date.now() - parsedMs) / 1000));
+  if (sec < 60) return `${sec}ث`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}د`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}س`;
+  return `${Math.floor(sec / 86400)}ي`;
 }
 
-function formatTimeLabel(value, fallback = "منذ قليل") {
-  return safeLocaleFormat(value, "ar-SA", (date, locale) => date.toLocaleTimeString(locale), fallback);
-}
-
-function safeHttpUrl(value) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
+function toSafeHttpUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
   try {
-    const parsed = new URL(trimmed);
-    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : null;
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
   } catch (_error) {
     return null;
   }
 }
 
-function toSourceHomepage(domain, fallbackUrl) {
-  if (typeof domain === "string" && domain.trim()) {
-    const directUrl = safeHttpUrl(domain);
-    if (directUrl) return directUrl;
-    return safeHttpUrl(`https://${domain.trim().replace(/^https?:\/\//, "")}`);
-  }
-  return safeHttpUrl(fallbackUrl);
+function detectHeadlineTone(item) {
+  const title = String(item?.title || "").toLowerCase();
+  const summary = String(item?.summary || "").toLowerCase();
+  if (/(summit|agreement|diplomatic|اتفاق|قمة|مفاوضات)/.test(`${title} ${summary}`)) return "diplomacy";
+  if (/(market|inflation|oil|أسواق|نفط|تضخم|بورصة)/.test(`${title} ${summary}`)) return "markets";
+  if (/(war|strike|attack|قصف|هجوم|اشتباك)/.test(`${title} ${summary}`)) return "conflict";
+  return "general";
 }
 
-function getRegionFlag(region) {
-  switch (region) {
-    case "usa": return "🇺🇸";
-    case "mena": return "🌍";
-    case "global": return "🌐";
-    default: return "📡";
-  }
+function buildSpotlightNote(item) {
+  const tone = detectHeadlineTone(item);
+  const verification = item?.provenance?.verification?.state || "single_source";
+  const diversity = Number(item?.provenance?.cluster?.source_diversity || 1);
+  if (verification === "corroborated" && diversity >= 3) return "تم تأكيد القصة عبر مصادر متعددة وتقاطعات سياقية.";
+  if (tone === "markets") return "الأسواق تتفاعل سريعاً مع هذه الإشارة، المراقبة اللحظية مهمة.";
+  if (tone === "diplomacy") return "هذا المسار الدبلوماسي قد يغير ترتيب أولويات غرف الأخبار خلال ساعات.";
+  if (tone === "conflict") return "القصة ذات إيقاع تصعيدي وتحتاج متابعة دقيقة للتحديثات المتتابعة.";
+  return "القصة في واجهة النشرة بسبب تأثيرها المباشر على دورة الأخبار الحالية.";
 }
 
-function getStreamColor(status) {
-  switch (status) {
-    case "up": return "#16a085";
-    case "degraded": return "#f39c12";
-    default: return "#c0392b";
-  }
+function scoreNews(item) {
+  const rank = Number(item?.provenance?.editorial?.rank_score || 0);
+  const confidence = Number(item?.provenance?.verification?.confidence_score || 0);
+  const urgency = item?.urgency === "high" ? 0.35 : item?.urgency === "medium" ? 0.2 : 0.1;
+  return rank + confidence + urgency;
 }
 
-function getStreamStatusLabel(status, detailStatus) {
-  if (detailStatus === "playable") return "قابل للتشغيل";
-  if (detailStatus === "external_only") return "خارجي فقط";
-  if (status === "up") return "جاهز";
-  if (status === "degraded") return "وضع منخفض المخاطر";
-  if (detailStatus === "inactive") return "غير نشط";
-  return "غير متاح";
-}
-
-function getStreamHealthHint(stream) {
-  if (!stream) return "لا توجد بيانات تشغيلية متاحة.";
-  if (stream.stream.detail_status === "playable") return "هذا البث موثّق وقابل للتشغيل مباشرة من registry الرسمي.";
-  if (stream.stream.detail_status === "external_only") return "هذا المصدر موثّق لكن التشغيل الداخلي غير مدعوم، لذلك سيتم فتحه خارجيًا فقط.";
-  if (stream.stream.uptime_status === "up") return "المصدر التشغيلي متاح الآن.";
-  if (stream.stream.detail_status === "inactive") return "هذا المصدر غير نشط حاليًا في registry التشغيلي.";
-  if (stream.stream.detail_status === "stale") return "آخر نجاح قديم، لذلك تم تعطيل embed التلقائي لتجنب شاشة broken.";
-  return "المصدر لا يقدم رابط video embeddable صالحًا من snapshot الحالي.";
-}
-
-function sanitizeUserFacingError(value, fallback) {
-  if (typeof value !== "string" || !value.trim()) return fallback;
-  const normalized = value.trim();
-  if (/^[a-z0-9_:-]+$/i.test(normalized)) return fallback;
-  return normalized;
-}
-
-function mapStreamSnapshotEntry(entry, index) {
-  const embedUrl = safeHttpUrl(entry?.stream?.embed_url);
-  const endpointUrl = safeHttpUrl(entry?.stream?.endpoint);
-  const externalUrl = safeHttpUrl(entry?.stream?.external_watch_url)
-    || safeHttpUrl(entry?.stream?.official_page_url)
-    || toSourceHomepage(entry?.source?.domain, endpointUrl);
-  const color = getStreamColor(entry?.stream?.uptime_status);
-  const storyTitle = typeof entry?.story_link?.title === "string" ? entry.story_link.title.trim() : "";
-  const channelId = entry?.stream_id || `stream-${index}`;
-
-  return {
-    id: String(channelId),
-    name: entry?.source?.name || `Stream ${index + 1}`,
-    flag: getRegionFlag(entry?.source?.region),
-    color,
-    desc: storyTitle || (entry?.source?.domain || "مصدر تشغيلي"),
-    statusLabel: getStreamStatusLabel(entry?.stream?.uptime_status, entry?.stream?.detail_status),
-    statusHint: getStreamHealthHint(entry),
-    detailStatus: entry?.stream?.detail_status || "unknown",
-    healthReason: entry?.stream?.health_reason || null,
-    embedUrl,
-    externalUrl,
-    endpointUrl,
-    featured: Boolean(entry?.stream?.featured),
-    playable: entry?.stream?.playback_mode === "playable" && Boolean(embedUrl),
-    externalOnly: Boolean(entry?.stream?.external_only) || entry?.stream?.playback_mode === "external_only",
-    lastSuccessAt: entry?.stream?.last_success_at || null,
-    lastErrorAt: entry?.stream?.last_error_at || null,
-    sourceDomain: entry?.source?.domain || null,
-    storyTitle,
-    storyPublishedAt: entry?.story_link?.published_at || null,
-    uptimeStatus: entry?.stream?.uptime_status || "down",
-  };
-}
-
-function pickInitialLiveChannel(channels) {
-  return channels.find((channel) => channel.featured && channel.embedUrl)
-    || channels.find((channel) => channel.embedUrl)
-    || channels.find((channel) => channel.featured)
-    || channels[0]
-    || null;
-}
-
-// ── Error Boundary ────────────────────────────────────────────────────────────
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(err, info) { console.error("[ErrorBoundary]", err, info.componentStack); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding:"32px", textAlign:"center" }}>
-          <p style={{ color:"#e74c3c", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>⚠️ حدث خطأ غير متوقع في هذا القسم</p>
-          <button className="retry-btn" onClick={() => this.setState({ hasError:false })}>🔄 إعادة المحاولة</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// ── Server-side proxy caller (API key lives ONLY in /api/claude) ──────────────
-async function callProxy(promptType, category, signal) {
-  const res = await fetch("/api/claude", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ promptType, category }),
-    signal,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `خطأ في الخادم (${res.status})`);
-  }
-  const { items } = await res.json();
-  if (!Array.isArray(items) || items.length === 0) throw new Error("لا توجد بيانات متاحة حالياً");
-  return items;
-}
-
-function getVerificationLabel(state) {
-  switch (state) {
-    case "corroborated": return "موثّق";
-    case "partially_corroborated": return "مدعوم";
-    case "needs_review": return "قيد المراجعة";
-    default: return "مصدر واحد";
-  }
-}
-
-function getVerificationColor(state) {
-  switch (state) {
-    case "corroborated": return { fg: "#16a085", bg: "rgba(22,160,133,.14)", border: "rgba(22,160,133,.36)" };
-    case "partially_corroborated": return { fg: "#2980b9", bg: "rgba(41,128,185,.14)", border: "rgba(41,128,185,.36)" };
-    case "needs_review": return { fg: "#c0392b", bg: "rgba(192,57,43,.14)", border: "rgba(192,57,43,.36)" };
-    default: return { fg: "#7f8c8d", bg: "rgba(127,140,141,.14)", border: "rgba(127,140,141,.3)" };
-  }
-}
-
-function getEditorialLabel(priority) {
-  switch (priority) {
-    case "high": return "أولوية عالية";
-    case "review": return "تحريرياً";
-    case "elevated": return "متابعة";
-    default: return "نشر";
-  }
-}
-
-function getEditorialColor(priority) {
-  switch (priority) {
-    case "high": return { fg: "#f39c12", bg: "rgba(243,156,18,.14)", border: "rgba(243,156,18,.35)" };
-    case "review": return { fg: "#e74c3c", bg: "rgba(231,76,60,.14)", border: "rgba(231,76,60,.35)" };
-    case "elevated": return { fg: "#9b59b6", bg: "rgba(155,89,182,.14)", border: "rgba(155,89,182,.35)" };
-    default: return { fg: "#95a5a6", bg: "rgba(149,165,166,.12)", border: "rgba(149,165,166,.3)" };
-  }
-}
-
-function getConfidenceHint(item) {
-  const confidence = item?.provenance?.verification?.confidence_score;
-  const corroboration = item?.provenance?.cluster?.corroboration_count;
-  if (Number.isFinite(corroboration) && corroboration > 0) return `${corroboration} تعزيز`;
-  if (Number.isFinite(confidence)) return `ثقة ${Math.round(confidence * 100)}%`;
-  return "ثقة محدودة";
-}
-
-function getClusterSizeHint(item) {
-  const corroboration = Number(item?.provenance?.cluster?.corroboration_count || 0);
-  return `${Math.max(1, corroboration + 1)} داخل القصة`;
-}
-
-function getLastUpdateHint(item) {
-  const rawValue = item?.provenance?.published_at_source || item?.provenance?.fetched_at;
-  const label = formatDateTime(rawValue, null);
-  return label ? `آخر تحديث ${label}` : "تحديث غير واضح";
-}
-
-function getWhyThisStory(item) {
-  const urgency = item?.urgency;
-  const priority = item?.provenance?.editorial?.priority;
-  const verificationState = item?.provenance?.verification?.state;
-  const corroboration = Number(item?.provenance?.cluster?.corroboration_count || 0);
-  const contradictionFlag = Boolean(item?.provenance?.cluster?.contradiction_flag);
-
-  if (urgency === "high") return "قصة بارزة بسبب الإلحاح الزمني.";
-  if (priority === "high" || priority === "review") return "قصة مرفوعة تحريرياً للمتابعة المباشرة.";
-  if (contradictionFlag) return "القصة تحتاج متابعة لأن الروايات ليست متطابقة بالكامل.";
-  if (verificationState === "corroborated" && corroboration > 1) return "القصة مدعومة بعدة إشارات متقاطعة.";
-  if (verificationState === "partially_corroborated") return "القصة ظهرت في أكثر من إشارة وتحتاج متابعة إضافية.";
-  return "القصة ظاهرة لأنها الأعلى ترتيباً ضمن السياق الحالي.";
-}
-
-function getTimelineHint(item) {
-  const decision = item?.provenance?.editorial?.decision;
-  if (decision === "update") return "مسار التحديث مفتوح";
-  if (decision === "merge") return "مرشحة للدمج مع تحديثات قريبة";
-  return "جاهزة لخط زمني خفيف";
-}
-
-function getStoryMetaHints(item) {
-  const cluster = item?.provenance?.cluster || {};
-  return [
-    getClusterSizeHint(item),
-    `${Number(cluster.corroboration_count || 0)} تعزيز`,
-    getLastUpdateHint(item),
-  ];
-}
-
-function dedupeVisualItems(items) {
+function dedupeItems(items) {
   const seen = new Set();
   return (Array.isArray(items) ? items : []).filter((item) => {
-    const clusterId = item?.provenance?.cluster?.id;
-    const fingerprint = item?.provenance?.normalized_hash || item?.title;
-    const key = clusterId ? `cluster:${clusterId}` : `item:${fingerprint}`;
+    const key = item?.provenance?.cluster?.id || item?.provenance?.normalized_hash || item?.id || item?.title;
+    if (!key) return false;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
-function getRankScore(item) {
-  return Number(item?.provenance?.editorial?.rank_score || 0);
-}
-
-function pickHeroStory(items) {
-  const deduped = dedupeVisualItems(items);
-  return [...deduped].sort((left, right) => getRankScore(right) - getRankScore(left))[0] || null;
-}
-
-function pickPriorityRail(items, heroItem) {
-  const heroKey = heroItem?.id || heroItem?.title;
-  return dedupeVisualItems(items)
-    .filter((item) => (item?.id || item?.title) !== heroKey)
-    .filter((item) => {
-      const priority = item?.provenance?.editorial?.priority;
-      const urgency = item?.urgency;
-      return priority === "high" || priority === "review" || priority === "elevated" || urgency === "high";
-    })
-    .sort((left, right) => getRankScore(right) - getRankScore(left))
-    .slice(0, 4);
-}
-
-function pickBreakingStories(items) {
-  return dedupeVisualItems(items)
-    .filter((item) => item?.urgency === "high")
-    .sort((left, right) => getRankScore(right) - getRankScore(left))
-    .slice(0, 4);
-}
-
-function pickTrendingStories(items, heroItem) {
-  const heroKey = heroItem?.id || heroItem?.title;
-  return dedupeVisualItems(items)
-    .filter((item) => (item?.id || item?.title) !== heroKey)
-    .sort((left, right) => getRankScore(right) - getRankScore(left))
-    .slice(0, 4);
-}
-
-function pickLatestStories(items, heroItem) {
-  const heroKey = heroItem?.id || heroItem?.title;
-  return dedupeVisualItems(items)
-    .filter((item) => (item?.id || item?.title) !== heroKey)
-    .sort((left, right) => new Date(right?.time || 0).getTime() - new Date(left?.time || 0).getTime())
-    .slice(0, 4);
-}
-
-function pickAnalysisStories(items, heroItem) {
-  const heroKey = heroItem?.id || heroItem?.title;
-  return dedupeVisualItems(items)
-    .filter((item) => (item?.id || item?.title) !== heroKey)
-    .filter((item) => {
-      const title = String(item?.title || "").toLowerCase();
-      const summary = String(item?.summary || "").toLowerCase();
-      const priority = item?.provenance?.editorial?.priority;
-      return priority === "review" || priority === "elevated" || /(analysis|insight|assessment|تحليل|قراءة)/.test(`${title} ${summary}`);
-    })
-    .sort((left, right) => getRankScore(right) - getRankScore(left))
-    .slice(0, 4);
-}
-
-// ── Components ───────────────────────────────────────────────────────────────
-
-const NewsCard = memo(({ item, index }) => {
-  const [open, setOpen] = useState(false);
-  const [imgErr, setImgErr] = useState(false);
-  const col = CAT_COLORS[item.category] || CAT_COLORS.all;
-  const urg = URGENCY_MAP[item.urgency] || URGENCY_MAP.medium;
-  const cat = CATEGORIES.find(c => c.id === item.category);
-  const verificationState = item?.provenance?.verification?.state || "single_source";
-  const editorialPriority = item?.provenance?.editorial?.priority || "normal";
-  const verificationTone = getVerificationColor(verificationState);
-  const editorialTone = getEditorialColor(editorialPriority);
-  const storyMetaHints = getStoryMetaHints(item);
-  const whyThisStory = getWhyThisStory(item);
-  const timelineHint = getTimelineHint(item);
-
-  return (
-    <div
-      onClick={() => setOpen(v => !v)}
-      style={{
-        background: `linear-gradient(160deg,${col.bg} 0%,#0a0a0a 100%)`,
-        border: `1px solid ${open ? col.accent+"99" : "rgba(255,255,255,.07)"}`,
-        borderRadius: "14px", overflow: "hidden", cursor: "pointer",
-        transition: "box-shadow .25s,border-color .25s",
-        boxShadow: open ? `0 0 22px ${col.glow}` : "0 2px 10px rgba(0,0,0,.5)",
-        animation: `fadeUp .45s ease ${index*.07}s both`,
-        position: "relative",
-      }}
-    >
-      {!imgErr && (
-        <div style={{ position: "relative", height: "150px", overflow: "hidden" }}>
-          <img src={getImg(item.category, index)} alt="" onError={() => setImgErr(true)}
-            style={{ width:"100%", height:"100%", objectFit:"cover", filter:"brightness(.72) saturate(.8)" }} loading="lazy" />
-          <div style={{ position:"absolute", inset:0, background:`linear-gradient(to bottom,transparent 40%,${col.bg} 100%)` }} />
-          <div style={{
-            position:"absolute", top:"9px", right:"9px",
-            background: urg.color+"dd", color:"#fff",
-            borderRadius:"20px", padding:"3px 10px", fontSize:"11px", fontWeight:"800",
-            display:"flex", alignItems:"center", gap:"5px", backdropFilter:"blur(4px)",
-          }}>
-            {urg.pulse && <span style={{ width:6, height:6, borderRadius:"50%", background:"#fff", display:"inline-block", animation:"pulse 1.1s infinite" }} />}
-            {urg.label}
-          </div>
-          {cat && (
-            <div style={{
-              position:"absolute", top:"9px", left:"9px",
-              background:"rgba(0,0,0,.65)", color:col.light,
-              borderRadius:"20px", padding:"3px 10px", fontSize:"12px", backdropFilter:"blur(4px)",
-            }}>
-              {cat.emoji} {cat.label}
-            </div>
-          )}
-        </div>
-      )}
-      <div style={{ padding:"14px 16px 10px" }}>
-        <div style={{ color:"#484848", fontSize:"11px", marginBottom:"6px", textAlign:"right", fontFamily:"monospace" }}>{item.time}</div>
-        <div style={{ display:"flex", gap:"6px", justifyContent:"flex-start", flexWrap:"wrap", marginBottom:"8px" }}>
-          <span style={{ background:verificationTone.bg, border:`1px solid ${verificationTone.border}`, color:verificationTone.fg, borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
-            {getVerificationLabel(verificationState)}
-          </span>
-          <span style={{ background:editorialTone.bg, border:`1px solid ${editorialTone.border}`, color:editorialTone.fg, borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
-            {getEditorialLabel(editorialPriority)}
-          </span>
-          <span style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", color:"#8c8c8c", borderRadius:"999px", padding:"3px 8px", fontSize:"10.5px", fontWeight:"700" }}>
-            {getConfidenceHint(item)}
-          </span>
-        </div>
-        <h3 style={{ color:"#f0ece4", fontSize:"14.5px", fontWeight:"700", lineHeight:"1.65", margin:0, direction:"rtl", textAlign:"right" }}>
-          {item.title}
-        </h3>
-        <div style={{ marginTop:"8px", color:"#746b63", fontSize:"11.5px", lineHeight:"1.8", direction:"rtl", textAlign:"right" }}>
-          لماذا هذه القصة: {whyThisStory}
-        </div>
-        <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginTop:"8px", justifyContent:"flex-start" }}>
-          {storyMetaHints.map((hint) => (
-            <span key={`${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", color:"#6e6a66", borderRadius:"999px", padding:"3px 8px", fontSize:"10px", fontWeight:"700" }}>
-              {hint}
-            </span>
-          ))}
-        </div>
-        {open && (
-          <div style={{ borderTop:`1px solid ${col.accent}33`, paddingTop:"10px", marginTop:"10px", animation:"expandIn .2s ease" }}>
-            <p style={{
-              color:"#777", fontSize:"13px", lineHeight:"1.9", margin:"0 0 10px",
-              direction:"rtl", textAlign:"right",
-            }}>
-              {item.summary}
-            </p>
-            <div style={{ display:"flex", justifyContent:"space-between", gap:"8px", flexWrap:"wrap", color:"#615a53", fontSize:"11px" }}>
-              <span>{timelineHint}</span>
-              <span>{getLastUpdateHint(item)}</span>
-            </div>
-          </div>
-        )}
-        <div style={{ color:"#2e2e2e", fontSize:"10px", textAlign:"center", marginTop:"8px" }}>{open ? "▲" : "▼"}</div>
-      </div>
-      <div style={{ position:"absolute", left:0, top:0, bottom:0, width:"3px", background:`linear-gradient(180deg,${col.accent},transparent)` }} />
-    </div>
-  );
-});
-
-const HeroStory = memo(({ item }) => {
-  if (!item) return null;
-  const col = CAT_COLORS[item.category] || CAT_COLORS.all;
-  const verificationState = item?.provenance?.verification?.state || "single_source";
-  const editorialPriority = item?.provenance?.editorial?.priority || "normal";
-  const editorialDecision = item?.provenance?.editorial?.decision || "publish";
-  const verificationTone = getVerificationColor(verificationState);
-  const editorialTone = getEditorialColor(editorialPriority);
-  const storyMetaHints = getStoryMetaHints(item);
-
-  return (
-    <div style={{
-      background:`linear-gradient(145deg, ${col.bg} 0%, #111 100%)`,
-      border:`1px solid ${col.accent}55`, borderRadius:"18px", overflow:"hidden",
-      boxShadow:`0 0 24px ${col.glow}`,
-      marginBottom:"14px",
-      position:"relative",
-    }}>
-      <div style={{ display:"grid", gridTemplateColumns:"1.2fr .82fr", gap:"0", alignItems:"stretch" }}>
-        <div style={{ padding:"16px 18px" }}>
-          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
-            <span style={{ background:urgencyBadge(item).bg, color:urgencyBadge(item).fg, border:`1px solid ${urgencyBadge(item).border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
-              {urgencyBadge(item).label}
-            </span>
-            <span style={{ background:verificationTone.bg, color:verificationTone.fg, border:`1px solid ${verificationTone.border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
-              {getVerificationLabel(verificationState)}
-            </span>
-            <span style={{ background:editorialTone.bg, color:editorialTone.fg, border:`1px solid ${editorialTone.border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
-              {editorialDecision}
-            </span>
-          </div>
-          <h2 style={{ color:"#f4efe8", fontSize:"22px", lineHeight:"1.55", margin:"0 0 10px", fontWeight:"900", direction:"rtl", textAlign:"right" }}>
-            {item.title}
-          </h2>
-          <p style={{ color:"#9b9187", fontSize:"13.5px", lineHeight:"1.9", direction:"rtl", textAlign:"right", margin:"0 0 12px" }}>
-            {item.summary}
-          </p>
-          <div style={{ color:"#c0b7ac", fontSize:"12px", lineHeight:"1.9", direction:"rtl", textAlign:"right", margin:"0 0 12px" }}>
-            لماذا هذه القصة: {getWhyThisStory(item)}
-          </div>
-          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
-            {storyMetaHints.map((hint) => (
-              <span key={`hero:${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", color:"#a89d91", borderRadius:"999px", padding:"4px 10px", fontSize:"10.5px", fontWeight:"700" }}>
-                {hint}
-              </span>
-            ))}
-          </div>
-          <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", color:"#7c746b", fontSize:"12px" }}>
-            <span>{item.time}</span>
-            <span>•</span>
-            <span>{getConfidenceHint(item)}</span>
-            <span>•</span>
-            <span>{item?.provenance?.cluster?.corroboration_count || 0} تعزيز</span>
-            <span>•</span>
-            <span>{getTimelineHint(item)}</span>
-          </div>
-        </div>
-        <div style={{ minHeight:"210px", position:"relative", background:`linear-gradient(160deg, ${col.accent}22, transparent)` }}>
-          <img src={getImg(item.category, 0)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:"brightness(.55) saturate(.9)" }} loading="lazy" />
-          <div style={{ position:"absolute", inset:0, background:`linear-gradient(90deg, transparent 0%, ${col.bg} 100%)` }} />
-        </div>
-      </div>
-    </div>
-  );
-});
-
-function LiveDeskCard({ summary, activeChannel, onOpen }) {
-  if (!summary) return null;
-
-  return (
-    <div style={{
-      background:"linear-gradient(145deg,#0b1110 0%,#090909 100%)",
-      border:"1px solid rgba(20,143,119,.28)",
-      borderRadius:"16px",
-      padding:"14px 16px",
-      marginBottom:"14px",
-      display:"grid",
-      gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr)) auto",
-      gap:"10px",
-      alignItems:"center",
-    }}>
-      <div>
-        <div style={{ color:"#7dd3c7", fontSize:"11px", fontWeight:"800", marginBottom:"4px" }}>مباشر</div>
-        <div style={{ color:"#f0ece4", fontSize:"15px", fontWeight:"800", marginBottom:"3px" }}>غرفة البث المباشر</div>
-        <div style={{ color:"#7b857d", fontSize:"12px" }}>{activeChannel?.name || "القنوات الرسمية الموثقة"}</div>
-      </div>
-      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
-        <div style={{ color:"#5fae9f", fontSize:"11px", fontWeight:"700" }}>قابل للتشغيل</div>
-        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.playable_streams || 0}</div>
-      </div>
-      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
-        <div style={{ color:"#b89d72", fontSize:"11px", fontWeight:"700" }}>خارجي فقط</div>
-        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.external_only_streams || 0}</div>
-      </div>
-      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
-        <div style={{ color:"#8f8f8f", fontSize:"11px", fontWeight:"700" }}>مزال</div>
-        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.removed_streams || 0}</div>
-      </div>
-      <button
-        type="button"
-        onClick={onOpen}
-        style={{
-          justifySelf:"end",
-          background:"rgba(20,143,119,.16)",
-          border:"1px solid rgba(20,143,119,.36)",
-          color:"#a9eadf",
-          borderRadius:"10px",
-          padding:"10px 14px",
-          cursor:"pointer",
-          fontFamily:"inherit",
-          fontSize:"12.5px",
-          fontWeight:"800",
-        }}
-      >
-        افتح قسم المباشر
-      </button>
-    </div>
-  );
-}
-
-function urgencyBadge(item) {
-  const urg = URGENCY_MAP[item?.urgency] || URGENCY_MAP.medium;
-  return {
-    label: urg.label,
-    fg: urg.color,
-    bg: `${urg.color}14`,
-    border: `${urg.color}44`,
-  };
-}
-
-function PriorityRail({ items }) {
-  if (!items.length) return null;
-  return (
-    <div style={{ marginBottom:"18px" }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
-        <h3 style={{ color:"#e8e4dc", fontSize:"15px", fontWeight:"800" }}>المسار الساخن</h3>
-        <span style={{ color:"#555", fontSize:"11px" }}>أولوية تحريرية</span>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:"12px" }}>
-        {items.map((item) => {
-          const editorial = item?.provenance?.editorial || {};
-          const verification = item?.provenance?.verification || {};
-          return (
-            <div key={`rail:${item.id || item.title}`} style={{ background:"#0f0f0f", border:"1px solid rgba(255,255,255,.07)", borderRadius:"14px", padding:"12px 14px" }}>
-              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginBottom:"8px" }}>
-                <span style={{ color:"#f39c12", fontSize:"10.5px", fontWeight:"800" }}>{getEditorialLabel(editorial.priority)}</span>
-                <span style={{ color:"#5d6d7e", fontSize:"10.5px", fontWeight:"700" }}>{getVerificationLabel(verification.state)}</span>
-              </div>
-              <div style={{ color:"#efebe3", fontSize:"13px", fontWeight:"700", lineHeight:"1.7", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>{item.title}</div>
-              <div style={{ color:"#6e665f", fontSize:"11px", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>
-                {getWhyThisStory(item)}
-              </div>
-              <div style={{ display:"flex", justifyContent:"space-between", color:"#5b5b5b", fontSize:"11px" }}>
-                <span>{getConfidenceHint(item)}</span>
-                <span>{item.time}</span>
-              </div>
-              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginTop:"8px" }}>
-                {getStoryMetaHints(item).slice(0, 2).map((hint) => (
-                  <span key={`rail-hint:${item.id || item.title}:${hint}`} style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", color:"#64605b", borderRadius:"999px", padding:"3px 8px", fontSize:"10px", fontWeight:"700" }}>
-                    {hint}
-                  </span>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function EditorialStrip({ title, caption, items, tone }) {
-  if (!items.length) return null;
-  return (
-    <div style={{ marginBottom:"16px" }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
-        <h3 style={{ color:"#e8e4dc", fontSize:"15px", fontWeight:"800" }}>{title}</h3>
-        <span style={{ color:"#555", fontSize:"11px" }}>{caption}</span>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:"12px" }}>
-        {items.map((item) => (
-          <div key={`${title}:${item?.id || item?.title}`} style={{ background:"#0f0f0f", border:`1px solid ${tone}`, borderRadius:"14px", padding:"12px 14px" }}>
-            <div style={{ color:"#f0ece4", fontSize:"13px", fontWeight:"800", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>{item.title}</div>
-            <div style={{ color:"#736a61", fontSize:"11.5px", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"10px" }}>{getWhyThisStory(item)}</div>
-            <div style={{ display:"flex", justifyContent:"space-between", gap:"8px", color:"#5c5c5c", fontSize:"11px" }}>
-              <span>{getConfidenceHint(item)}</span>
-              <span>{item.time}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
-
-const VideoCard = memo(({ item, index }) => {
-  const [playing, setPlaying] = useState(false);
-  const safeYtId = YOUTUBE_ID_RE.test(item?.youtubeId) ? item.youtubeId : null;
-  const col = CAT_COLORS[item?.category] || CAT_COLORS.all;
-  const cat = CATEGORIES.find(c => c.id === item?.category);
-  if (!safeYtId) return null;
-
-  return (
-    <div style={{
-      background:"#0e0e0e",
-      border:`1px solid ${playing ? col.accent+"88" : "rgba(255,255,255,.07)"}`,
-      borderRadius:"14px", overflow:"hidden",
-      animation:`fadeUp .45s ease ${index*.07}s both`,
-      boxShadow: playing ? `0 0 24px ${col.glow}` : "0 2px 10px rgba(0,0,0,.5)",
-    }}>
-      {playing ? (
-        <div style={{ position:"relative", paddingBottom:"56.25%", background:"#000" }}>
-          <iframe
-            style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none" }}
-            src={`https://www.youtube.com/embed/${safeYtId}?autoplay=1&rel=0`}
-            title={item.title || "video"} allow="autoplay; encrypted-media" allowFullScreen
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
-        </div>
-      ) : (
-        <div onClick={() => setPlaying(true)} style={{ position:"relative", cursor:"pointer" }}>
-          <img
-            src={`https://img.youtube.com/vi/${safeYtId}/mqdefault.jpg`}
-            alt={item.title || "video thumbnail"}
-            style={{ width:"100%", aspectRatio:"16/9", objectFit:"cover", display:"block", filter:"brightness(.8)" }}
-            loading="lazy"
-          />
-          <div style={{
-            position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
-            background:"rgba(0,0,0,.25)",
-          }}>
-            <div style={{
-              width:"52px", height:"52px", borderRadius:"50%",
-              background:"rgba(220,0,0,.9)",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow:"0 4px 20px rgba(255,0,0,.5)",
-            }}>
-              <span style={{ color:"#fff", fontSize:"20px", marginRight:"-3px" }}>▶</span>
-            </div>
-          </div>
-          {item.duration && (
-            <div style={{ position:"absolute", bottom:"8px", left:"8px", background:"rgba(0,0,0,.82)", color:"#fff", borderRadius:"4px", padding:"2px 7px", fontSize:"11px", fontWeight:"700" }}>
-              {item.duration}
-            </div>
-          )}
-          {cat && (
-            <div style={{ position:"absolute", top:"8px", right:"8px", background:"rgba(0,0,0,.72)", color:col.light, borderRadius:"20px", padding:"2px 9px", fontSize:"12px" }}>
-              {cat.emoji} {cat.label}
-            </div>
-          )}
-        </div>
-      )}
-      <div style={{ padding:"12px 14px 10px" }}>
-        <h3 style={{ color:"#eee", fontSize:"13.5px", fontWeight:"600", lineHeight:"1.6", margin:0, direction:"rtl", textAlign:"right" }}>
-          {item.title}
-        </h3>
-        {item.description && (
-          <p style={{ color:"#4a4a4a", fontSize:"12px", margin:"6px 0 0", direction:"rtl", textAlign:"right", lineHeight:"1.6" }}>
-            {item.description}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-});
-
-function ChannelCard({ ch, active, onSelect }) {
-  return (
-    <div
-      onClick={() => onSelect(ch)}
-      style={{
-        background: active ? ch.color+"20" : "#101010",
-        border:`1px solid ${active ? ch.color+"88" : "rgba(255,255,255,.07)"}`,
-        borderRadius:"12px", padding:"12px 14px", cursor:"pointer",
-        transition:"all .2s",
-        display:"flex", alignItems:"center", gap:"11px",
-        boxShadow: active ? `0 0 14px ${ch.color}44` : "none",
-      }}
-    >
-      <div style={{
-        width:"40px", height:"40px", borderRadius:"50%",
-        background:ch.color+"28", border:`2px solid ${ch.color}`,
-        display:"flex", alignItems:"center", justifyContent:"center",
-        fontSize:"18px", flexShrink:0, position:"relative",
-      }}>
-        {ch.flag}
-        {active && <span style={{ position:"absolute", top:-3, right:-3, width:9, height:9, borderRadius:"50%", background:"#e74c3c", border:"2px solid #090909", animation:"pulse 1.1s infinite" }} />}
-      </div>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ color: active?"#fff":"#ccc", fontWeight:"700", fontSize:"13.5px" }}>{ch.name}</div>
-        <div style={{ color:"#444", fontSize:"11.5px" }}>{ch.desc}</div>
-      </div>
-      <div style={{
-        background: active?"#e74c3c":"#1a1a1a",
-        color: active?"#fff":"#444",
-        borderRadius:"6px", padding:"4px 10px", fontSize:"11px", fontWeight:"700", flexShrink:0,
-      }}>
-        {active ? "● بث" : "▶"}
-      </div>
-    </div>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))", gap:"16px" }}>
-      {Array.from({length:6}).map((_,i) => (
-        <div key={i} style={{ background:"#101010", borderRadius:"14px", overflow:"hidden", animation:`shimmer 1.4s ease ${i*.1}s infinite alternate` }}>
-          <div style={{ height:"142px", background:"#161616" }} />
-          <div style={{ padding:"14px 16px" }}>
-            <div style={{ height:"11px", width:"55px", background:"#1c1c1c", borderRadius:"4px", marginBottom:"10px" }} />
-            <div style={{ height:"14px", background:"#181818", borderRadius:"4px", marginBottom:"7px" }} />
-            <div style={{ height:"14px", width:"72%", background:"#181818", borderRadius:"4px" }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Main ─────────────────────────────────────────────────────────────────────
-
-export default function Dashboard() {
-  const [tab, setTab]             = useState("news");
-  const [cat, setCat]             = useState("all");
-  const [liveFilter, setLiveFilter] = useState("playable");
-  const [news, setNews]           = useState([]);
-  const [videos, setVideos]       = useState([]);
-  const [loadN, setLoadN]         = useState(false);
-  const [loadV, setLoadV]         = useState(false);
-  const [loadLive, setLoadLive]   = useState(false);
-  const [errN, setErrN]           = useState(null);
-  const [errV, setErrV]           = useState(null);
-  const [errLive, setErrLive]     = useState(null);
-  const [liveStreams, setLiveStreams] = useState([]);
-  const [liveSummary, setLiveSummary] = useState(null);
-  const [liveCh, setLiveCh]       = useState(null);
-  const [ticker, setTicker]       = useState("⚡ جارٍ تحميل الأخبار...");
-  const [updated, setUpdated]     = useState(null);
-  const [feedMeta, setFeedMeta]   = useState({
-    mode: "legacy",
-    fallback_used: false,
-    verify_mode: false,
-    item_count: 0,
-    freshness: {
-      latest_item_at: null,
-      oldest_item_at: null,
-      data_age_sec: null,
-      last_ingestion_at: null,
-    },
-    correlation_id: null,
-    error_reason: null,
+async function callClaudeProxy(promptType, category, signal) {
+  const response = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ promptType, category }),
+    signal,
   });
-  const nCache = useRef({});
-  const vCache = useRef({});
-  const newsReqId = useRef(0);
-  const videosReqId = useRef(0);
-  const liveReqId = useRef(0);
-  const newsControllerRef = useRef(null);
-  const videosControllerRef = useRef(null);
-  const liveControllerRef = useRef(null);
 
-  const getNewsKey = (item) =>
-    item?.id || item?.url || `${item?.category || "news"}:${item?.time || ""}:${item?.title || ""}`;
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `request_failed_${response.status}`);
+  }
 
-  const getVideoKey = (item) =>
-    item?.id || item?.url || item?.youtubeId || `${item?.category || "video"}:${item?.title || ""}`;
+  const payload = await response.json();
+  if (!Array.isArray(payload?.items)) throw new Error("invalid_video_payload");
+  return payload.items;
+}
 
-  const getLiveKey = (item) => item?.id || item?.externalUrl || item?.name || "live-stream";
-
-  const formatAge = (seconds) => {
-    if (!Number.isFinite(seconds)) return "غير متاح";
-    if (seconds < 60) return `${seconds}ث`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}د`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}س`;
-    return `${Math.floor(seconds / 86400)}ي`;
+function mapLiveEntry(entry, index) {
+  const stream = entry?.stream || {};
+  const source = entry?.source || {};
+  const storyLink = entry?.story_link || null;
+  const streamId = entry?.stream_id || `stream-${index}`;
+  return {
+    id: String(streamId),
+    title: source.name || `Channel ${index + 1}`,
+    category: String(source.category || "general").toLowerCase(),
+    region: source.region || "global",
+    language: source.language || "ar",
+    trust: Number(source.trust_score || 0),
+    playbackMode: stream.playback_mode || "external_only",
+    detailStatus: stream.detail_status || "unknown",
+    uptime: stream.uptime_status || "down",
+    score: Number(stream.score || 0),
+    endpoint: toSafeHttpUrl(stream.endpoint),
+    embedUrl: toSafeHttpUrl(stream.embed_url),
+    externalUrl: toSafeHttpUrl(stream.external_watch_url) || toSafeHttpUrl(stream.official_page_url),
+    statusLabel: stream.detail_status === "playable"
+      ? "قابل للتشغيل"
+      : stream.detail_status === "external_only"
+        ? "خارجي فقط"
+        : stream.detail_status === "healthy"
+          ? "مستقر"
+          : stream.detail_status === "stale"
+            ? "متأخر"
+            : "غير متاح",
+    storyTitle: storyLink?.title || null,
+    storyAt: storyLink?.published_at || null,
+    featured: Boolean(stream.featured),
   };
+}
 
-  const sourceBadge = (() => {
-    if (feedMeta.verify_mode && feedMeta.mode === "stored" && !feedMeta.fallback_used) {
-      return { label: "Verify Mode", color: "#f39c12", bg: "rgba(243,156,18,.14)", border: "rgba(243,156,18,.42)" };
-    }
-    if (feedMeta.fallback_used) {
-      return { label: "Legacy Fallback", color: "#e67e22", bg: "rgba(230,126,34,.14)", border: "rgba(230,126,34,.42)" };
-    }
-    if (feedMeta.mode === "stored") {
-      return { label: "Stored Production", color: "#16a085", bg: "rgba(22,160,133,.14)", border: "rgba(22,160,133,.42)" };
-    }
-    return { label: "Legacy", color: "#7f8c8d", bg: "rgba(127,140,141,.14)", border: "rgba(127,140,141,.42)" };
-  })();
+const StatPill = memo(({ label, value, tone }) => (
+  <div className="stat-pill">
+    <span className="stat-pill__label">{label}</span>
+    <span className={`stat-pill__value stat-pill__value--${tone}`}>{value}</span>
+  </div>
+));
 
-  const newsErrorHint = (() => {
-    if (!errN) return null;
-    if (feedMeta?.verify_mode && feedMeta?.mode === "stored" && !feedMeta?.fallback_used) {
-      return "Stored failure في وضع Verify: تم تعطيل fallback الصامت. تحقق من /api/news/feed و ingestion.";
-    }
-    if (feedMeta?.fallback_used) {
-      return "تم التحويل إلى Legacy Fallback بعد فشل stored path. راجع سبب الفشل التشغيلي.";
-    }
-    return null;
-  })();
+const NewsCard = memo(({ item }) => {
+  const urgency = URGENCY_META[item?.urgency] || URGENCY_META.medium;
+  const confidence = Number(item?.provenance?.verification?.confidence_score || 0);
+  const corroboration = Number(item?.provenance?.cluster?.corroboration_count || 0);
+  return (
+    <article className="news-card">
+      <header className="news-card__meta">
+        <span className="badge" style={{ borderColor: `${urgency.color}66`, color: urgency.color }}>
+          {urgency.label}
+        </span>
+        <span className="news-card__time">{elapsedSince(item?.time)}</span>
+      </header>
+      <h3 className="news-card__title">{item?.title}</h3>
+      <p className="news-card__summary">{item?.summary}</p>
+      <footer className="news-card__footer">
+        <span>ثقة {Math.round(confidence * 100)}%</span>
+        <span>تعزيز {corroboration}</span>
+      </footer>
+    </article>
+  );
+});
 
-  const displayNews = dedupeVisualItems(news);
-  const heroStory = pickHeroStory(displayNews);
-  const priorityRail = pickPriorityRail(displayNews, heroStory);
-  const breakingStories = pickBreakingStories(displayNews);
-  const latestStories = pickLatestStories(displayNews, heroStory);
-  const trendingStories = pickTrendingStories(displayNews, heroStory);
-  const analysisStories = pickAnalysisStories(displayNews, heroStory);
-  const remainingNews = displayNews.filter((item) => (item?.id || item?.title) !== (heroStory?.id || heroStory?.title));
-  const categoryCounts = feedMeta?.category_counts || { all: displayNews.length };
-  const visibleLiveStreams = liveStreams.filter((channel) => liveFilter === "playable" ? channel.playable : channel.externalOnly || !channel.playable);
-  const activeLiveChannel = visibleLiveStreams.find((channel) => channel.id === liveCh?.id) || visibleLiveStreams[0] || liveCh || null;
+const VideoCard = memo(({ item }) => {
+  const safeYtId = /^[A-Za-z0-9_-]{11}$/.test(item?.youtubeId || "") ? item.youtubeId : null;
+  if (!safeYtId) return null;
+  return (
+    <article className="video-card">
+      <a href={`https://www.youtube.com/watch?v=${safeYtId}`} target="_blank" rel="noreferrer" className="video-card__thumbWrap">
+        <img
+          className="video-card__thumb"
+          src={`https://img.youtube.com/vi/${safeYtId}/mqdefault.jpg`}
+          alt={item?.title || "video"}
+          loading="lazy"
+        />
+        <span className="video-card__play">▶</span>
+      </a>
+      <div className="video-card__body">
+        <h3>{item?.title}</h3>
+        <p>{item?.description || ""}</p>
+      </div>
+    </article>
+  );
+});
 
-  const fetchNews = useCallback(async (c) => {
-    if (nCache.current[c]) { setNews(nCache.current[c]); return; }
-    const reqId = ++newsReqId.current;
-    newsControllerRef.current?.abort();
+const LiveCard = memo(({ item, active, onSelect }) => (
+  <article className={`live-card ${active ? "live-card--active" : ""}`} onClick={() => onSelect(item)}>
+    <header>
+      <h4>{item.title}</h4>
+      <span className={`live-dot live-dot--${item.uptime}`}>{item.statusLabel}</span>
+    </header>
+    <p>{LIVE_CATEGORY_LABELS[item.category] || item.category} · {item.region}</p>
+    <div className="live-score">Score {Math.round(item.score * 100)}</div>
+  </article>
+));
+
+export default function App() {
+  const [tab, setTab] = useState("news");
+  const [category, setCategory] = useState("all");
+  const [news, setNews] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [streams, setStreams] = useState([]);
+  const [liveCategory, setLiveCategory] = useState("all");
+  const [activeStream, setActiveStream] = useState(null);
+  const [feedMeta, setFeedMeta] = useState({ mode: "legacy", fallback_used: false, freshness: {}, category_counts: {} });
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [errorNews, setErrorNews] = useState(null);
+  const [errorVideos, setErrorVideos] = useState(null);
+  const [errorLive, setErrorLive] = useState(null);
+  const [loadingNews, setLoadingNews] = useState(false);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [loadingLive, setLoadingLive] = useState(false);
+  const [loadingOps, setLoadingOps] = useState(false);
+  const [errorOps, setErrorOps] = useState(null);
+  const [newsroomStatus, setNewsroomStatus] = useState(null);
+  const [metricsBasic, setMetricsBasic] = useState(null);
+  const [opsUpdatedAt, setOpsUpdatedAt] = useState(null);
+
+  const newsController = useRef(null);
+  const videosController = useRef(null);
+  const liveController = useRef(null);
+  const opsController = useRef(null);
+
+  const visualTheme = useMemo(() => BG_GRADIENTS[new Date().getDate() % BG_GRADIENTS.length], []);
+
+  const loadNews = useCallback(async (nextCategory) => {
+    newsController.current?.abort();
     const controller = new AbortController();
-    newsControllerRef.current = controller;
-    setLoadN(true); setErrN(null);
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    newsController.current = controller;
+    setLoadingNews(true);
+    setErrorNews(null);
     try {
-      const envelope = await fetchNewsFeedEnvelope(c, controller.signal);
-      const items = Array.isArray(envelope.items) ? envelope.items.filter(Boolean) : [];
-      if (controller.signal.aborted || reqId !== newsReqId.current) return;
-      clearTimeout(timer);
-      nCache.current[c] = items;
-      setNews(items);
-      setFeedMeta(envelope.metadata);
-      setUpdated(formatTimeLabel(Date.now()));
-      if (items.length === 0) {
-        setTicker(c === "all" ? "المخزن يعمل لكن لا توجد عناصر صالحة للعرض الآن" : `لا توجد نتائج حالياً ضمن تصنيف ${CATEGORIES.find((entry) => entry.id === c)?.label || c}`);
-      } else {
-        setTicker(items.slice(0, 10).map(i => `• ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
-      }
-    } catch (err) {
-      clearTimeout(timer);
-      if (controller.signal.aborted || reqId !== newsReqId.current) return;
-      if (err?.feedMeta) setFeedMeta(err.feedMeta);
-      setErrN(err.name === "AbortError"
-        ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
-        : "تعذّر تحميل الأخبار المخزنة الآن — حاول مجددًا بعد التحقق من ingestion");
-      setTicker("⚠️ تعذّر تحميل الأخبار");
+      const envelope = await fetchNewsFeedEnvelope(nextCategory, controller.signal);
+      const prepared = dedupeItems(envelope.items).sort((a, b) => scoreNews(b) - scoreNews(a));
+      setNews(prepared);
+      setFeedMeta(envelope.metadata || { mode: "legacy", fallback_used: false, freshness: {}, category_counts: {} });
+      setUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setErrorNews("تعذر تحميل الأخبار المخزنة حالياً");
     } finally {
-      clearTimeout(timer);
-      if (reqId === newsReqId.current) setLoadN(false);
+      if (!controller.signal.aborted) setLoadingNews(false);
     }
   }, []);
 
-  const fetchVideos = useCallback(async (c) => {
-    if (vCache.current[c]) { setVideos(vCache.current[c]); return; }
-    const reqId = ++videosReqId.current;
-    videosControllerRef.current?.abort();
+  const loadVideos = useCallback(async (nextCategory) => {
+    videosController.current?.abort();
     const controller = new AbortController();
-    videosControllerRef.current = controller;
-    setLoadV(true); setErrV(null);
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    videosController.current = controller;
+    setLoadingVideos(true);
+    setErrorVideos(null);
     try {
-      const items = await callProxy("videos", c, controller.signal);
-      if (controller.signal.aborted || reqId !== videosReqId.current) return;
-      clearTimeout(timer);
-      vCache.current[c] = items;
+      const items = await callClaudeProxy("videos", nextCategory, controller.signal);
       setVideos(items);
-    } catch (err) {
-      clearTimeout(timer);
-      if (controller.signal.aborted || reqId !== videosReqId.current) return;
-      setErrV(err.name === "AbortError"
-        ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
-        : sanitizeUserFacingError(err.message, "تعذّر تحميل الفيديوهات — حاول مجددًا"));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setErrorVideos("تعذر تحميل الفيديوهات حالياً");
     } finally {
-      clearTimeout(timer);
-      if (reqId === videosReqId.current) setLoadV(false);
+      if (!controller.signal.aborted) setLoadingVideos(false);
     }
   }, []);
 
-  const fetchLiveStreams = useCallback(async () => {
-    const reqId = ++liveReqId.current;
-    liveControllerRef.current?.abort();
+  const loadLive = useCallback(async () => {
+    liveController.current?.abort();
     const controller = new AbortController();
-    liveControllerRef.current = controller;
-    setLoadLive(true);
-    setErrLive(null);
-    const timer = setTimeout(() => controller.abort(), 30_000);
-
+    liveController.current = controller;
+    setLoadingLive(true);
+    setErrorLive(null);
     try {
-      const res = await fetch("/api/health/streams", { signal: controller.signal });
-      if (!res.ok) {
-        throw new Error("stream_snapshot_unavailable");
+      const response = await fetch("/api/health/streams", { signal: controller.signal });
+      if (!response.ok) throw new Error("live_unavailable");
+      const payload = await response.json();
+      const mapped = (Array.isArray(payload?.streams) ? payload.streams : [])
+        .map(mapLiveEntry)
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+      setStreams(mapped);
+      setActiveStream((prev) => mapped.find((entry) => entry.id === prev?.id) || mapped.find((entry) => entry.featured) || mapped[0] || null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setErrorLive("تعذر تحميل القنوات الآن");
+    } finally {
+      if (!controller.signal.aborted) setLoadingLive(false);
+    }
+  }, []);
+
+  const loadOps = useCallback(async () => {
+    opsController.current?.abort();
+    const controller = new AbortController();
+    opsController.current = controller;
+    setLoadingOps(true);
+    setErrorOps(null);
+    try {
+      const [newsroomRes, metricsRes] = await Promise.all([
+        fetch("/api/health/newsroom", { signal: controller.signal }),
+        fetch("/api/health/metrics-basic", { signal: controller.signal }),
+      ]);
+
+      if (!newsroomRes.ok || !metricsRes.ok) {
+        throw new Error("ops_snapshot_unavailable");
       }
 
-      const body = await res.json();
-      if (!Array.isArray(body?.streams)) throw new Error("صيغة streams غير صالحة");
-      const channels = body.streams.map(mapStreamSnapshotEntry).filter(Boolean);
-      if (controller.signal.aborted || reqId !== liveReqId.current) return;
-      clearTimeout(timer);
-      setLiveStreams(channels);
-      setLiveSummary(body.summary || null);
-      setLiveCh((current) => channels.find((channel) => channel.id === current?.id) || pickInitialLiveChannel(channels));
-    } catch (err) {
-      clearTimeout(timer);
-      if (controller.signal.aborted || reqId !== liveReqId.current) return;
-      setErrLive(err.name === "AbortError"
-        ? "انتهت مهلة تحميل حالة البث (30 ث)"
-        : "تعذّر تحميل حالة البث الآن");
+      const [newsroomBody, metricsBody] = await Promise.all([
+        newsroomRes.json(),
+        metricsRes.json(),
+      ]);
+
+      setNewsroomStatus(newsroomBody);
+      setMetricsBasic(metricsBody);
+      setOpsUpdatedAt(new Date().toISOString());
+    } catch (_error) {
+      if (controller.signal.aborted) return;
+      setErrorOps("تعذر تحميل لوحة التشغيل الآن");
     } finally {
-      clearTimeout(timer);
-      if (reqId === liveReqId.current) setLoadLive(false);
+      if (!controller.signal.aborted) setLoadingOps(false);
     }
   }, []);
 
-  useEffect(() => { fetchNews(cat); }, [cat, fetchNews]);
-  useEffect(() => { fetchLiveStreams(); }, [fetchLiveStreams]);
-  useEffect(() => { if (tab === "videos") fetchVideos(cat); }, [tab, cat, fetchVideos]);
+  useEffect(() => { loadNews(category); }, [category, loadNews]);
+  useEffect(() => { if (tab === "videos") loadVideos(category); }, [category, tab, loadVideos]);
+  useEffect(() => { loadLive(); }, [loadLive]);
+  useEffect(() => { loadOps(); }, [loadOps]);
   useEffect(() => {
-    if (tab === "live" && !loadLive && !errLive && liveStreams.length === 0) fetchLiveStreams();
-  }, [tab, loadLive, errLive, liveStreams.length, fetchLiveStreams]);
+    if (tab !== "ops") return undefined;
+    const interval = setInterval(() => {
+      loadOps();
+    }, 45000);
+    return () => clearInterval(interval);
+  }, [tab, loadOps]);
+
   useEffect(() => () => {
-    newsControllerRef.current?.abort();
-    videosControllerRef.current?.abort();
-    liveControllerRef.current?.abort();
+    newsController.current?.abort();
+    videosController.current?.abort();
+    liveController.current?.abort();
+    opsController.current?.abort();
   }, []);
 
-  const changeCat = (id) => {
-    if (id === cat) return;
-    nCache.current = {}; vCache.current = {};
-    setCat(id);
+  const heroStory = news[0] || null;
+  const subStories = news.slice(1, 9);
+  const analysisStories = news.filter((item) => String(item?.category || "") === "analysis").slice(0, 4);
+  const breakingStories = news.filter((item) => item?.urgency === "high").slice(0, 4);
+
+  const liveCategories = useMemo(() => {
+    const set = new Set(["all"]);
+    for (const stream of streams) set.add(stream.category || "general");
+    return Array.from(set);
+  }, [streams]);
+
+  const visibleStreams = useMemo(() => {
+    if (liveCategory === "all") return streams;
+    return streams.filter((stream) => stream.category === liveCategory);
+  }, [liveCategory, streams]);
+
+  const aiRoomSummary = useMemo(() => {
+    if (!heroStory) return "لا توجد قصة رئيسية حالياً.";
+    return buildSpotlightNote(heroStory);
+  }, [heroStory]);
+
+  const onRefresh = () => {
+    loadNews(category);
+    if (tab === "videos") loadVideos(category);
+    loadLive();
+    loadOps();
   };
 
-  const refresh = () => {
-    nCache.current = {}; vCache.current = {};
-    fetchNews(cat);
-    if (tab === "videos") fetchVideos(cat);
-    if (tab === "live") fetchLiveStreams();
-  };
+  const readiness = newsroomStatus?.readiness_summary || {};
+  const staleSignals = newsroomStatus?.stale_signals || {};
+  const recentFailures = newsroomStatus?.recent_failures || {};
+  const sourceFailureSummary = newsroomStatus?.source_failure_summary || {};
+  const worstSources = Array.isArray(sourceFailureSummary?.worst_sources) ? sourceFailureSummary.worst_sources : [];
+  const recentFailureRows = Array.isArray(recentFailures?.recent_failures) ? recentFailures.recent_failures : [];
+  const readinessLabel = readiness.level === "ready"
+    ? "جاهز"
+    : readiness.level === "degraded"
+      ? "متدهور"
+      : "محجوب";
+  const readinessColor = readiness.level === "ready"
+    ? "#20c9a5"
+    : readiness.level === "degraded"
+      ? "#f39c12"
+      : "#ff6b4a";
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080808", color:"#e8e4dc", direction:"rtl", fontFamily:"'Noto Sans Arabic','Segoe UI',sans-serif" }}>
+    <div className="app" style={{ background: visualTheme }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;600;700;900&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}
-        @keyframes fadeUp   {from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes expandIn {from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes pulse    {0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
-        @keyframes shimmer  {from{opacity:.4}to{opacity:.8}}
-        @keyframes ticker   {from{transform:translateX(0)}to{transform:translateX(-50%)}}
-        @keyframes glow     {0%,100%{text-shadow:0 0 18px rgba(192,57,43,.5)}50%{text-shadow:0 0 36px rgba(192,57,43,.9)}}
-        .tab:hover{background:rgba(255,255,255,.05)!important}
-        .catbtn:hover{filter:brightness(1.3)}
-        .refbtn:hover{background:rgba(192,57,43,.28)!important}
-        .news-grid,.vid-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
-        ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#0d0d0d}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
-        .retry-btn{background:rgba(192,57,43,.18);border:1px solid rgba(192,57,43,.45);color:#e74c3c;border-radius:8px;padding:7px 18px;cursor:pointer;font-size:13px;font-family:inherit;transition:background .2s}
-        .retry-btn:hover{background:rgba(192,57,43,.32)}
-        @media(max-width:700px){.live-grid{grid-template-columns:1fr!important}}
-        @media(max-width:600px){.news-grid,.vid-grid{grid-template-columns:1fr!important}}
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap');
+        :root {
+          --bg-card: rgba(11,15,22,.78);
+          --bg-card-strong: rgba(9,12,18,.94);
+          --line: rgba(255,255,255,.12);
+          --text-soft: #a5b0bf;
+          --text-main: #f4f7fb;
+          --hot: #ff6b4a;
+          --mint: #20c9a5;
+          --sky: #39a8ff;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .app {
+          min-height: 100vh;
+          color: var(--text-main);
+          direction: rtl;
+          font-family: "IBM Plex Sans Arabic", "Cairo", sans-serif;
+          padding: 18px;
+        }
+        .layout {
+          max-width: 1380px;
+          margin: 0 auto;
+          display: grid;
+          gap: 14px;
+        }
+        .shell {
+          backdrop-filter: blur(12px);
+          background: linear-gradient(150deg, rgba(8,11,16,.9) 0%, rgba(10,8,15,.86) 100%);
+          border: 1px solid var(--line);
+          border-radius: 22px;
+          overflow: hidden;
+          box-shadow: 0 20px 70px rgba(0,0,0,.45);
+        }
+        .topbar {
+          display: grid;
+          grid-template-columns: 1.2fr .9fr;
+          gap: 16px;
+          padding: 18px;
+          border-bottom: 1px solid var(--line);
+          background: linear-gradient(130deg, rgba(255,107,74,.12), rgba(57,168,255,.08));
+        }
+        .brand h1 {
+          margin: 0;
+          font-family: "Cairo", sans-serif;
+          font-size: 29px;
+          font-weight: 900;
+          letter-spacing: .2px;
+        }
+        .brand p {
+          margin: 5px 0 0;
+          color: var(--text-soft);
+          font-size: 13px;
+          line-height: 1.7;
+        }
+        .ai-room {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          padding: 13px 14px;
+          display: grid;
+          gap: 10px;
+          align-content: start;
+        }
+        .ai-room h3 {
+          margin: 0;
+          font-size: 14px;
+          color: #f8c987;
+        }
+        .ai-room p {
+          margin: 0;
+          color: #d4dbea;
+          font-size: 13px;
+          line-height: 1.8;
+        }
+        .meta-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin-top: 8px;
+        }
+        .meta-chip {
+          background: rgba(255,255,255,.05);
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          padding: 5px 11px;
+          color: #c5cfde;
+          font-size: 11px;
+        }
+        .tabs {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          padding: 12px 18px 0;
+        }
+        .tab-btn {
+          border: 1px solid var(--line);
+          background: rgba(255,255,255,.03);
+          color: #c6d1df;
+          border-radius: 999px;
+          padding: 9px 14px;
+          font-family: inherit;
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .tab-btn.active {
+          color: #fff;
+          border-color: rgba(255,107,74,.62);
+          background: linear-gradient(130deg, rgba(255,107,74,.28), rgba(57,168,255,.18));
+        }
+        .content { padding: 16px 18px 20px; }
+        .cat-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 14px;
+        }
+        .cat-btn {
+          border: 1px solid var(--line);
+          background: rgba(255,255,255,.03);
+          color: #b8c5d5;
+          border-radius: 999px;
+          padding: 7px 12px;
+          font-family: inherit;
+          cursor: pointer;
+          font-size: 12px;
+          display: inline-flex;
+          gap: 7px;
+          align-items: center;
+        }
+        .cat-btn.active {
+          color: #fff;
+          border-color: rgba(32,201,165,.62);
+          background: rgba(32,201,165,.16);
+        }
+        .hero-grid {
+          display: grid;
+          grid-template-columns: 1.2fr .8fr;
+          gap: 12px;
+          margin-bottom: 13px;
+        }
+        .hero-main {
+          background: var(--bg-card-strong);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 18px;
+          display: grid;
+          gap: 10px;
+          position: relative;
+          overflow: hidden;
+        }
+        .hero-main:before {
+          content: "";
+          position: absolute;
+          inset: auto -60px -100px auto;
+          width: 280px;
+          height: 280px;
+          background: radial-gradient(circle, rgba(255,107,74,.24), rgba(255,107,74,0));
+          pointer-events: none;
+        }
+        .hero-main h2 {
+          margin: 0;
+          font-size: 27px;
+          line-height: 1.55;
+          font-family: "Cairo", sans-serif;
+          font-weight: 900;
+        }
+        .hero-main p {
+          margin: 0;
+          color: #cfdaea;
+          line-height: 1.9;
+          font-size: 14px;
+        }
+        .hero-side {
+          display: grid;
+          gap: 10px;
+        }
+        .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 9px;
+        }
+        .stat-pill {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 10px;
+          display: grid;
+          gap: 5px;
+        }
+        .stat-pill__label { color: var(--text-soft); font-size: 11px; }
+        .stat-pill__value { font-size: 19px; font-weight: 900; }
+        .stat-pill__value--hot { color: var(--hot); }
+        .stat-pill__value--mint { color: var(--mint); }
+        .stat-pill__value--sky { color: var(--sky); }
+        .stat-pill__value--soft { color: #dae4f2; }
+        .panel {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 12px;
+        }
+        .panel h3 {
+          margin: 0 0 9px;
+          font-size: 14px;
+          color: #e6edf9;
+        }
+        .panel ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+        .panel li { color: #bdc8d9; font-size: 12.5px; line-height: 1.75; }
+        .news-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+        .news-card {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 12px;
+          display: grid;
+          gap: 8px;
+          min-height: 198px;
+        }
+        .news-card__meta { display: flex; justify-content: space-between; align-items: center; }
+        .badge {
+          background: rgba(255,255,255,.03);
+          border: 1px solid;
+          border-radius: 999px;
+          padding: 3px 9px;
+          font-size: 10.5px;
+          font-weight: 800;
+        }
+        .news-card__time { color: #8d98aa; font-size: 11px; }
+        .news-card__title { margin: 0; font-size: 15px; line-height: 1.7; min-height: 54px; }
+        .news-card__summary { margin: 0; color: #b9c5d7; font-size: 12.5px; line-height: 1.85; }
+        .news-card__footer { display: flex; justify-content: space-between; color: #95a3b8; font-size: 11px; }
+        .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .split-panel { background: var(--bg-card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+        .split-panel h3 { margin: 0 0 10px; font-size: 14px; }
+        .split-panel ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+        .split-panel li { color: #c0cbdb; font-size: 12.5px; line-height: 1.7; }
+        .video-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          gap: 10px;
+        }
+        .video-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+        .video-card__thumbWrap { position: relative; display: block; text-decoration: none; }
+        .video-card__thumb { width: 100%; display: block; aspect-ratio: 16/9; object-fit: cover; }
+        .video-card__play {
+          position: absolute;
+          inset: auto auto 10px 10px;
+          background: rgba(255,84,73,.9);
+          color: #fff;
+          border-radius: 50%;
+          width: 34px;
+          height: 34px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+        }
+        .video-card__body { padding: 11px; }
+        .video-card__body h3 { margin: 0 0 8px; font-size: 13.5px; line-height: 1.7; }
+        .video-card__body p { margin: 0; color: #a9b5c8; font-size: 12px; line-height: 1.8; }
+        .live-layout { display: grid; grid-template-columns: .86fr 1.14fr; gap: 11px; }
+        .live-list { display: grid; gap: 8px; }
+        .live-card {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 10px;
+          cursor: pointer;
+          display: grid;
+          gap: 6px;
+        }
+        .live-card--active {
+          border-color: rgba(57,168,255,.66);
+          box-shadow: 0 0 0 1px rgba(57,168,255,.36);
+        }
+        .live-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .live-card h4 { margin: 0; font-size: 13px; }
+        .live-card p { margin: 0; color: #9fabc0; font-size: 11.5px; }
+        .live-score { color: #bfd8fb; font-size: 11.5px; font-weight: 700; }
+        .live-dot { border-radius: 999px; padding: 3px 7px; font-size: 10.5px; border: 1px solid transparent; }
+        .live-dot--up { color: #20c9a5; border-color: rgba(32,201,165,.45); }
+        .live-dot--degraded { color: #f39c12; border-color: rgba(243,156,18,.45); }
+        .live-dot--down { color: #ff6b4a; border-color: rgba(255,107,74,.45); }
+        .live-player {
+          background: var(--bg-card-strong);
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          min-height: 330px;
+          overflow: hidden;
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+        }
+        .live-player__head {
+          padding: 12px;
+          border-bottom: 1px solid var(--line);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .live-player__head h3 { margin: 0; font-size: 14px; }
+        .live-player__body {
+          padding: 12px;
+          display: grid;
+          align-content: center;
+          justify-items: center;
+          gap: 10px;
+          text-align: center;
+        }
+        .live-player__body p { margin: 0; color: #c4cfdf; line-height: 1.85; font-size: 13px; }
+        .live-link {
+          background: rgba(57,168,255,.18);
+          border: 1px solid rgba(57,168,255,.55);
+          color: #d8ecff;
+          text-decoration: none;
+          border-radius: 10px;
+          padding: 9px 13px;
+          font-size: 12px;
+          font-weight: 700;
+        }
+        .ops-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .ops-kpi {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 11px;
+          display: grid;
+          gap: 5px;
+        }
+        .ops-kpi__label { color: #9cadc2; font-size: 11px; }
+        .ops-kpi__value { color: #eaf2ff; font-size: 22px; font-weight: 900; }
+        .ops-list {
+          margin: 0;
+          padding: 0;
+          list-style: none;
+          display: grid;
+          gap: 8px;
+        }
+        .ops-list li {
+          background: rgba(255,255,255,.03);
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 10px;
+          color: #c3cfdf;
+          font-size: 12.5px;
+          line-height: 1.75;
+        }
+        .toolbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 9px;
+          margin-bottom: 10px;
+        }
+        .refresh-btn {
+          border: 1px solid rgba(255,107,74,.55);
+          background: rgba(255,107,74,.16);
+          color: #ffd8ce;
+          border-radius: 999px;
+          padding: 7px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          font-family: inherit;
+          font-weight: 700;
+        }
+        .hint, .error {
+          background: var(--bg-card);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: 12px;
+          color: #bac6d8;
+          line-height: 1.8;
+          font-size: 13px;
+        }
+        .error { border-color: rgba(255,84,73,.45); color: #ffd5ce; }
+        @media (max-width: 1120px) {
+          .topbar { grid-template-columns: 1fr; }
+          .hero-grid { grid-template-columns: 1fr; }
+          .live-layout { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+          .app { padding: 10px; }
+          .content { padding: 13px 12px 16px; }
+          .topbar { padding: 14px 12px; }
+          .tabs { padding: 10px 12px 0; }
+          .split-grid { grid-template-columns: 1fr; }
+          .brand h1 { font-size: 23px; }
+          .hero-main h2 { font-size: 22px; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background:"linear-gradient(180deg,#100303 0%,#090909 100%)", borderBottom:"1px solid rgba(192,57,43,.18)", padding:"10px 20px 0" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px", flexWrap:"wrap", gap:"10px" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:"11px" }}>
-            <div style={{ width:36, height:36, borderRadius:"11px", background:"linear-gradient(135deg,#0f766e,#0b3c5d)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"18px", boxShadow:"0 0 18px rgba(15,118,110,.4)" }}>🌐</div>
-            <div>
-              <h1 style={{ fontSize:"18px", fontWeight:"900", color:"#f0ece4", letterSpacing:".2px" }}>عين العالم</h1>
-              <p style={{ color:"#6a737d", fontSize:"10.5px", marginTop:"2px" }}>غرفة أخبار عربية مركزة على التخزين والتحقق والبث</p>
+      <main className="layout">
+        <section className="shell">
+          <header className="topbar">
+            <div className="brand">
+              <h1>World Pulse Hub</h1>
+              <p>
+                تصميم تحريري جديد يجمع أسلوب الـ Hero headline، شريط المتابعات السريعة، وغرفة القنوات المباشرة في واجهة واحدة.
+              </p>
+              <div className="meta-row">
+                <span className="meta-chip">مصدر الأخبار: {feedMeta.mode || "legacy"}</span>
+                <span className="meta-chip">Fallback: {feedMeta.fallback_used ? "مفعل" : "غير مفعل"}</span>
+                <span className="meta-chip">آخر تحديث: {updatedAt ? formatDate(updatedAt) : "--"}</span>
+              </div>
             </div>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:"9px" }}>
-            {updated && <span style={{ color:"#5d5d5d", fontSize:"11px" }}>تحديث {updated}</span>}
-            <button className="refbtn" onClick={refresh} disabled={loadN||loadV} style={{ background:"rgba(192,57,43,.14)", border:"1px solid rgba(192,57,43,.3)", color:"#c0392b", borderRadius:"8px", padding:"7px 13px", cursor:"pointer", fontSize:"13px", fontWeight:"600", fontFamily:"inherit", transition:"all .2s", display:"flex", alignItems:"center", gap:"5px" }}>
-              {loadN||loadV?"⏳":"🔄"} تحديث
-            </button>
-          </div>
-        </div>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:"8px", marginBottom:"10px" }}>
-          <div style={{ background:sourceBadge.bg, border:`1px solid ${sourceBadge.border}`, color:sourceBadge.color, borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px", fontWeight:"700" }}>
-            {sourceBadge.label}
-          </div>
-          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
-            النمط: {feedMeta.mode}
-          </div>
-          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
-            عمر البيانات: {formatAge(feedMeta?.freshness?.data_age_sec)}
-          </div>
-          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
-            آخر ingestion: {formatDateTime(feedMeta?.freshness?.last_ingestion_at)}
-          </div>
-          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
-            الأخبار المتاحة: {feedMeta?.total_available_items || feedMeta?.item_count || 0}
-          </div>
-          {feedMeta?.correlation_id && (
-            <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#6a6a6a", borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontFamily:"monospace" }}>
-              cid: {feedMeta.correlation_id.slice(0, 8)}
-            </div>
-          )}
-        </div>
+            <aside className="ai-room">
+              <h3>AI Newsroom Signal</h3>
+              <p>{aiRoomSummary}</p>
+              <div className="meta-row">
+                <span className="meta-chip">قصص معروضة: {news.length}</span>
+                <span className="meta-chip">قنوات فعالة: {streams.length}</span>
+                <span className="meta-chip">بيانات عمرها: {elapsedSince(feedMeta?.freshness?.latest_item_at)}</span>
+              </div>
+            </aside>
+          </header>
 
-        {/* Tabs */}
-        <div style={{ display:"flex", gap:"4px", marginBottom:"8px" }}>
-          {TABS.map(t => (
-            <button key={t.id} className="tab" onClick={() => setTab(t.id)} style={{ background: tab===t.id?"rgba(192,57,43,.2)":"transparent", border:`1px solid ${tab===t.id?"rgba(192,57,43,.6)":"rgba(255,255,255,.07)"}`, color: tab===t.id?"#e74c3c":"#555", borderRadius:"8px 8px 0 0", padding:"8px 18px", cursor:"pointer", fontSize:"13.5px", fontWeight: tab===t.id?"700":"400", fontFamily:"inherit", transition:"all .2s", display:"flex", alignItems:"center", gap:"6px" }}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-
-        {tab !== "live" && (
-          <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", paddingBottom:"8px" }}>
-            {CATEGORIES.map(c => (
-              <button key={c.id} className="catbtn" onClick={() => changeCat(c.id)} style={{ background: cat===c.id?CAT_COLORS[c.id].accent+"22":"rgba(255,255,255,.03)", border:`1px solid ${cat===c.id?CAT_COLORS[c.id].accent+"66":"rgba(255,255,255,.07)"}`, color: cat===c.id?CAT_COLORS[c.id].light:"#777", borderRadius:"8px", padding:"6px 12px", cursor:"pointer", fontSize:"12px", fontWeight: cat===c.id?"700":"500", fontFamily:"inherit", transition:"all .2s", display:"inline-flex", alignItems:"center", gap:"7px" }}>
-                <span>{c.emoji} {c.label}</span>
-                <span style={{ background:"rgba(255,255,255,.06)", borderRadius:"999px", padding:"2px 7px", fontSize:"10.5px", color: cat===c.id?CAT_COLORS[c.id].light:"#999" }}>{categoryCounts?.[c.id] ?? 0}</span>
+          <div className="tabs">
+            {TAB_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`tab-btn ${tab === item.id ? "active" : ""}`}
+                onClick={() => setTab(item.id)}
+              >
+                {item.icon} {item.label}
               </button>
             ))}
           </div>
-        )}
-      </div>
 
-      {/* TICKER */}
-      <div style={{ background:"#0b0505", borderBottom:"1px solid rgba(192,57,43,.12)", padding:"6px 0", overflow:"hidden" }}>
-        <div style={{ whiteSpace:"nowrap", animation:"ticker 50s linear infinite", display:"inline-block" }}>
-          <span style={{ color:"#b86e62", fontSize:"11.5px", padding:"0 28px" }}>{ticker}&nbsp;&nbsp;&nbsp;&nbsp;{ticker}</span>
-        </div>
-      </div>
-
-      {/* CONTENT */}
-      <ErrorBoundary>
-      <div style={{ padding:"14px 20px 34px" }}>
-
-        {/* NEWS */}
-        {tab === "news" && (
-          <>
-            {loadN && <Skeleton />}
-            {errN && !loadN && (
-              <div style={{ textAlign:"center", padding:"40px" }}>
-                <p style={{ color:"#e74c3c", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>⚠️ {errN}</p>
-                {newsErrorHint && (
-                  <p style={{ color:"#a36f2b", fontSize:"12px", marginBottom:"14px", direction:"rtl" }}>
-                    {newsErrorHint}
-                  </p>
-                )}
-                <button className="retry-btn" onClick={() => { delete nCache.current[cat]; fetchNews(cat); }}>🔄 إعادة المحاولة</button>
+          <section className="content">
+            <div className="toolbar">
+              <div className="meta-row">
+                <span className="meta-chip">العمر الزمني للفيد: {elapsedSince(feedMeta?.freshness?.latest_item_at)}</span>
+                <span className="meta-chip">آخر Ingestion: {formatDate(feedMeta?.freshness?.last_ingestion_at)}</span>
               </div>
-            )}
-            {!loadN && !errN && news.length > 0 && (
-              <>
-                <div style={{ display:"flex", gap:"9px", marginBottom:"16px", flexWrap:"wrap", alignItems:"center" }}>
-                  {["high","medium","low"].map(u => {
-                    const n = displayNews.filter(x => x.urgency===u).length;
-                    if (!n) return null;
-                    return (
-                      <div key={u} style={{ background:URGENCY_MAP[u].color+"14", border:`1px solid ${URGENCY_MAP[u].color}33`, borderRadius:"8px", padding:"4px 11px", display:"flex", alignItems:"center", gap:"6px" }}>
-                        <span style={{ width:7, height:7, borderRadius:"50%", background:URGENCY_MAP[u].color, flexShrink:0, animation:u==="high"?"pulse 1.1s infinite":"none" }} />
-                        <span style={{ color:URGENCY_MAP[u].color, fontSize:"12px", fontWeight:"700" }}>{n} {URGENCY_MAP[u].label}</span>
-                      </div>
-                    );
-                  })}
-                  <span style={{ color:"#626262", fontSize:"12px", marginRight:"auto" }}>{feedMeta?.total_available_items || displayNews.length} خبر في المخزن · {displayNews.length} ظاهر الآن</span>
-                </div>
-                <HeroStory item={heroStory} />
-                <LiveDeskCard summary={liveSummary} activeChannel={activeLiveChannel} onOpen={() => setTab("live")} />
-                <EditorialStrip title="الأهم" caption="القصص الأعلى ترتيبًا الآن" items={trendingStories} tone="rgba(22,160,133,.24)" />
-                <EditorialStrip title="الأحدث" caption="أحدث ما دخل الفيد المخزن" items={latestStories} tone="rgba(41,128,185,.24)" />
-                <EditorialStrip title="تحليلات" caption="قراءات وتحليلات مرفوعة تحريرياً" items={analysisStories} tone="rgba(155,89,182,.24)" />
-                <EditorialStrip title="عاجل" caption="الأكثر إلحاحًا الآن" items={breakingStories} tone="rgba(231,76,60,.28)" />
-                <PriorityRail items={priorityRail} />
-                <div className="news-grid">
-                  {remainingNews.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
-                </div>
-              </>
-            )}
-            {!loadN && !errN && news.length === 0 && (
-              <div style={{ textAlign:"center", padding:"40px" }}>
-                <p style={{ color:"#f0c36d", fontSize:"14px", marginBottom:"8px", direction:"rtl" }}>
-                  {feedMeta?.fallback_used ? "لا توجد بيانات fallback حالياً" : (cat === "all" ? "لا توجد بيانات مخزنة جاهزة للعرض الآن" : `لا توجد نتائج في تصنيف ${CATEGORIES.find((entry) => entry.id === cat)?.label || cat}`)}
-                </p>
-                <p style={{ color:"#555", fontSize:"12px", direction:"rtl" }}>
-                  {feedMeta?.fallback_used
-                    ? "Legacy fallback مفعل لكن لا توجد عناصر صالحة حالياً."
-                    : "شغّل ingestion ثم أعد التحديث. في وضع Verify لا يتم fallback الصامت."}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* VIDEOS */}
-        {tab === "videos" && (
-          <>
-            {loadV && <Skeleton />}
-            {errV && !loadV && (
-              <div style={{ textAlign:"center", padding:"40px" }}>
-                <p style={{ color:"#e74c3c", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>⚠️ {errV}</p>
-                <button className="retry-btn" onClick={() => { delete vCache.current[cat]; fetchVideos(cat); }}>🔄 إعادة المحاولة</button>
-              </div>
-            )}
-            {!loadV && !errV && videos.length > 0 && (
-              <div className="vid-grid">
-                {videos.map((v,i) => <VideoCard key={getVideoKey(v)} item={v} index={i} />)}
-              </div>
-            )}
-            {!loadV && !errV && videos.length === 0 && (
-              <div style={{ textAlign:"center", padding:"60px" }}>
-                <p style={{ color:"#444", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>لم يتم تحميل فيديوهات بعد</p>
-                <button className="retry-btn" onClick={() => fetchVideos(cat)}>▶ تحميل الفيديوهات</button>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* LIVE */}
-        {tab === "live" && (
-          <div className="live-grid" style={{ display:"grid", gridTemplateColumns:"1fr 300px", gap:"18px", alignItems:"start" }}>
-            <div style={{ gridColumn:"1 / -1", display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"2px" }}>
-              {LIVE_FILTERS.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  onClick={() => setLiveFilter(filter.id)}
-                  style={{
-                    background: liveFilter === filter.id ? "rgba(15,118,110,.22)" : "rgba(255,255,255,.03)",
-                    border: `1px solid ${liveFilter === filter.id ? "rgba(15,118,110,.52)" : "rgba(255,255,255,.08)"}`,
-                    color: liveFilter === filter.id ? "#7dd3c7" : "#777",
-                    borderRadius: "999px",
-                    padding: "7px 12px",
-                    cursor: "pointer",
-                    fontSize: "12px",
-                    fontWeight: "700",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {filter.label} ({filter.id === "playable" ? (liveSummary?.playable_streams || 0) : (liveSummary?.external_only_streams || 0)})
-                </button>
-              ))}
+              <button className="refresh-btn" type="button" onClick={onRefresh}>تحديث شامل</button>
             </div>
-            {loadLive && (
-              <div style={{ gridColumn:"1 / -1" }}>
-                <Skeleton />
-              </div>
-            )}
 
-            {errLive && !loadLive && (
-              <div style={{ gridColumn:"1 / -1", textAlign:"center", padding:"40px" }}>
-                <p style={{ color:"#e74c3c", fontSize:"14px", marginBottom:"14px", direction:"rtl" }}>⚠️ {errLive}</p>
-                <button className="retry-btn" onClick={fetchLiveStreams}>🔄 إعادة المحاولة</button>
-              </div>
-            )}
-
-            {!loadLive && !errLive && activeLiveChannel && (
+            {tab === "news" && (
               <>
-                <div style={{ background:"#0d0d0d", borderRadius:"16px", overflow:"hidden", border:"1px solid rgba(255,255,255,.07)" }}>
-                  <div style={{ padding:"11px 15px", background:"#0f0f0f", borderBottom:"1px solid rgba(255,255,255,.05)", display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
-                    <span style={{ width:8, height:8, borderRadius:"50%", background:activeLiveChannel.color, display:"inline-block", animation:activeLiveChannel.uptimeStatus === "up" ? "pulse 1.1s infinite" : "none" }} />
-                    <span style={{ color:activeLiveChannel.color, fontWeight:"800", fontSize:"12.5px", letterSpacing:"1px" }}>حالة البث</span>
-                    <span style={{ color:"#666", fontSize:"13px", marginRight:"6px" }}>{activeLiveChannel.flag} {activeLiveChannel.name}</span>
-                    <span style={{ marginRight:"auto", color:activeLiveChannel.color, fontSize:"11.5px", fontWeight:"700" }}>{activeLiveChannel.statusLabel}</span>
-                  </div>
-
-                  {activeLiveChannel.playable && activeLiveChannel.embedUrl ? (
-                    <div style={{ position:"relative", paddingBottom:"56.25%", background:"#000" }}>
-                      <iframe
-                        key={activeLiveChannel.id}
-                        style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none" }}
-                        src={activeLiveChannel.embedUrl}
-                        title={activeLiveChannel.name}
-                        allow="autoplay; encrypted-media; fullscreen"
-                        allowFullScreen
-                        sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
-                        referrerPolicy="strict-origin-when-cross-origin"
-                      />
-                    </div>
-                  ) : (
-                    <div style={{ padding:"28px 22px", background:"linear-gradient(160deg,#130909 0%,#0b0b0b 100%)", direction:"rtl", textAlign:"right" }}>
-                      <div style={{ color:"#f0ece4", fontSize:"18px", fontWeight:"800", marginBottom:"10px" }}>لا يوجد embed صالح لهذا المصدر الآن</div>
-                      <div style={{ color:"#8c8176", fontSize:"13px", lineHeight:"1.9", marginBottom:"14px" }}>{activeLiveChannel.statusHint}</div>
-                      <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"14px" }}>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>الحالة: {activeLiveChannel.detailStatus}</span>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>{activeLiveChannel.externalOnly ? "mode: external-only" : "mode: degraded"}</span>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر نجاح: {formatDateTime(activeLiveChannel.lastSuccessAt)}</span>
-                        {activeLiveChannel.storyPublishedAt && <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر قصة: {formatDateTime(activeLiveChannel.storyPublishedAt)}</span>}
-                      </div>
-                      {activeLiveChannel.storyTitle && <div style={{ color:"#d1c6bb", fontSize:"13px", lineHeight:"1.8", marginBottom:"12px" }}>آخر قصة مرتبطة: {activeLiveChannel.storyTitle}</div>}
-                      {activeLiveChannel.externalUrl ? (
-                        <a href={activeLiveChannel.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"rgba(192,57,43,.16)", border:"1px solid rgba(192,57,43,.34)", color:"#e3b9b3", textDecoration:"none", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", fontWeight:"700" }}>
-                          فتح المصدر خارجيًا
-                        </a>
-                      ) : (
-                        <div style={{ color:"#665f57", fontSize:"12px" }}>لا يوجد رابط خارجي صالح في snapshot الحالي.</div>
-                      )}
-                    </div>
-                  )}
-
-                  <div style={{ padding:"12px 15px", color:"#5c5c5c", fontSize:"11.5px", textAlign:"center" }}>
-                    {activeLiveChannel.playable ? "يوجد رابط خارجي بديل أسفل القائمة إذا منع المزود الـ embed." : "تم تفعيل degraded mode بدل عرض player مكسور أو Video unavailable."}
-                  </div>
-                </div>
-
-                <div style={{ display:"flex", flexDirection:"column", gap:"9px" }}>
-                  <div style={{ color:"#3a3a3a", fontSize:"11.5px", marginBottom:"4px", fontWeight:"700", letterSpacing:"1px" }}>📡 المصادر المتاحة</div>
-                  {liveSummary && (
-                    <div style={{ background:"#101010", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"12px 14px", color:"#7b7b7b", fontSize:"11.5px", lineHeight:"1.8" }}>
-                      النشطة: {liveSummary.active_streams} · القابلة للتشغيل: {liveSummary.playable_streams} · الخارجية فقط: {liveSummary.external_only_streams} · المزالة: {liveSummary.removed_streams || 0}
-                    </div>
-                  )}
-                  {visibleLiveStreams.map(ch => (
-                    <div key={getLiveKey(ch)}>
-                      <ChannelCard ch={ch} active={activeLiveChannel?.id===ch.id} onSelect={setLiveCh} />
-                      {ch.externalUrl && (
-                        <a href={ch.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", marginTop:"6px", color:"#88766a", fontSize:"11.5px", textDecoration:"none" }}>
-                          فتح خارجي
-                        </a>
-                      )}
-                    </div>
+                <div className="cat-row">
+                  {NEWS_CATEGORIES.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`cat-btn ${category === item.id ? "active" : ""}`}
+                      onClick={() => setCategory(item.id)}
+                    >
+                      <span>{item.icon} {item.label}</span>
+                      <span>{feedMeta?.category_counts?.[item.id] ?? 0}</span>
+                    </button>
                   ))}
                 </div>
+
+                {loadingNews && <div className="hint">جاري تحميل الأخبار...</div>}
+                {errorNews && <div className="error">{errorNews}</div>}
+
+                {!loadingNews && !errorNews && heroStory && (
+                  <>
+                    <div className="hero-grid">
+                      <section className="hero-main">
+                        <span className="badge" style={{ borderColor: "rgba(255,107,74,.65)", color: "#ff9f89" }}>
+                          {URGENCY_META[heroStory.urgency]?.label || "قصة رئيسية"}
+                        </span>
+                        <h2>{heroStory.title}</h2>
+                        <p>{heroStory.summary}</p>
+                        <p>{buildSpotlightNote(heroStory)}</p>
+                        <div className="meta-row">
+                          <span className="meta-chip">ثقة: {Math.round(Number(heroStory?.provenance?.verification?.confidence_score || 0) * 100)}%</span>
+                          <span className="meta-chip">تعزيز: {Number(heroStory?.provenance?.cluster?.corroboration_count || 0)}</span>
+                          <span className="meta-chip">الوقت: {elapsedSince(heroStory.time)}</span>
+                        </div>
+                      </section>
+
+                      <aside className="hero-side">
+                        <div className="stat-grid">
+                          <StatPill label="عاجل" value={news.filter((item) => item.urgency === "high").length} tone="hot" />
+                          <StatPill label="مدعوم" value={news.filter((item) => item?.provenance?.verification?.state === "corroborated").length} tone="mint" />
+                          <StatPill label="تحليل" value={news.filter((item) => item.category === "analysis").length} tone="sky" />
+                          <StatPill label="إجمالي" value={news.length} tone="soft" />
+                        </div>
+                        <div className="panel">
+                          <h3>مؤشر غرفة التحرير</h3>
+                          <ul>
+                            <li>القصص مرتبة حسب درجة rank_score + confidence + urgency.</li>
+                            <li>الدمج يمنع تكرار القصة نفسها عبر cluster id أو normalized hash.</li>
+                            <li>الواجهة مصممة لتشبه نمط الصفحات الأولى في المواقع العالمية.</li>
+                          </ul>
+                        </div>
+                      </aside>
+                    </div>
+
+                    <div className="split-grid">
+                      <section className="split-panel">
+                        <h3>عاجل الآن</h3>
+                        <ul>
+                          {breakingStories.length === 0 && <li>لا توجد قصص عاجلة حالياً.</li>}
+                          {breakingStories.map((item) => (
+                            <li key={`breaking:${item.id || item.title}`}>{item.title}</li>
+                          ))}
+                        </ul>
+                      </section>
+                      <section className="split-panel">
+                        <h3>تحليلات منتقاة</h3>
+                        <ul>
+                          {analysisStories.length === 0 && <li>لا توجد تحليلات بارزة حالياً.</li>}
+                          {analysisStories.map((item) => (
+                            <li key={`analysis:${item.id || item.title}`}>{item.title}</li>
+                          ))}
+                        </ul>
+                      </section>
+                    </div>
+
+                    <div className="news-grid">
+                      {subStories.map((item) => (
+                        <NewsCard key={item.id || item.title} item={item} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {!loadingNews && !errorNews && !heroStory && (
+                  <div className="hint">لا توجد بيانات أخبار حالياً لهذا التصنيف.</div>
+                )}
               </>
             )}
 
-            {!loadLive && !errLive && !activeLiveChannel && (
-              <div style={{ gridColumn:"1 / -1", textAlign:"center", padding:"40px", color:"#666" }}>
-                {liveFilter === "playable" ? "لا توجد قنوات playable متاحة الآن. انتقل إلى External للاطلاع على القنوات الموثقة خارجياً." : "لا توجد قنوات خارجية صالحة الآن."}
-              </div>
+            {tab === "videos" && (
+              <>
+                {loadingVideos && <div className="hint">جاري تحميل الفيديو...</div>}
+                {errorVideos && <div className="error">{errorVideos}</div>}
+                {!loadingVideos && !errorVideos && (
+                  <div className="video-grid">
+                    {videos.map((item, index) => (
+                      <VideoCard key={item.youtubeId || `${item.title}-${index}`} item={item} />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
-          </div>
-        )}
-      </div>
-      </ErrorBoundary>
 
-      {/* FOOTER */}
-      <div style={{ borderTop:"1px solid rgba(255,255,255,.04)", padding:"12px 20px", display:"flex", justifyContent:"space-between", color:"#4a4a4a", fontSize:"11.5px", flexWrap:"wrap", gap:"6px" }}>
-        <span>عين العالم · stored newsroom view</span>
-        <span>يُعرض الأصل عند تعذر الترجمة ويُخفى الخطأ الخام عن الواجهة</span>
-      </div>
+            {tab === "live" && (
+              <>
+                <div className="cat-row">
+                  {liveCategories.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`cat-btn ${liveCategory === item ? "active" : ""}`}
+                      onClick={() => setLiveCategory(item)}
+                    >
+                      {LIVE_CATEGORY_LABELS[item] || item} ({item === "all" ? streams.length : streams.filter((entry) => entry.category === item).length})
+                    </button>
+                  ))}
+                </div>
+
+                {loadingLive && <div className="hint">جاري تحميل القنوات...</div>}
+                {errorLive && <div className="error">{errorLive}</div>}
+
+                {!loadingLive && !errorLive && (
+                  <div className="live-layout">
+                    <section className="live-list">
+                      {visibleStreams.map((item) => (
+                        <LiveCard key={item.id} item={item} active={activeStream?.id === item.id} onSelect={setActiveStream} />
+                      ))}
+                      {visibleStreams.length === 0 && <div className="hint">لا توجد قنوات في هذا التصنيف حالياً.</div>}
+                    </section>
+
+                    <section className="live-player">
+                      <header className="live-player__head">
+                        <h3>{activeStream?.title || "اختر قناة"}</h3>
+                        {activeStream && <span className={`live-dot live-dot--${activeStream.uptime}`}>{activeStream.statusLabel}</span>}
+                      </header>
+
+                      <div className="live-player__body">
+                        {!activeStream && <p>اختر قناة من القائمة اليمنى لعرض التفاصيل.</p>}
+
+                        {activeStream && activeStream.playbackMode === "playable" && activeStream.embedUrl && (
+                          <iframe
+                            style={{ width: "100%", minHeight: "280px", border: "none", borderRadius: "10px" }}
+                            src={activeStream.embedUrl}
+                            title={activeStream.title}
+                            allow="autoplay; encrypted-media; fullscreen"
+                            allowFullScreen
+                            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                          />
+                        )}
+
+                        {activeStream && !(activeStream.playbackMode === "playable" && activeStream.embedUrl) && (
+                          <>
+                            <p>
+                              القناة تعمل بوضع خارجي. هذا طبيعي للقنوات التي تمنع التضمين المباشر داخل iframe.
+                            </p>
+                            {activeStream.storyTitle && <p>آخر قصة مرتبطة: {activeStream.storyTitle}</p>}
+                            {activeStream.storyAt && <p>زمن آخر قصة: {formatDate(activeStream.storyAt)}</p>}
+                            {activeStream.externalUrl && (
+                              <a className="live-link" href={activeStream.externalUrl} target="_blank" rel="noreferrer">
+                                فتح القناة خارجياً
+                              </a>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <footer className="live-player__head" style={{ borderTop: "1px solid var(--line)", borderBottom: "none" }}>
+                        <span>الفئة: {LIVE_CATEGORY_LABELS[activeStream?.category] || activeStream?.category || "--"}</span>
+                        <span>الثقة: {Math.round(Number(activeStream?.trust || 0))}</span>
+                      </footer>
+                    </section>
+                  </div>
+                )}
+              </>
+            )}
+
+            {tab === "ops" && (
+              <>
+                {loadingOps && <div className="hint">جاري تحميل لوحة Newsroom Pro...</div>}
+                {errorOps && <div className="error">{errorOps}</div>}
+
+                {!loadingOps && !errorOps && (
+                  <>
+                    <div className="ops-grid">
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">الحالة العامة</span>
+                        <span className="ops-kpi__value" style={{ color: readinessColor }}>{readinessLabel}</span>
+                      </article>
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">تأخر آخر خبر</span>
+                        <span className="ops-kpi__value">{elapsedSince(staleSignals.latest_feed_item_at)}</span>
+                      </article>
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">تأخر آخر ingestion</span>
+                        <span className="ops-kpi__value">{elapsedSince(staleSignals.latest_ingestion_at)}</span>
+                      </article>
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">فشل jobs خلال 24س</span>
+                        <span className="ops-kpi__value">{Number(recentFailures.failed_jobs_24h || 0)}</span>
+                      </article>
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">القنوات الهابطة</span>
+                        <span className="ops-kpi__value">{Number(readiness.down_streams || 0)}</span>
+                      </article>
+                      <article className="ops-kpi">
+                        <span className="ops-kpi__label">العناصر المعيارية</span>
+                        <span className="ops-kpi__value">{Number(metricsBasic?.counters?.normalized_items || 0)}</span>
+                      </article>
+                    </div>
+
+                    <div className="split-grid">
+                      <section className="split-panel">
+                        <h3>ملخص جاهزية غرفة الأخبار</h3>
+                        <ul>
+                          <li>{readiness.operator_message || "لا توجد رسالة تشغيلية"}</li>
+                          <li>آخر تحديث تشغيلي: {opsUpdatedAt ? formatDate(opsUpdatedAt) : "--"}</li>
+                          <li>feed mode: {metricsBasic?.feed_mode || "--"}</li>
+                          <li>fallback enabled: {String(metricsBasic?.feed_fallback_enabled ?? "--")}</li>
+                          <li>verify mode: {String(metricsBasic?.verify_mode ?? "--")}</li>
+                        </ul>
+                      </section>
+
+                      <section className="split-panel">
+                        <h3>مصادر متأثرة</h3>
+                        <ul>
+                          <li>إجمالي المصادر: {Number(sourceFailureSummary.sources_total || 0)}</li>
+                          <li>مصادر بها أعطال: {Number(sourceFailureSummary.sources_with_failures || 0)}</li>
+                          <li>مصادر فشلت خلال 24س: {Number(sourceFailureSummary.recent_failed_sources || 0)}</li>
+                        </ul>
+                      </section>
+                    </div>
+
+                    <div className="split-grid">
+                      <section className="split-panel">
+                        <h3>آخر فشل Jobs</h3>
+                        <ul className="ops-list">
+                          {recentFailureRows.length === 0 && <li>لا توجد أخطاء Jobs خلال آخر 24 ساعة.</li>}
+                          {recentFailureRows.map((row, index) => (
+                            <li key={`${row.id || index}-job-failure`}>
+                              job #{row.id} · {row.job_type || "unknown"} · {formatDate(row.created_at)}
+                              <br />
+                              {row.error_message || "خطأ غير معروف"}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+
+                      <section className="split-panel">
+                        <h3>أعلى المصادر فشلًا</h3>
+                        <ul className="ops-list">
+                          {worstSources.length === 0 && <li>لا توجد مصادر متأثرة حالياً.</li>}
+                          {worstSources.map((row, index) => (
+                            <li key={`${row.source_id || index}-source-failure`}>
+                              {row.source_name || "Unknown"} · failing feeds: {Number(row.failing_feed_count || 0)}/{Number(row.active_feed_count || 0)}
+                              <br />
+                              {row.latest_error_message || "لا توجد رسالة خطأ"}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </section>
+        </section>
+      </main>
     </div>
   );
 }
