@@ -403,6 +403,7 @@ export default function App() {
   const readiness = newsroomStatus?.readiness_summary || {};
   const staleSignals = newsroomStatus?.stale_signals || {};
   const recentFailures = newsroomStatus?.recent_failures || {};
+  const alertThresholds = newsroomStatus?.alert_thresholds || {};
   const sourceFailureSummary = newsroomStatus?.source_failure_summary || {};
   const worstSources = Array.isArray(sourceFailureSummary?.worst_sources) ? sourceFailureSummary.worst_sources : [];
   const recentFailureRows = Array.isArray(recentFailures?.recent_failures) ? recentFailures.recent_failures : [];
@@ -416,6 +417,92 @@ export default function App() {
     : readiness.level === "degraded"
       ? "#f39c12"
       : "#ff6b4a";
+
+  const alertItems = useMemo(() => {
+    const items = [];
+    const feedAgeSec = Number(staleSignals.latest_feed_item_age_sec ?? -1);
+    const ingestionAgeSec = Number(staleSignals.latest_ingestion_age_sec ?? -1);
+    const feedWarn = Number(alertThresholds.feed_stale_after_sec || 6 * 3600);
+    const ingestionWarn = Number(alertThresholds.ingestion_stale_after_sec || 3 * 3600);
+    const failedJobs = Number(recentFailures.failed_jobs_24h || 0);
+    const failedWarn = Number(alertThresholds.failed_jobs_24h_warning || 1);
+    const failedCritical = Number(alertThresholds.failed_jobs_24h_critical || 5);
+    const downStreams = Number(readiness.down_streams || 0);
+    const degradedStreams = Number(readiness.degraded_streams || 0);
+    const failingSources = Number(sourceFailureSummary.sources_with_failures || 0);
+
+    if (feedAgeSec >= 0 && feedAgeSec > feedWarn) {
+      items.push({
+        id: "feed-stale",
+        severity: feedAgeSec > feedWarn * 2 ? "critical" : "warning",
+        title: "تأخر تغذية الأخبار",
+        message: `عمر آخر خبر ${elapsedSince(staleSignals.latest_feed_item_at)} وتجاوز عتبة ${Math.floor(feedWarn / 3600)} ساعات.`,
+      });
+    }
+
+    if (ingestionAgeSec >= 0 && ingestionAgeSec > ingestionWarn) {
+      items.push({
+        id: "ingestion-stale",
+        severity: ingestionAgeSec > ingestionWarn * 2 ? "critical" : "warning",
+        title: "تأخر عملية Ingestion",
+        message: `آخر ingestion منذ ${elapsedSince(staleSignals.latest_ingestion_at)} مما يزيد احتمالية stale feed.`,
+      });
+    }
+
+    if (failedJobs >= failedCritical) {
+      items.push({
+        id: "jobs-failed-critical",
+        severity: "critical",
+        title: "ارتفاع حرج في فشل المهام",
+        message: `تم رصد ${failedJobs} مهمة فاشلة خلال 24 ساعة (الحد الحرج ${failedCritical}).`,
+      });
+    } else if (failedJobs >= failedWarn) {
+      items.push({
+        id: "jobs-failed-warning",
+        severity: "warning",
+        title: "تحذير فشل مهام",
+        message: `تم رصد ${failedJobs} مهمة فاشلة خلال 24 ساعة.`,
+      });
+    }
+
+    if (downStreams > 0) {
+      items.push({
+        id: "streams-down",
+        severity: downStreams >= 3 ? "critical" : "warning",
+        title: "قنوات هابطة",
+        message: `عدد القنوات الهابطة الآن: ${downStreams}.`,
+      });
+    }
+
+    if (degradedStreams > 0 && downStreams === 0) {
+      items.push({
+        id: "streams-degraded",
+        severity: "warning",
+        title: "قنوات في وضع متدهور",
+        message: `هناك ${degradedStreams} قناة تحتاج متابعة تشغيلية.`,
+      });
+    }
+
+    if (failingSources > 0) {
+      items.push({
+        id: "sources-failing",
+        severity: failingSources >= 5 ? "critical" : "warning",
+        title: "مصادر بها أعطال",
+        message: `عدد المصادر ذات الأعطال النشطة: ${failingSources}.`,
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        id: "all-good",
+        severity: "ok",
+        title: "استقرار تشغيلي",
+        message: "لا توجد إشارات تحذير حالياً، المؤشرات ضمن الحدود الطبيعية.",
+      });
+    }
+
+    return items;
+  }, [alertThresholds, readiness, recentFailures, sourceFailureSummary, staleSignals]);
 
   return (
     <div className="app" style={{ background: visualTheme }}>
@@ -779,6 +866,39 @@ export default function App() {
           font-size: 12.5px;
           line-height: 1.75;
         }
+        .ops-alerts {
+          display: grid;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .ops-alert {
+          border-radius: 12px;
+          padding: 11px 12px;
+          border: 1px solid var(--line);
+          display: grid;
+          gap: 4px;
+        }
+        .ops-alert--critical {
+          background: rgba(255, 84, 73, .14);
+          border-color: rgba(255, 84, 73, .5);
+        }
+        .ops-alert--warning {
+          background: rgba(243, 156, 18, .13);
+          border-color: rgba(243, 156, 18, .45);
+        }
+        .ops-alert--ok {
+          background: rgba(32, 201, 165, .12);
+          border-color: rgba(32, 201, 165, .45);
+        }
+        .ops-alert__title {
+          font-size: 13px;
+          font-weight: 800;
+        }
+        .ops-alert__msg {
+          color: #d3dcef;
+          font-size: 12.5px;
+          line-height: 1.8;
+        }
         .toolbar {
           display: flex;
           justify-content: space-between;
@@ -1056,6 +1176,18 @@ export default function App() {
 
                 {!loadingOps && !errorOps && (
                   <>
+                    <div className="ops-alerts">
+                      {alertItems.map((item) => (
+                        <article key={item.id} className={`ops-alert ops-alert--${item.severity}`}>
+                          <span className="ops-alert__title">
+                            {item.severity === "critical" ? "⛔ " : item.severity === "warning" ? "⚠️ " : "✅ "}
+                            {item.title}
+                          </span>
+                          <span className="ops-alert__msg">{item.message}</span>
+                        </article>
+                      ))}
+                    </div>
+
                     <div className="ops-grid">
                       <article className="ops-kpi">
                         <span className="ops-kpi__label">الحالة العامة</span>
