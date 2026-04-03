@@ -7,6 +7,7 @@ const logger = require('../../lib/logger');
 const metrics = require('../../lib/metrics');
 const env = require('../../config/env');
 const { normalizeRawItem } = require('../normalization/service');
+const { syncSourceRegistry, getSourceRegistryStats } = require('./source-registry');
 
 function hashRawItem(item) {
   const base = `${item.link || ''}\n${item.guid || ''}\n${item.title || ''}\n${item.contentSnippet || item.content || ''}`;
@@ -38,6 +39,51 @@ async function createJob(correlationId, payload = {}) {
   return res.rows[0];
 }
 
+async function createFeedRun(jobId, feed) {
+  const res = await query(
+    `INSERT INTO ingestion_feed_runs (
+      job_id, source_feed_id, source_id, source_registry_id, feed_name, feed_endpoint, status, started_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,'running', NOW())
+    RETURNING id, started_at`,
+    [jobId, feed.id, feed.source_id, feed.source_registry_id || null, feed.source_name, feed.endpoint],
+  );
+  return res.rows[0];
+}
+
+async function finishFeedRun(feedRunId, startedAt, details) {
+  const endedAt = new Date();
+  const latencyMs = Math.max(0, endedAt.getTime() - new Date(startedAt).getTime());
+  await query(
+    `UPDATE ingestion_feed_runs
+     SET status = $2,
+         attempt_count = $3,
+         raw_seen_count = $4,
+         raw_inserted_count = $5,
+         raw_updated_count = $6,
+         normalized_count = $7,
+         translated_count = $8,
+         ended_at = $9,
+         latency_ms = $10,
+         error_message = $11,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [
+      feedRunId,
+      details.status,
+      details.attemptCount,
+      details.rawSeenCount,
+      details.rawInsertedCount,
+      details.rawUpdatedCount,
+      details.normalizedCount,
+      details.translatedCount,
+      endedAt.toISOString(),
+      latencyMs,
+      details.errorMessage || null,
+    ],
+  );
+}
+
 async function finishJob(jobId, status, startedAt, errorMessage = null) {
   const endedAt = new Date();
   const latencyMs = Math.max(0, endedAt.getTime() - new Date(startedAt).getTime());
@@ -60,12 +106,29 @@ async function finishJob(jobId, status, startedAt, errorMessage = null) {
 
 async function listActiveRssFeeds() {
   const res = await query(
-    `SELECT sf.id, sf.source_id, sf.endpoint, sf.polling_interval_sec, s.language, s.category
+    `SELECT sf.id, sf.source_id, sf.registry_feed_id, sf.endpoint, sf.polling_interval_sec, sf.retry_limit,
+            s.registry_id AS source_registry_id, s.name AS source_name, s.language, s.category
      FROM source_feeds sf
      JOIN sources s ON s.id = sf.source_id
      WHERE sf.status = 'active' AND sf.feed_type = 'rss'`,
   );
   return res.rows;
+}
+
+async function parseFeedWithRetry(parser, endpoint, retryLimit) {
+  let lastError = null;
+  const attempts = Math.max(1, Number.parseInt(String(retryLimit || 1), 10) || 1);
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const parsed = await parser.parseURL(endpoint);
+      return { parsed, attemptCount: attempt };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw Object.assign(lastError || new Error('feed_parse_failed'), { attemptCount: attempts });
 }
 
 async function upsertRawItem(feedId, jobId, item) {
@@ -119,35 +182,85 @@ async function upsertRawItem(feedId, jobId, item) {
 }
 
 async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'manual' } = {}) {
+  await syncSourceRegistry();
   const job = await createJob(correlationId, { triggeredBy });
   const parser = buildParser(env.rssRequestTimeoutMs);
   const feeds = await listActiveRssFeeds();
+  const registryStats = getSourceRegistryStats();
   const summary = {
     jobId: job.id,
+    totalSourcesConfigured: registryStats.totalSourcesConfigured,
+    activeSources: registryStats.activeSourcesConfigured,
+    successfulSources: 0,
+    failedSources: 0,
+    totalRawItems: 0,
+    totalNormalizedItems: 0,
+    totalTranslatedItems: 0,
     feedsTotal: feeds.length,
     feedsSucceeded: 0,
     feedsFailed: 0,
     rawInserted: 0,
     rawUpdated: 0,
     normalizedUpserted: 0,
+    sourceGroups: {
+      ar_direct: registryStats.arDirectSources,
+      en_translate: registryStats.enTranslateSources,
+      optional_specialist: registryStats.optionalSources,
+    },
     errors: [],
   };
 
   try {
     for (const feed of feeds) {
+      const feedRun = await createFeedRun(job.id, feed);
+      const feedSummary = {
+        status: 'completed',
+        attemptCount: 1,
+        rawSeenCount: 0,
+        rawInsertedCount: 0,
+        rawUpdatedCount: 0,
+        normalizedCount: 0,
+        translatedCount: 0,
+        errorMessage: null,
+      };
+
       try {
-        const parsed = await parser.parseURL(feed.endpoint);
+        const { parsed, attemptCount } = await parseFeedWithRetry(parser, feed.endpoint, feed.retry_limit);
+        feedSummary.attemptCount = attemptCount;
         const items = Array.isArray(parsed.items) ? parsed.items.slice(0, env.ingestionDefaultLimit) : [];
+        feedSummary.rawSeenCount = items.length;
+        summary.totalRawItems += items.length;
 
         for (const item of items) {
-          const rawResult = await upsertRawItem(feed.id, job.id, item);
-          if (rawResult.inserted) {
-            summary.rawInserted += 1;
-          } else {
-            summary.rawUpdated += 1;
+          try {
+            const rawResult = await upsertRawItem(feed.id, job.id, item);
+            if (rawResult.inserted) {
+              summary.rawInserted += 1;
+              feedSummary.rawInsertedCount += 1;
+            } else {
+              summary.rawUpdated += 1;
+              feedSummary.rawUpdatedCount += 1;
+            }
+
+            const normalizedResult = await normalizeRawItem(rawResult.id, { correlationId });
+            if (normalizedResult?.id) {
+              summary.normalizedUpserted += 1;
+              summary.totalNormalizedItems += 1;
+              feedSummary.normalizedCount += 1;
+            }
+            if (normalizedResult?.translated) {
+              summary.totalTranslatedItems += 1;
+              feedSummary.translatedCount += 1;
+            }
+          } catch (itemError) {
+            summary.errors.push({
+              feedId: feed.id,
+              endpoint: feed.endpoint,
+              message: itemError.message,
+              scope: 'item',
+            });
+            feedSummary.status = 'completed_with_errors';
           }
-          await normalizeRawItem(rawResult.id);
-          summary.normalizedUpserted += 1;
         }
 
         await query(
@@ -157,8 +270,20 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
           [feed.id],
         );
         summary.feedsSucceeded += 1;
+        summary.successfulSources += 1;
+        await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
+        logger.info('rss_feed_completed', {
+          correlationId,
+          sourceRegistryId: feed.source_registry_id,
+          endpoint: feed.endpoint,
+          summary: feedSummary,
+        });
       } catch (feedErr) {
         summary.feedsFailed += 1;
+        summary.failedSources += 1;
+        feedSummary.status = 'failed';
+        feedSummary.errorMessage = feedErr.message;
+        feedSummary.attemptCount = Number(feedErr.attemptCount || feedSummary.attemptCount || 1);
         summary.errors.push({ feedId: feed.id, endpoint: feed.endpoint, message: feedErr.message });
         await query(
           `UPDATE source_feeds
@@ -166,6 +291,13 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
            WHERE id = $1`,
           [feed.id, String(feedErr.message || 'unknown_error').slice(0, 500)],
         );
+        await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
+        logger.warn('rss_feed_failed', {
+          correlationId,
+          sourceRegistryId: feed.source_registry_id,
+          endpoint: feed.endpoint,
+          message: feedErr.message,
+        });
       }
     }
 

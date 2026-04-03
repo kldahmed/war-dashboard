@@ -16,4 +16,8 @@ module.exports = {
     String(process.env.FEED_FALLBACK_ENABLED || 'true').toLowerCase() === 'true',
   rssRequestTimeoutMs: toInt(process.env.RSS_REQUEST_TIMEOUT_MS, 15000),
   ingestionDefaultLimit: toInt(process.env.INGESTION_DEFAULT_LIMIT, 20),
+  translationTimeoutMs: toInt(process.env.TRANSLATION_TIMEOUT_MS, 12000),
+  translationEnabled:
+    String(process.env.NEWS_TRANSLATION_ENABLED || 'true').toLowerCase() === 'true',
+  streamVerificationTimeoutMs: toInt(process.env.STREAM_VERIFICATION_TIMEOUT_MS, 8000),
 };
