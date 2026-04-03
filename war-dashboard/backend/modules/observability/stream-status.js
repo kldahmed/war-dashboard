@@ -2,6 +2,9 @@
 
 const { query } = require('../../lib/db');
 const metrics = require('../../lib/metrics');
+const { OFFICIAL_STREAM_REGISTRY } = require('./stream-registry');
+
+const STREAM_META_BY_ID = new Map(OFFICIAL_STREAM_REGISTRY.map((channel) => [channel.id, channel]));
 
 function getFreshnessScore(isoValue, horizonSec) {
   if (!isoValue) return 0;
@@ -150,6 +153,7 @@ async function getStreamStatusSnapshot() {
          sc.embed_supported,
          sc.playback_mode,
          sc.status AS channel_status,
+         sc.sort_order,
          sc.verification_checked_at,
          sc.last_verification_status,
          sc.name AS source_name,
@@ -255,11 +259,12 @@ async function getStreamStatusSnapshot() {
       `SELECT COUNT(*)::int AS removed_streams
        FROM stream_channels
        WHERE status = 'inactive'
-         AND last_verification_status = 'removed_unavailable'`,
+         AND last_verification_status IN ('removed_unavailable', 'removed_from_registry')`,
     ),
   ]);
 
   const streams = streamsResult.rows.map((row) => {
+    const registryMeta = STREAM_META_BY_ID.get(row.registry_id) || null;
     const health = computeStreamHealth(row);
     const streamScore = computeStreamScore(row, health);
 
@@ -269,9 +274,9 @@ async function getStreamStatusSnapshot() {
         id: row.source_id || row.registry_id,
         name: row.source_name,
         domain: row.source_domain,
-        category: row.source_category,
+        category: registryMeta?.category || row.source_category,
         region: row.source_region,
-        language: row.source_language,
+        language: registryMeta?.language || row.source_language,
         trust_score: Number(row.trust_score),
         status: row.source_status,
       },
@@ -294,6 +299,9 @@ async function getStreamStatusSnapshot() {
         playback_mode: row.playback_mode,
         external_only: row.playback_mode === 'external_only',
         embed_supported: Boolean(row.embed_supported),
+        verification_status: row.last_verification_status || registryMeta?.verificationStatus || null,
+        last_verified_at: row.verification_checked_at || registryMeta?.lastVerifiedAt || null,
+        channel_priority: registryMeta?.sortOrder || row.sort_order || 999,
         score: streamScore,
         featured: false,
       },
@@ -320,6 +328,7 @@ async function getStreamStatusSnapshot() {
     if (stream.stream.status === 'active') acc.active_streams += 1;
     if (stream.stream.playback_mode === 'playable') acc.playable_streams += 1;
     if (stream.stream.playback_mode === 'external_only') acc.external_only_streams += 1;
+    if (stream.stream.verification_status || stream.stream.last_verified_at) acc.channels_verified_count += 1;
     acc[`${stream.stream.uptime_status}_streams`] = (acc[`${stream.stream.uptime_status}_streams`] || 0) + 1;
     acc[`${stream.stream.detail_status}_streams`] = (acc[`${stream.stream.detail_status}_streams`] || 0) + 1;
     acc.linked_stories += stream.stats.story_count;
@@ -340,6 +349,7 @@ async function getStreamStatusSnapshot() {
     external_only_streams: 0,
     playable_streams: 0,
     error_after_success_streams: 0,
+    channels_verified_count: 0,
     linked_stories: 0,
     linked_clusters: 0,
   });
