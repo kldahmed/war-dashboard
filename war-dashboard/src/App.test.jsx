@@ -212,7 +212,7 @@ describe("Dashboard", () => {
       await flushPromises();
     });
 
-    const liveTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent.includes("بث مباشر"));
+    const liveTab = Array.from(container.querySelectorAll("button")).find((button) => button.textContent.includes("البث المباشر"));
 
     await act(async () => {
       liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -220,8 +220,15 @@ describe("Dashboard", () => {
       await flushPromises();
     });
 
-    expect(container.textContent).toContain("لا يوجد embed صالح لهذا المصدر الآن");
-    expect(container.textContent).toContain("فتح المصدر خارجيًا");
-    expect(container.textContent).toContain("تم تفعيل degraded mode");
+    const streamCard = Array.from(container.querySelectorAll("button")).find((button) => button.textContent.includes("BBC World"));
+
+    await act(async () => {
+      streamCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("لا يتوفر رابط تضمين مباشر لهذه القناة");
+    expect(container.textContent).toContain("مشاهدة على الموقع الرسمي");
+    expect(container.textContent).toContain("BBC World");
   });
 });

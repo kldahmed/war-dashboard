@@ -168,6 +168,7 @@ function normalizeStoredMetadata(body, mode) {
     total_available_items: Number.isFinite(body?.total_available_items) ? body.total_available_items : (Array.isArray(body?.items) ? body.items.length : 0),
     freshness,
     category_counts: normalizeCategoryCounts(body?.category_counts, Array.isArray(body?.items) ? body.items.length : 0),
+    briefing: body?.briefing && typeof body.briefing === "object" ? body.briefing : null,
     correlation_id: body?.correlation_id || null,
     error_reason: normalizeText(body?.error_reason, null),
     verify_mode: toBool(process.env.REACT_APP_PRODUCTION_VERIFY_MODE, false),
@@ -250,7 +251,9 @@ function mapStoredItem(item) {
 }
 
 async function callStoredNews(params, signal) {
-  const { category, limit = DEFAULT_LIMIT, offset = 0, query: searchQ } = (params && typeof params === 'object') ? params : { category: params };
+  const normalizedParams = (params && typeof params === 'object') ? params : { category: params };
+  const { category, limit = DEFAULT_LIMIT, offset = 0 } = normalizedParams;
+  const searchQ = normalizedParams.q ?? normalizedParams.query ?? undefined;
   const requestUrl = buildApiPath("/api/news/feed", {
     limit,
     offset: offset > 0 ? offset : undefined,
@@ -295,6 +298,7 @@ async function callStoredNews(params, signal) {
   return {
     items: body.items.map(mapStoredItem).filter(Boolean),
     total: body.total_count ?? body.item_count ?? 0,
+    briefing: body?.briefing ?? null,
     metadata: normalizeStoredMetadata({ ...body, total_available_items: body.total_count ?? body.item_count, correlation_id: body?.correlation_id || correlationId }, "stored"),
   };
 }

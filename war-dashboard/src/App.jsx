@@ -98,6 +98,41 @@ function getPlaceholderImg(idx) {
   return PLACEHOLDER_IMGS[idx % PLACEHOLDER_IMGS.length];
 }
 
+function pct(value) {
+  const num = Number(value || 0);
+  return `${Math.round(num * 100)}%`;
+}
+
+function verificationLabel(state) {
+  const labels = {
+    corroborated: 'موثق',
+    partially_corroborated: 'مدعوم جزئيا',
+    single_source: 'مصدر واحد',
+    needs_review: 'يحتاج مراجعة',
+  };
+  return labels[state] || 'غير محدد';
+}
+
+function editorialPriorityLabel(priority) {
+  const labels = {
+    review: 'مراجعة',
+    high: 'مرتفع',
+    elevated: 'مهم',
+    normal: 'طبيعي',
+  };
+  return labels[priority] || 'طبيعي';
+}
+
+function editorialDecisionLabel(decision) {
+  const labels = {
+    hold: 'إيقاف',
+    update: 'تحديث',
+    merge: 'دمج',
+    publish: 'نشر',
+  };
+  return labels[decision] || 'نشر';
+}
+
 /* ─────────────────────────────────────────────────
    SMALL COMPONENTS
 ───────────────────────────────────────────────── */
@@ -170,6 +205,127 @@ function ErrorBanner({ message, onRetry }) {
   );
 }
 
+function SignalPill({ tone = 'neutral', children }) {
+  return <span className={`signal-pill signal-pill--${tone}`}>{children}</span>;
+}
+
+function BriefingMetric({ label, value, tone = 'neutral' }) {
+  return (
+    <div className="briefing-metric">
+      <span className="briefing-metric__label">{label}</span>
+      <span className={`briefing-metric__value briefing-metric__value--${tone}`}>{value}</span>
+    </div>
+  );
+}
+
+function BriefingPanel({ briefing }) {
+  if (!briefing) return null;
+
+  const lead = briefing.lead_story;
+  const radar = briefing.verification_radar || {};
+  const queue = briefing.editorial_queue || {};
+  const momentum = briefing.momentum || {};
+
+  return (
+    <section className="briefing-panel" dir="rtl">
+      <div className="briefing-panel__header">
+        <div>
+          <div className="section-label section-label--flush">لوحة التحرير الذكية</div>
+          <p className="briefing-panel__subhead">ترتيب القصص حسب الزخم، التحقق، والتعارض بين المصادر.</p>
+        </div>
+        <div className="briefing-panel__signals">
+          <SignalPill tone="blue">{momentum.high_priority_count || 0} قصص عالية الأولوية</SignalPill>
+          <SignalPill tone="green">{momentum.corroborated_count || 0} موثقة</SignalPill>
+          {(momentum.review_count || 0) > 0 && <SignalPill tone="red">{momentum.review_count} تحتاج مراجعة</SignalPill>}
+        </div>
+      </div>
+
+      <div className="briefing-panel__grid">
+        <div className="briefing-card briefing-card--lead">
+          <div className="briefing-card__eyebrow">القصة القائدة</div>
+          {lead ? (
+            <>
+              <h3 className="briefing-card__title">{lead.title}</h3>
+              <div className="briefing-card__chips">
+                <SignalPill tone={lead.contradiction_flag ? 'red' : 'green'}>{verificationLabel(lead.verification_state)}</SignalPill>
+                <SignalPill tone="amber">{editorialPriorityLabel(lead.editorial_priority)}</SignalPill>
+                <SignalPill tone="blue">{editorialDecisionLabel(lead.editorial_decision)}</SignalPill>
+              </div>
+              <div className="briefing-card__meta">
+                <span>{lead.source_name}</span>
+                <span>·</span>
+                <span>{relativeTime(lead.published_at)}</span>
+              </div>
+              <div className="briefing-metrics">
+                <BriefingMetric label="الثقة" value={pct(lead.confidence_score)} tone="green" />
+                <BriefingMetric label="الترتيب" value={pct(lead.rank_score)} tone="blue" />
+                <BriefingMetric label="التعضيد" value={lead.corroboration_count || 0} tone="amber" />
+                <BriefingMetric label="تنوع المصادر" value={lead.source_diversity || 1} />
+              </div>
+            </>
+          ) : (
+            <p className="briefing-empty">لا توجد قصة قائدة حاليا.</p>
+          )}
+        </div>
+
+        <div className="briefing-card">
+          <div className="briefing-card__eyebrow">رادار التحقق</div>
+          <div className="briefing-metrics briefing-metrics--compact">
+            <BriefingMetric label="موثق" value={radar.corroborated || 0} tone="green" />
+            <BriefingMetric label="جزئي" value={radar.partially_corroborated || 0} tone="amber" />
+            <BriefingMetric label="مصدر واحد" value={radar.single_source || 0} />
+            <BriefingMetric label="متوسط الثقة" value={pct(radar.average_confidence || 0)} tone="blue" />
+          </div>
+        </div>
+
+        <div className="briefing-card">
+          <div className="briefing-card__eyebrow">قرار التحرير</div>
+          <div className="briefing-metrics briefing-metrics--compact">
+            <BriefingMetric label="نشر" value={queue.publish || 0} tone="green" />
+            <BriefingMetric label="تحديث" value={queue.update || 0} tone="blue" />
+            <BriefingMetric label="دمج" value={queue.merge || 0} tone="amber" />
+            <BriefingMetric label="إيقاف" value={queue.hold || 0} tone="red" />
+          </div>
+        </div>
+
+        <div className="briefing-card briefing-card--list">
+          <div className="briefing-card__eyebrow">قصص تحتاج مراجعة</div>
+          {briefing.disputed_stories?.length ? (
+            briefing.disputed_stories.map((story) => (
+              <div key={story.id} className="briefing-list-item">
+                <div>
+                  <p className="briefing-list-item__title">{story.title}</p>
+                  <span className="briefing-list-item__meta">{story.source_name} · {relativeTime(story.published_at)}</span>
+                </div>
+                <SignalPill tone="red">{verificationLabel(story.verification_state)}</SignalPill>
+              </div>
+            ))
+          ) : (
+            <p className="briefing-empty">لا توجد قصص متنازع عليها في هذه الدفعة.</p>
+          )}
+        </div>
+
+        <div className="briefing-card briefing-card--list">
+          <div className="briefing-card__eyebrow">رادار التجميع</div>
+          {briefing.cluster_watch?.length ? (
+            briefing.cluster_watch.map((story) => (
+              <div key={story.id} className="briefing-list-item">
+                <div>
+                  <p className="briefing-list-item__title">{story.title}</p>
+                  <span className="briefing-list-item__meta">{story.corroboration_count} دعم · {story.source_diversity} مصادر</span>
+                </div>
+                <SignalPill tone="blue">{pct(story.rank_score)}</SignalPill>
+              </div>
+            ))
+          ) : (
+            <p className="briefing-empty">لا توجد عناقيد بارزة حاليا.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─────────────────────────────────────────────────
    NEWS CARDS
 ───────────────────────────────────────────────── */
@@ -197,7 +353,7 @@ function HeroCard({ item, idx }) {
         <div className="hero-card__footer">
           <span className="source-name">{item.source?.name || 'مصدر'}</span>
           <span className="dot">·</span>
-          <time className="time-ago">{relativeTime(item.publishedAt || item.published_at)}</time>
+          <time className="time-ago">{relativeTime(item.time || item.publishedAt || item.published_at)}</time>
           <TrustBar score={item.source?.trust_score} />
         </div>
       </div>
@@ -228,7 +384,7 @@ function NewsCard({ item, idx, size = 'md' }) {
         )}
         <div className="news-card__footer">
           <span className="source-name">{item.source?.name || 'مصدر'}</span>
-          <time className="time-ago">{relativeTime(item.publishedAt || item.published_at)}</time>
+          <time className="time-ago">{relativeTime(item.time || item.publishedAt || item.published_at)}</time>
         </div>
       </div>
     </article>
@@ -249,7 +405,7 @@ function ListItem({ item, idx }) {
       <div className="list-item__body">
         <p className="list-item__title">{item.title}</p>
         <span className="list-item__meta">
-          {item.source?.name} · {relativeTime(item.publishedAt || item.published_at)}
+          {item.source?.name} · {relativeTime(item.time || item.publishedAt || item.published_at)}
         </span>
       </div>
       {item.urgency === 'high' && <span className="badge badge--breaking badge--xs">⚡</span>}
@@ -626,6 +782,7 @@ export default function App() {
 
   /* ── News ── */
   const [newsItems,    setNewsItems]    = useState([]);
+  const [editorialBriefing, setEditorialBriefing] = useState(null);
   const [loadingNews,  setLoadingNews]  = useState(false);
   const [errorNews,    setErrorNews]    = useState(null);
   const [category,     setCategory]     = useState('all');
@@ -666,14 +823,17 @@ export default function App() {
       const envelope = await fetchNewsFeedEnvelope(params);
       const items = envelope?.items ?? envelope?.data ?? [];
       const total = envelope?.total ?? envelope?.metadata?.total_available_items ?? envelope?.metadata?.item_count ?? items.length;
+      const briefing = envelope?.briefing ?? envelope?.metadata?.briefing ?? null;
       setTotalCount(total);
       setHasMore(items.length === PAGE_SIZE && (pg * PAGE_SIZE) < total);
       if (pg === 1) {
+        setEditorialBriefing(briefing);
         setNewsItems(items);
       } else {
         setNewsItems(prev => [...prev, ...items]);
       }
     } catch (err) {
+      if (pg === 1) setEditorialBriefing(null);
       setErrorNews(err.message || 'فشل تحميل الأخبار');
     } finally {
       setLoadingNews(false);
@@ -878,6 +1038,8 @@ export default function App() {
             </div>
 
             {errorNews && <ErrorBanner message={errorNews} onRetry={() => loadNews(category, searchQ, 1)} />}
+
+            {!loadingNews && page === 1 && <BriefingPanel briefing={editorialBriefing} />}
 
             {/* Hero + Spotlight */}
             {!loadingNews && newsItems.length > 0 && page === 1 && (
@@ -1223,6 +1385,99 @@ img { display: block; max-width: 100%; }
 }
 .editorial-grid__hero { }
 .editorial-grid__spotlight { display: flex; flex-direction: column; gap: 10px; }
+
+.briefing-panel {
+  background: linear-gradient(135deg, var(--bg2), color-mix(in srgb, var(--bg2) 82%, var(--accent) 18%));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 22px;
+  box-shadow: var(--shadow-sm);
+}
+.briefing-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.briefing-panel__subhead { color: var(--text3); font-size: .85rem; margin-top: 4px; }
+.briefing-panel__signals { display: flex; flex-wrap: wrap; gap: 8px; }
+.briefing-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (min-width: 980px) {
+  .briefing-panel__grid {
+    grid-template-columns: 1.4fr 1fr 1fr;
+  }
+  .briefing-card--lead { grid-column: span 2; }
+}
+.briefing-card {
+  background: color-mix(in srgb, var(--card-bg) 86%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+.briefing-card__eyebrow {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+.briefing-card__title { font-size: 1.05rem; line-height: 1.55; margin-bottom: 10px; }
+.briefing-card__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.briefing-card__meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text3); font-size: .8rem; margin-bottom: 12px; }
+.briefing-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.briefing-metrics--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.briefing-metric {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.briefing-metric__label { color: var(--text3); font-size: .76rem; }
+.briefing-metric__value { font-size: 1rem; font-weight: 700; color: var(--text); }
+.briefing-metric__value--green { color: var(--green); }
+.briefing-metric__value--blue { color: var(--accent); }
+.briefing-metric__value--amber { color: var(--gold); }
+.briefing-metric__value--red { color: var(--red); }
+.briefing-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.briefing-list-item:first-of-type { border-top: none; padding-top: 0; }
+.briefing-list-item__title { font-size: .9rem; line-height: 1.5; margin-bottom: 4px; }
+.briefing-list-item__meta { color: var(--text3); font-size: .76rem; }
+.briefing-empty { color: var(--text3); font-size: .84rem; }
+.signal-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: .73rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.signal-pill--neutral { background: var(--bg3); color: var(--text2); border-color: var(--border); }
+.signal-pill--green { background: rgba(56, 161, 105, .14); color: var(--green); border-color: rgba(56, 161, 105, .2); }
+.signal-pill--blue { background: rgba(33, 130, 218, .14); color: var(--accent); border-color: rgba(33, 130, 218, .2); }
+.signal-pill--amber { background: rgba(214, 158, 46, .15); color: var(--gold); border-color: rgba(214, 158, 46, .2); }
+.signal-pill--red { background: rgba(229, 62, 62, .14); color: var(--red); border-color: rgba(229, 62, 62, .2); }
+.section-label--flush { margin: 0; }
 
 /* ── HERO CARD ── */
 .hero-card {

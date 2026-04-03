@@ -118,12 +118,16 @@ describe('fetchNewsItems mode and fallback', () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       headers: { get: () => null },
-      json: async () => ({ items: [{ title: 'A', summary: 'B', category: 'gulf', urgency: 'medium', time: 'x' }] }),
+      json: async () => ({
+        items: [{ title: 'A', summary: 'B', category: 'gulf', urgency: 'medium', time: 'x' }],
+        briefing: { lead_story: { id: '1', title: 'A' } },
+      }),
     });
 
-    const out = await fetchNewsItems('all');
-    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=60&category=all');
-    expect(out).toHaveLength(1);
+    const out = await fetchNewsFeedEnvelope('all');
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=60');
+    expect(out.metadata.briefing).toEqual({ lead_story: { id: '1', title: 'A' } });
+    expect(out.items).toHaveLength(1);
   });
 
   test('maps stored request failures to generic user-safe code', async () => {
