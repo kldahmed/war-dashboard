@@ -14,12 +14,16 @@ const { randomUUID } = require('node:crypto');
 const createApp = require('./backend/app/createApp');
 const env = require('./backend/config/env');
 const { runRssIngestion } = require('./backend/modules/ingestion/service');
+const { runAutoOptimizer } = require('./backend/modules/self-optimization/service');
 const { pool } = require('./backend/lib/db');
 
 const app = createApp();
 
 let ingestionTimer = null;
 let ingestionInFlight = false;
+
+let optimizerTimer = null;
+let optimizerInFlight = false;
 
 function scheduleIngestion() {
   if (!env.ingestionScheduleEnabled) return;
@@ -42,6 +46,24 @@ function scheduleIngestion() {
   ingestionTimer = setInterval(runScheduledIngestion, env.ingestionScheduleMs);
 }
 
+function scheduleOptimizer() {
+  if (!env.optimizerEnabled) return;
+
+  const runScheduledOptimizer = async () => {
+    if (optimizerInFlight) return;
+    optimizerInFlight = true;
+    try {
+      await runAutoOptimizer({ correlationId: randomUUID() });
+    } catch (error) {
+      console.error('[optimizer:schedule] failed', error.message);
+    } finally {
+      optimizerInFlight = false;
+    }
+  };
+
+  optimizerTimer = setInterval(runScheduledOptimizer, env.optimizerScheduleMs);
+}
+
 app.listen(env.port, () => {
   const keySet = !!process.env.ANTHROPIC_API_KEY;
   console.log(`\n⚡ Dev API server → http://localhost:${env.port}`);
@@ -55,10 +77,12 @@ app.listen(env.port, () => {
     console.warn('\n   ⚠️  Copy .env.example → .env.local and set your key.\n');
   }
   scheduleIngestion();
+  scheduleOptimizer();
 });
 
 process.on('SIGINT', async () => {
   if (ingestionTimer) clearInterval(ingestionTimer);
+  if (optimizerTimer) clearInterval(optimizerTimer);
   await pool.end().catch(() => {});
   process.exit(0);
 });

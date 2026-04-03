@@ -27,7 +27,8 @@
     "ingest:rss": "node backend/jobs/run-ingestion.js",
     "smoke:backend": "node scripts/smoke-checks.js",
     "check:integration:sprint1": "node scripts/integration-sprint1.js",
-    "check:vercel:wave1": "node scripts/vercel-wave1-check.js"
+    "check:vercel:wave1": "node scripts/vercel-wave1-check.js",
+    "optimizer:run": "node backend/jobs/auto-optimize.js"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],

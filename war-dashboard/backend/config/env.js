@@ -24,4 +24,7 @@ module.exports = {
   translationEnabled:
     String(process.env.NEWS_TRANSLATION_ENABLED || 'true').toLowerCase() === 'true',
   streamVerificationTimeoutMs: toInt(process.env.STREAM_VERIFICATION_TIMEOUT_MS, 8000),
+  optimizerEnabled:
+    String(process.env.OPTIMIZER_ENABLED || 'true').toLowerCase() === 'true',
+  optimizerScheduleMs: toInt(process.env.OPTIMIZER_SCHEDULE_MS, 2 * 60 * 60 * 1000), // default 2h
 };

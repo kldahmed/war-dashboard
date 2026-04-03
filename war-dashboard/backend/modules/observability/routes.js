@@ -76,4 +76,38 @@ router.get('/health/newsroom', asyncHandler(async (req, res) => {
   });
 }));
 
+router.get('/health/optimizer', asyncHandler(async (req, res) => {
+  const [lastRuns, auditRecent, trustChanges] = await Promise.all([
+    query(`
+      SELECT id, status, started_at, ended_at, latency_ms, payload_json, correlation_id
+      FROM processing_jobs
+      WHERE job_type = 'auto_optimizer'
+      ORDER BY created_at DESC
+      LIMIT 5
+    `),
+    query(`
+      SELECT action, target_type, target_id, details_json, created_at
+      FROM audit_logs
+      WHERE actor_id = 'auto_optimizer'
+      ORDER BY created_at DESC
+      LIMIT 20
+    `),
+    query(`
+      SELECT COUNT(*)::int AS count
+      FROM audit_logs
+      WHERE actor_id = 'auto_optimizer'
+        AND action = 'trust_score_adjusted'
+        AND created_at > NOW() - INTERVAL '24 hours'
+    `),
+  ]);
+
+  res.json({
+    last_runs: lastRuns.rows,
+    recent_actions: auditRecent.rows,
+    trust_adjustments_24h: trustChanges.rows[0]?.count ?? 0,
+    correlation_id: req.correlationId || null,
+    time: new Date().toISOString(),
+  });
+}));
+
 module.exports = router;
