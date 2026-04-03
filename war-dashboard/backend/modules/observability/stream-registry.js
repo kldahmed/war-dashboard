@@ -75,9 +75,9 @@ const OFFICIAL_STREAM_REGISTRY = [
     provider: 'native_web',
     sourceDomain: 'france24.com',
     officialPageUrl: 'https://www.france24.com/ar/direct',
-    embedUrl: null,
+    embedUrl: 'https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg',
     externalWatchUrl: 'https://www.france24.com/ar/direct',
-    embedSupported: false,
+    embedSupported: true,
     sortOrder: 50,
     active: true,
   },
@@ -107,6 +107,32 @@ const OFFICIAL_STREAM_REGISTRY = [
     sortOrder: 70,
     active: true,
   },
+  {
+    id: 'dw-live',
+    name: 'DW News',
+    language: 'en',
+    provider: 'youtube',
+    sourceDomain: 'dw.com',
+    officialPageUrl: 'https://www.dw.com/en/live-tv/s-100825',
+    embedUrl: 'https://www.youtube.com/embed/live_stream?channel=UCknLrEdhRCp1aegoMqRaCZg',
+    externalWatchUrl: 'https://www.dw.com/en/live-tv/s-100825',
+    embedSupported: true,
+    sortOrder: 80,
+    active: true,
+  },
+  {
+    id: 'reuters-live',
+    name: 'Reuters Live',
+    language: 'en',
+    provider: 'youtube',
+    sourceDomain: 'reuters.com',
+    officialPageUrl: 'https://www.reuters.com/world/',
+    embedUrl: 'https://www.youtube.com/embed/live_stream?channel=UChqUTb7kYRX8-EiaN3XFrSQ',
+    externalWatchUrl: 'https://www.reuters.com/world/',
+    embedSupported: true,
+    sortOrder: 90,
+    active: true,
+  },
 ].map((entry) => ({
   ...entry,
   officialPageUrl: safeHttpUrl(entry.officialPageUrl),
@@ -119,9 +145,9 @@ async function syncStreamRegistry() {
     for (const channel of OFFICIAL_STREAM_REGISTRY) {
       await client.query(
         `INSERT INTO stream_channels (
-          registry_id, name, language, provider, source_domain, official_page_url, embed_url, external_watch_url, embed_supported, status, sort_order
+          registry_id, name, language, provider, source_domain, official_page_url, embed_url, external_watch_url, embed_supported, playback_mode, status, sort_order
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         ON CONFLICT (registry_id) DO UPDATE
         SET name = EXCLUDED.name,
             language = EXCLUDED.language,
@@ -131,6 +157,7 @@ async function syncStreamRegistry() {
             embed_url = EXCLUDED.embed_url,
             external_watch_url = EXCLUDED.external_watch_url,
             embed_supported = EXCLUDED.embed_supported,
+            playback_mode = EXCLUDED.playback_mode,
             status = EXCLUDED.status,
             sort_order = EXCLUDED.sort_order,
             updated_at = NOW()`,
@@ -144,6 +171,7 @@ async function syncStreamRegistry() {
           channel.embedUrl,
           channel.externalWatchUrl,
           Boolean(channel.embedSupported && channel.embedUrl),
+          channel.embedSupported && channel.embedUrl ? 'playable' : 'external_only',
           channel.active ? 'active' : 'inactive',
           channel.sortOrder,
         ],
@@ -167,6 +195,7 @@ async function verifySingleChannel(channel) {
     await query(
       `UPDATE stream_channels
        SET embed_supported = FALSE,
+           playback_mode = 'external_only',
            verification_checked_at = NOW(),
            last_verification_status = 'external_only',
            last_verification_error = NULL,
@@ -192,12 +221,18 @@ async function verifySingleChannel(channel) {
     await query(
       `UPDATE stream_channels
        SET embed_supported = $2,
+           playback_mode = $3,
            verification_checked_at = NOW(),
-           last_verification_status = $3,
+           last_verification_status = $4,
            last_verification_error = NULL,
            updated_at = NOW()
        WHERE id = $1`,
-      [channel.id, !blocked && response.ok, !blocked && response.ok ? 'embed_ok' : 'embed_blocked'],
+      [
+        channel.id,
+        !blocked && response.ok,
+        !blocked && response.ok ? 'playable' : 'external_only',
+        !blocked && response.ok ? 'embed_ok' : 'embed_blocked',
+      ],
     );
     return {
       id: channel.registry_id,
@@ -208,6 +243,7 @@ async function verifySingleChannel(channel) {
     await query(
       `UPDATE stream_channels
        SET embed_supported = FALSE,
+           playback_mode = 'external_only',
            verification_checked_at = NOW(),
            last_verification_status = 'verification_failed',
            last_verification_error = $2,

@@ -24,6 +24,18 @@ async function run() {
 
   await verifyStreamRegistry({ force: true });
   console.log('[seed] verified stream registry');
+
+  const playbackSummary = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status = 'active')::int AS active_streams,
+       COUNT(*) FILTER (WHERE status = 'active' AND playback_mode = 'playable')::int AS playable_streams,
+       COUNT(*) FILTER (WHERE status = 'active' AND playback_mode = 'external_only')::int AS external_only_streams
+     FROM stream_channels`,
+  );
+  const playbackRow = playbackSummary.rows[0] || {};
+  console.log(
+    `[seed] stream playback active=${playbackRow.active_streams || 0} playable=${playbackRow.playable_streams || 0} external_only=${playbackRow.external_only_streams || 0}`,
+  );
 }
 
 run()

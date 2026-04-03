@@ -126,6 +126,29 @@ describe('fetchNewsItems mode and fallback', () => {
     expect(out).toHaveLength(1);
   });
 
+  test('maps stored request failures to generic user-safe code', async () => {
+    process.env.REACT_APP_FEED_MODE = 'stored';
+    process.env.REACT_APP_FEED_FALLBACK = 'false';
+
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      headers: { get: () => 'cid-safe' },
+      json: async () => ({
+        error: 'connect ECONNREFUSED 10.0.0.5:5432',
+        error_reason: 'stored_feed_request_failed',
+        correlation_id: 'cid-safe',
+      }),
+    });
+
+    await expect(fetchNewsFeedEnvelope('all')).rejects.toMatchObject({
+      message: 'stored_feed_unavailable',
+      feedMeta: expect.objectContaining({
+        error_reason: 'stored_feed_request_failed',
+      }),
+    });
+  });
+
   test('returns metadata envelope with fallback flag when stored fails', async () => {
     process.env.REACT_APP_FEED_MODE = 'stored';
     process.env.REACT_APP_FEED_FALLBACK = 'true';

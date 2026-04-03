@@ -12,11 +12,27 @@ function getFreshnessScore(isoValue, horizonSec) {
 }
 
 function computeStreamHealth(row) {
-  if (row.feed_status !== 'active') {
+  if (row.channel_status !== 'active') {
     return {
       uptime_status: 'down',
       detail_status: 'inactive',
       health_reason: 'stream_inactive',
+    };
+  }
+
+  if (row.playback_mode === 'playable' && row.last_verification_status === 'embed_ok') {
+    return {
+      uptime_status: 'up',
+      detail_status: 'playable',
+      health_reason: 'verified_embed_available',
+    };
+  }
+
+  if (row.playback_mode === 'external_only') {
+    return {
+      uptime_status: 'degraded',
+      detail_status: 'external_only',
+      health_reason: row.last_verification_status || 'external_watch_only',
     };
   }
 
@@ -106,7 +122,8 @@ function computeStreamScore(row, health) {
 }
 
 function pickFeaturedStream(streams) {
-  return streams.find((stream) => stream.stream.featured)
+  return streams.find((stream) => stream.stream.playback_mode === 'playable' && stream.stream.uptime_status === 'up')
+    || streams.find((stream) => stream.stream.featured)
     || streams.find((stream) => stream.stream.uptime_status === 'up')
     || streams[0]
     || null;
@@ -116,27 +133,61 @@ async function getStreamStatusSnapshot() {
   const runtimeMetrics = metrics.snapshot();
   const [streamsResult, recentEventsResult] = await Promise.all([
     query(
-      `WITH stream_story_candidates AS (
+      `SELECT
+         sc.id AS stream_id,
+         sc.registry_id,
+         matched_source.source_id,
+         COALESCE(matched_source.feed_type, 'registry') AS feed_type,
+         COALESCE(sc.external_watch_url, sc.official_page_url) AS endpoint,
+         COALESCE(matched_source.polling_interval_sec, 300) AS polling_interval_sec,
+         COALESCE(matched_source.feed_status, sc.status) AS feed_status,
+         matched_source.last_success_at,
+         matched_source.last_error_at,
+         sc.provider,
+         sc.official_page_url,
+         sc.embed_url,
+         sc.external_watch_url,
+         sc.embed_supported,
+         sc.playback_mode,
+         sc.status AS channel_status,
+         sc.verification_checked_at,
+         sc.last_verification_status,
+         sc.name AS source_name,
+         sc.source_domain,
+         COALESCE(matched_source.source_category, 'live') AS source_category,
+         COALESCE(matched_source.source_region, 'global') AS source_region,
+         sc.language AS source_language,
+         sc.status AS source_status,
+         COALESCE(matched_source.trust_score, 70) AS trust_score,
+         COALESCE(stories.story_count, 0) AS story_count,
+         COALESCE(stories.linked_cluster_count, 0) AS linked_cluster_count,
+         stories.latest_story_seen_at,
+         stories.latest_normalized_id,
+         stories.latest_cluster_id,
+         stories.latest_story_title,
+         stories.latest_story_published_at,
+         stories.latest_story_relevance_score,
+         stories.latest_story_corroboration_count
+       FROM stream_channels sc
+       LEFT JOIN LATERAL (
          SELECT
-           ri.source_feed_id,
-           ni.id AS normalized_id,
-           ce.cluster_id,
-           ni.canonical_title,
-           COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at) AS published_at,
-           COALESCE(sc.item_count, 1) AS cluster_size,
-           COALESCE(cluster_counts.corroboration_count, 0) AS corroboration_count,
-           COALESCE(cluster_counts.article_version_count, 0) AS article_version_count,
-           (
-             LEAST(COALESCE(sc.item_count, 1), 6) / 6.0 * 0.3
-             + LEAST(COALESCE(cluster_counts.corroboration_count, 0), 5) / 5.0 * 0.3
-             + LEAST(COALESCE(cluster_counts.article_version_count, 0), 3) / 3.0 * 0.1
-             + GREATEST(0, 1 - (EXTRACT(EPOCH FROM (NOW() - COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at))) / 86400.0) / 3.0) * 0.3
-           ) AS story_relevance_score
-         FROM raw_items ri
-         JOIN normalized_items ni ON ni.raw_item_id = ri.id
-         LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
-         LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
-         LEFT JOIN (
+           s.id AS source_id,
+           s.category AS source_category,
+           s.region AS source_region,
+           s.trust_score,
+           sf.feed_type,
+           sf.polling_interval_sec,
+           sf.status AS feed_status,
+           sf.last_success_at,
+           sf.last_error_at
+         FROM sources s
+         LEFT JOIN source_feeds sf ON sf.source_id = s.id AND sf.status = 'active'
+         WHERE s.domain = sc.source_domain OR s.registry_id = sc.registry_id
+         ORDER BY COALESCE(sf.last_success_at, sf.updated_at, s.updated_at) DESC NULLS LAST, s.trust_score DESC NULLS LAST, s.id ASC
+         LIMIT 1
+       ) matched_source ON true
+       LEFT JOIN LATERAL (
+         WITH cluster_counts AS (
            SELECT
              ce.cluster_id,
              GREATEST(COUNT(*)::int - 1, 0) AS corroboration_count,
@@ -144,62 +195,51 @@ async function getStreamStatusSnapshot() {
            FROM cluster_events ce
            LEFT JOIN article_versions av ON av.normalized_item_id = ce.normalized_item_id
            GROUP BY ce.cluster_id
-         ) cluster_counts ON cluster_counts.cluster_id = ce.cluster_id
-       ),
-       latest_story_link AS (
-         SELECT DISTINCT ON (source_feed_id)
-           source_feed_id,
-           normalized_id AS latest_normalized_id,
-           cluster_id AS latest_cluster_id,
-           canonical_title AS latest_story_title,
-           published_at AS latest_story_published_at,
-           story_relevance_score AS latest_story_relevance_score,
-           corroboration_count AS latest_story_corroboration_count
-         FROM stream_story_candidates
-         ORDER BY source_feed_id, story_relevance_score DESC, published_at DESC, normalized_id DESC
-       ),
-       stream_story_counts AS (
+         ),
+         ranked_stories AS (
+           SELECT
+             ni.id AS latest_normalized_id,
+             ce.cluster_id AS latest_cluster_id,
+             COALESCE(NULLIF(ni.translated_title_ar, ''), ni.canonical_title) AS latest_story_title,
+             COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at) AS latest_story_published_at,
+             (
+               LEAST(COALESCE(sc2.item_count, 1), 6) / 6.0 * 0.3
+               + LEAST(COALESCE(cluster_counts.corroboration_count, 0), 5) / 5.0 * 0.3
+               + LEAST(COALESCE(cluster_counts.article_version_count, 0), 3) / 3.0 * 0.1
+               + GREATEST(0, 1 - (EXTRACT(EPOCH FROM (NOW() - COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at))) / 86400.0) / 3.0) * 0.3
+             ) AS latest_story_relevance_score,
+             COALESCE(cluster_counts.corroboration_count, 0) AS latest_story_corroboration_count,
+             ROW_NUMBER() OVER (
+               ORDER BY
+                 (
+                   LEAST(COALESCE(sc2.item_count, 1), 6) / 6.0 * 0.3
+                   + LEAST(COALESCE(cluster_counts.corroboration_count, 0), 5) / 5.0 * 0.3
+                   + LEAST(COALESCE(cluster_counts.article_version_count, 0), 3) / 3.0 * 0.1
+                   + GREATEST(0, 1 - (EXTRACT(EPOCH FROM (NOW() - COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at))) / 86400.0) / 3.0) * 0.3
+                 ) DESC,
+                 COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at) DESC,
+                 ni.id DESC
+             ) AS story_rank
+           FROM normalized_items ni
+           JOIN raw_items ri ON ri.id = ni.raw_item_id
+           LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
+           LEFT JOIN story_clusters sc2 ON sc2.id = ce.cluster_id
+           LEFT JOIN cluster_counts ON cluster_counts.cluster_id = ce.cluster_id
+           WHERE ni.source_id = matched_source.source_id
+         )
          SELECT
-           ri.source_feed_id,
-           COUNT(DISTINCT ni.id)::int AS story_count,
-           COUNT(DISTINCT ce.cluster_id)::int AS linked_cluster_count,
-           MAX(COALESCE(ni.published_at_source, ri.fetched_at, ni.created_at)) AS latest_story_seen_at
-         FROM raw_items ri
-         JOIN normalized_items ni ON ni.raw_item_id = ri.id
-         LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
-         GROUP BY ri.source_feed_id
-       )
-       SELECT
-         sf.id AS stream_id,
-         sf.source_id,
-         sf.feed_type,
-         sf.endpoint,
-         sf.polling_interval_sec,
-         sf.status AS feed_status,
-         sf.last_success_at,
-         sf.last_error_at,
-         sf.last_error_message,
-         s.name AS source_name,
-         s.domain AS source_domain,
-         s.category AS source_category,
-         s.region AS source_region,
-         s.language AS source_language,
-         s.status AS source_status,
-         s.trust_score,
-         COALESCE(ssc.story_count, 0) AS story_count,
-         COALESCE(ssc.linked_cluster_count, 0) AS linked_cluster_count,
-         ssc.latest_story_seen_at,
-         lsl.latest_normalized_id,
-         lsl.latest_cluster_id,
-         lsl.latest_story_title,
-         lsl.latest_story_published_at,
-         lsl.latest_story_relevance_score,
-         lsl.latest_story_corroboration_count
-       FROM source_feeds sf
-       JOIN sources s ON s.id = sf.source_id
-       LEFT JOIN stream_story_counts ssc ON ssc.source_feed_id = sf.id
-       LEFT JOIN latest_story_link lsl ON lsl.source_feed_id = sf.id
-       ORDER BY sf.id DESC`
+           COUNT(*)::int AS story_count,
+           COUNT(DISTINCT latest_cluster_id)::int AS linked_cluster_count,
+           MAX(latest_story_published_at) AS latest_story_seen_at,
+           MAX(latest_normalized_id) FILTER (WHERE story_rank = 1) AS latest_normalized_id,
+           MAX(latest_cluster_id) FILTER (WHERE story_rank = 1) AS latest_cluster_id,
+           MAX(latest_story_title) FILTER (WHERE story_rank = 1) AS latest_story_title,
+           MAX(latest_story_published_at) FILTER (WHERE story_rank = 1) AS latest_story_published_at,
+           MAX(latest_story_relevance_score) FILTER (WHERE story_rank = 1) AS latest_story_relevance_score,
+           MAX(latest_story_corroboration_count) FILTER (WHERE story_rank = 1) AS latest_story_corroboration_count
+         FROM ranked_stories
+       ) stories ON matched_source.source_id IS NOT NULL
+       ORDER BY sc.sort_order ASC, sc.id ASC`
     ),
     query(
       `SELECT
@@ -219,7 +259,7 @@ async function getStreamStatusSnapshot() {
     return {
       stream_id: row.stream_id,
       source: {
-        id: row.source_id,
+        id: row.source_id || row.registry_id,
         name: row.source_name,
         domain: row.source_domain,
         category: row.source_category,
@@ -229,6 +269,8 @@ async function getStreamStatusSnapshot() {
         status: row.source_status,
       },
       stream: {
+        registry_id: row.registry_id,
+        provider: row.provider,
         feed_type: row.feed_type,
         endpoint: row.endpoint,
         polling_interval_sec: row.polling_interval_sec,
@@ -238,7 +280,13 @@ async function getStreamStatusSnapshot() {
         health_reason: health.health_reason,
         last_success_at: row.last_success_at,
         last_error_at: row.last_error_at,
-        last_error_message: row.last_error_message,
+        last_error_message: null,
+        official_page_url: row.official_page_url,
+        embed_url: row.embed_url,
+        external_watch_url: row.external_watch_url,
+        playback_mode: row.playback_mode,
+        external_only: row.playback_mode === 'external_only',
+        embed_supported: Boolean(row.embed_supported),
         score: streamScore,
         featured: false,
       },
@@ -263,6 +311,8 @@ async function getStreamStatusSnapshot() {
   const summary = streams.reduce((acc, stream) => {
     acc.total_streams += 1;
     if (stream.stream.status === 'active') acc.active_streams += 1;
+    if (stream.stream.playback_mode === 'playable') acc.playable_streams += 1;
+    if (stream.stream.playback_mode === 'external_only') acc.external_only_streams += 1;
     acc[`${stream.stream.uptime_status}_streams`] = (acc[`${stream.stream.uptime_status}_streams`] || 0) + 1;
     acc[`${stream.stream.detail_status}_streams`] = (acc[`${stream.stream.detail_status}_streams`] || 0) + 1;
     acc.linked_stories += stream.stats.story_count;
@@ -271,6 +321,8 @@ async function getStreamStatusSnapshot() {
   }, {
     total_streams: 0,
     active_streams: 0,
+    playable_streams: 0,
+    external_only_streams: 0,
     up_streams: 0,
     degraded_streams: 0,
     down_streams: 0,
@@ -278,6 +330,8 @@ async function getStreamStatusSnapshot() {
     stale_streams: 0,
     pending_streams: 0,
     inactive_streams: 0,
+    external_only_streams: 0,
+    playable_streams: 0,
     error_after_success_streams: 0,
     linked_stories: 0,
     linked_clusters: 0,

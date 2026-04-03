@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS stream_channels (
   embed_url TEXT,
   external_watch_url TEXT,
   embed_supported BOOLEAN NOT NULL DEFAULT FALSE,
+  playback_mode TEXT NOT NULL DEFAULT 'external_only',
   status TEXT NOT NULL DEFAULT 'active',
   sort_order INTEGER NOT NULL DEFAULT 100,
   verification_checked_at TIMESTAMPTZ,
@@ -79,3 +80,6 @@ CREATE TABLE IF NOT EXISTS stream_channels (
 
 CREATE INDEX IF NOT EXISTS idx_stream_channels_status
   ON stream_channels(status, sort_order ASC, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_stream_channels_playback_mode
+  ON stream_channels(playback_mode, status, sort_order ASC);

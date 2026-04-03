@@ -6,6 +6,7 @@ const env = require('../../config/env');
 
 const TRANSLATION_MODEL = 'claude-sonnet-4-20250514';
 const TRANSLATION_PROVIDER = 'anthropic';
+const FALLBACK_TRANSLATION_PROVIDER = 'google_gtx';
 
 function hasTranslationProvider() {
   return env.translationEnabled && typeof process.env.ANTHROPIC_API_KEY === 'string' && process.env.ANTHROPIC_API_KEY.trim().length > 0;
@@ -27,11 +28,24 @@ function parseStrictTranslation(text) {
   };
 }
 
+function parseGoogleTranslatePayload(payload) {
+  if (!Array.isArray(payload) || !Array.isArray(payload[0])) {
+    throw new Error('translation_fallback_invalid_payload');
+  }
+
+  return sanitizeText(
+    payload[0]
+      .map((segment) => (Array.isArray(segment) && typeof segment[0] === 'string' ? segment[0] : ''))
+      .join(''),
+    2400,
+  );
+}
+
 async function updateTranslationRecord(normalizedItemId, fields) {
   await query(
     `UPDATE normalized_items
-     SET translated_title_ar = COALESCE($2, translated_title_ar),
-         translated_summary_ar = COALESCE($3, translated_summary_ar),
+     SET translated_title_ar = $2,
+         translated_summary_ar = $3,
          translation_status = $4,
          translation_provider = $5,
          translation_updated_at = NOW(),
@@ -122,6 +136,75 @@ async function requestArabicTranslation({ normalizedItemId, title, summary }) {
   }
 }
 
+async function requestSingleFallbackTranslation(text, maxLength) {
+  const sanitized = sanitizeText(text, maxLength);
+  if (!sanitized) return '';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), env.translationTimeoutMs);
+
+  try {
+    const url = new URL('https://translate.googleapis.com/translate_a/single');
+    url.searchParams.set('client', 'gtx');
+    url.searchParams.set('sl', 'auto');
+    url.searchParams.set('tl', 'ar');
+    url.searchParams.set('dt', 't');
+    url.searchParams.set('q', sanitized);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'war-dashboard-translation/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`translation_fallback_upstream_${response.status}`);
+    }
+
+    return sanitizeText(parseGoogleTranslatePayload(await response.json()), maxLength);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestFallbackArabicTranslation({ normalizedItemId, title, summary }) {
+  const startedAt = Date.now();
+
+  try {
+    const [translatedTitleAr, translatedSummaryAr] = await Promise.all([
+      requestSingleFallbackTranslation(title, 400),
+      requestSingleFallbackTranslation(summary, 2400),
+    ]);
+
+    if (!translatedTitleAr && !translatedSummaryAr) {
+      throw new Error('translation_fallback_empty_payload');
+    }
+
+    await recordAiRun({
+      normalizedItemId,
+      status: 'completed',
+      latencyMs: Date.now() - startedAt,
+      errorMessage: null,
+    });
+
+    return {
+      translatedTitleAr: translatedTitleAr || sanitizeText(title, 400),
+      translatedSummaryAr: translatedSummaryAr || sanitizeText(summary, 2400),
+      translationProvider: FALLBACK_TRANSLATION_PROVIDER,
+    };
+  } catch (error) {
+    await recordAiRun({
+      normalizedItemId,
+      status: 'failed',
+      latencyMs: Date.now() - startedAt,
+      errorMessage: error.message,
+    }).catch(() => {});
+    throw error;
+  }
+}
+
 async function translateNormalizedItem(normalizedItemId, { correlationId = null } = {}) {
   const result = await query(
     `SELECT id, language, original_title, original_summary, translated_title_ar, translated_summary_ar, translation_status
@@ -170,14 +253,36 @@ async function translateNormalizedItem(normalizedItemId, { correlationId = null 
   }
 
   if (!hasTranslationProvider()) {
-    await updateTranslationRecord(normalizedItemId, {
-      translationStatus: 'unavailable',
-      translationProvider: TRANSLATION_PROVIDER,
-      translationErrorMessage: 'translation_provider_unconfigured',
-      translatedTitleAr: null,
-      translatedSummaryAr: null,
-    });
-    return { translationStatus: 'unavailable', translated: false };
+    try {
+      const translated = await requestFallbackArabicTranslation({
+        normalizedItemId,
+        title: originalTitle,
+        summary: originalSummary,
+      });
+
+      await updateTranslationRecord(normalizedItemId, {
+        translationStatus: 'translated',
+        translationProvider: translated.translationProvider,
+        translationErrorMessage: null,
+        translatedTitleAr: translated.translatedTitleAr,
+        translatedSummaryAr: translated.translatedSummaryAr,
+      });
+
+      return {
+        translationStatus: 'translated',
+        translated: true,
+        translationProvider: translated.translationProvider,
+      };
+    } catch (fallbackError) {
+      await updateTranslationRecord(normalizedItemId, {
+        translationStatus: 'unavailable',
+        translationProvider: FALLBACK_TRANSLATION_PROVIDER,
+        translationErrorMessage: 'translation_provider_unavailable',
+        translatedTitleAr: null,
+        translatedSummaryAr: null,
+      });
+      return { translationStatus: 'unavailable', translated: false, errorMessage: fallbackError.message };
+    }
   }
 
   try {
@@ -207,20 +312,42 @@ async function translateNormalizedItem(normalizedItemId, { correlationId = null 
       message: error.message,
     });
 
-    await updateTranslationRecord(normalizedItemId, {
-      translationStatus: 'failed',
-      translationProvider: TRANSLATION_PROVIDER,
-      translationErrorMessage: String(error.message || 'translation_failed').slice(0, 500),
-      translatedTitleAr: null,
-      translatedSummaryAr: null,
-    });
+    try {
+      const translated = await requestFallbackArabicTranslation({
+        normalizedItemId,
+        title: originalTitle,
+        summary: originalSummary,
+      });
 
-    return {
-      translationStatus: 'failed',
-      translated: false,
-      translationProvider: TRANSLATION_PROVIDER,
-      errorMessage: error.message,
-    };
+      await updateTranslationRecord(normalizedItemId, {
+        translationStatus: 'translated',
+        translationProvider: translated.translationProvider,
+        translationErrorMessage: null,
+        translatedTitleAr: translated.translatedTitleAr,
+        translatedSummaryAr: translated.translatedSummaryAr,
+      });
+
+      return {
+        translationStatus: 'translated',
+        translated: true,
+        translationProvider: translated.translationProvider,
+      };
+    } catch (fallbackError) {
+      await updateTranslationRecord(normalizedItemId, {
+        translationStatus: 'failed',
+        translationProvider: FALLBACK_TRANSLATION_PROVIDER,
+        translationErrorMessage: 'translation_failed',
+        translatedTitleAr: null,
+        translatedSummaryAr: null,
+      });
+
+      return {
+        translationStatus: 'failed',
+        translated: false,
+        translationProvider: FALLBACK_TRANSLATION_PROVIDER,
+        errorMessage: fallbackError.message,
+      };
+    }
   }
 }
 

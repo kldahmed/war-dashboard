@@ -1,6 +1,7 @@
 const DEFAULT_LIMIT = 20;
 const ALLOWED_CATEGORIES = new Set(["all", "iran", "gulf", "usa", "israel"]);
 const ALLOWED_URGENCY = new Set(["high", "medium", "low"]);
+const GENERIC_STORED_ERROR = "stored_feed_unavailable";
 
 function toBool(value, fallback = false) {
   if (value === undefined || value === null) return fallback;
@@ -143,9 +144,16 @@ function normalizeStoredMetadata(body, mode) {
     item_count: Number.isFinite(body?.item_count) ? body.item_count : (Array.isArray(body?.items) ? body.items.length : 0),
     freshness,
     correlation_id: body?.correlation_id || null,
-    error_reason: body?.error_reason || null,
+    error_reason: normalizeText(body?.error_reason, null),
     verify_mode: toBool(process.env.REACT_APP_PRODUCTION_VERIFY_MODE, false),
   };
+}
+
+function buildStoredRequestError(reason) {
+  const error = new Error(GENERIC_STORED_ERROR);
+  error.code = GENERIC_STORED_ERROR;
+  error.reason = normalizeText(reason, GENERIC_STORED_ERROR);
+  return error;
 }
 
 export function resolveFeedMode({ mode, fallbackEnabled = true } = {}) {
@@ -173,8 +181,7 @@ async function callLegacyNews(category, signal) {
     signal,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Legacy feed failed (${res.status})`);
+    throw new Error("legacy_feed_unavailable");
   }
   const body = await res.json();
   if (!Array.isArray(body.items)) throw new Error("Legacy feed response is invalid");
@@ -225,7 +232,7 @@ async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
   try {
     res = await fetch(requestUrl, { signal });
   } catch (error) {
-    const requestError = new Error("stored_feed_request_failed");
+    const requestError = buildStoredRequestError("stored_feed_request_failed");
     requestError.cause = error;
     requestError.feedMeta = normalizeStoredMetadata({
       mode: "stored",
@@ -238,7 +245,7 @@ async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
         last_ingestion_at: null,
       },
       correlation_id: null,
-      error_reason: error?.message || "stored_feed_request_failed",
+        error_reason: "stored_feed_request_failed",
     }, "stored");
     throw requestError;
   }
@@ -246,13 +253,13 @@ async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
   const correlationId = res.headers.get("x-correlation-id") || null;
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const error = new Error(body.error || `Stored feed failed (${res.status})`);
+    const error = buildStoredRequestError(body?.error_reason || body?.error || `stored_feed_http_${res.status}`);
     error.feedMeta = normalizeStoredMetadata({ ...body, correlation_id: body?.correlation_id || correlationId }, "stored");
     throw error;
   }
 
   const body = await res.json();
-  if (!Array.isArray(body.items)) throw new Error("Stored feed response is invalid");
+  if (!Array.isArray(body.items)) throw buildStoredRequestError("stored_feed_invalid_shape");
   return {
     items: body.items.map(mapStoredItem).filter(Boolean),
     metadata: normalizeStoredMetadata({ ...body, correlation_id: body?.correlation_id || correlationId }, "stored"),
@@ -279,17 +286,17 @@ export async function fetchNewsFeedEnvelope(category, signal) {
         item_count: 0,
         freshness: { latest_item_at: null, oldest_item_at: null, data_age_sec: null, last_ingestion_at: null },
         correlation_id: null,
-        error_reason: error.message,
+        error_reason: error.reason || error.code || GENERIC_STORED_ERROR,
         verify_mode: verifyProductionMode,
       };
-      error.feedMeta = { ...feedMeta, error_reason: feedMeta.error_reason || error.message };
+      error.feedMeta = { ...feedMeta, error_reason: feedMeta.error_reason || error.reason || error.code || GENERIC_STORED_ERROR };
       throw error;
     }
 
     return callLegacyNewsEnvelope(category, signal, {
       mode: "legacy",
       fallbackUsed: true,
-      errorReason: error?.message || "stored_feed_failed",
+      errorReason: error?.reason || error?.code || GENERIC_STORED_ERROR,
       correlationId: error?.feedMeta?.correlation_id || null,
     });
   }

@@ -1,3 +1,4 @@
+DROP INDEX IF EXISTS idx_stream_channels_playback_mode;
 DROP INDEX IF EXISTS idx_stream_channels_status;
 DROP TABLE IF EXISTS stream_channels;
 

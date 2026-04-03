@@ -111,46 +111,37 @@ function getStreamColor(status) {
 }
 
 function getStreamStatusLabel(status, detailStatus) {
+  if (detailStatus === "playable") return "قابل للتشغيل";
+  if (detailStatus === "external_only") return "خارجي فقط";
   if (status === "up") return "جاهز";
-  if (status === "degraded") return "متذبذب";
+  if (status === "degraded") return "وضع منخفض المخاطر";
   if (detailStatus === "inactive") return "غير نشط";
   return "غير متاح";
 }
 
 function getStreamHealthHint(stream) {
   if (!stream) return "لا توجد بيانات تشغيلية متاحة.";
+  if (stream.stream.detail_status === "playable") return "هذا البث موثّق وقابل للتشغيل مباشرة من registry الرسمي.";
+  if (stream.stream.detail_status === "external_only") return "هذا المصدر موثّق لكن التشغيل الداخلي غير مدعوم، لذلك سيتم فتحه خارجيًا فقط.";
   if (stream.stream.uptime_status === "up") return "المصدر التشغيلي متاح الآن.";
   if (stream.stream.detail_status === "inactive") return "هذا المصدر غير نشط حاليًا في registry التشغيلي.";
   if (stream.stream.detail_status === "stale") return "آخر نجاح قديم، لذلك تم تعطيل embed التلقائي لتجنب شاشة broken.";
   return "المصدر لا يقدم رابط video embeddable صالحًا من snapshot الحالي.";
 }
 
-function getYouTubeVideoId(value) {
-  const safeUrl = safeHttpUrl(value);
-  if (!safeUrl) return null;
-  try {
-    const parsed = new URL(safeUrl);
-    if (parsed.hostname === "youtu.be") {
-      const candidate = parsed.pathname.slice(1);
-      return YOUTUBE_ID_RE.test(candidate) ? candidate : null;
-    }
-    if (parsed.hostname.includes("youtube.com")) {
-      const direct = parsed.searchParams.get("v");
-      if (YOUTUBE_ID_RE.test(direct || "")) return direct;
-      const parts = parsed.pathname.split("/").filter(Boolean);
-      const embedId = parts[0] === "embed" ? parts[1] : null;
-      return YOUTUBE_ID_RE.test(embedId || "") ? embedId : null;
-    }
-  } catch (_error) {
-    return null;
-  }
-  return null;
+function sanitizeUserFacingError(value, fallback) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const normalized = value.trim();
+  if (/^[a-z0-9_:-]+$/i.test(normalized)) return fallback;
+  return normalized;
 }
 
 function mapStreamSnapshotEntry(entry, index) {
+  const embedUrl = safeHttpUrl(entry?.stream?.embed_url);
   const endpointUrl = safeHttpUrl(entry?.stream?.endpoint);
-  const externalUrl = toSourceHomepage(entry?.source?.domain, endpointUrl);
-  const youtubeId = getYouTubeVideoId(endpointUrl);
+  const externalUrl = safeHttpUrl(entry?.stream?.external_watch_url)
+    || safeHttpUrl(entry?.stream?.official_page_url)
+    || toSourceHomepage(entry?.source?.domain, endpointUrl);
   const color = getStreamColor(entry?.stream?.uptime_status);
   const storyTitle = typeof entry?.story_link?.title === "string" ? entry.story_link.title.trim() : "";
   const channelId = entry?.stream_id || `stream-${index}`;
@@ -165,14 +156,14 @@ function mapStreamSnapshotEntry(entry, index) {
     statusHint: getStreamHealthHint(entry),
     detailStatus: entry?.stream?.detail_status || "unknown",
     healthReason: entry?.stream?.health_reason || null,
-    youtubeId,
-    embedUrl: youtubeId ? `https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0` : null,
+    embedUrl,
     externalUrl,
     endpointUrl,
     featured: Boolean(entry?.stream?.featured),
+    playable: entry?.stream?.playback_mode === "playable" && Boolean(embedUrl),
+    externalOnly: Boolean(entry?.stream?.external_only) || entry?.stream?.playback_mode === "external_only",
     lastSuccessAt: entry?.stream?.last_success_at || null,
     lastErrorAt: entry?.stream?.last_error_at || null,
-    lastErrorMessage: entry?.stream?.last_error_message || null,
     sourceDomain: entry?.source?.domain || null,
     storyTitle,
     storyPublishedAt: entry?.story_link?.published_at || null,
@@ -803,7 +794,7 @@ export default function Dashboard() {
       if (err?.feedMeta) setFeedMeta(err.feedMeta);
       setErrN(err.name === "AbortError"
         ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
-        : (err.message || "تعذّر تحميل الأخبار — حاول مجدداً"));
+        : "تعذّر تحميل الأخبار المخزنة الآن — حاول مجددًا بعد التحقق من ingestion");
       setTicker("⚠️ تعذّر تحميل الأخبار");
     } finally {
       clearTimeout(timer);
@@ -830,7 +821,7 @@ export default function Dashboard() {
       if (controller.signal.aborted || reqId !== videosReqId.current) return;
       setErrV(err.name === "AbortError"
         ? "انتهت مهلة الاتصال (30 ث) — تحقق من اتصال الإنترنت وحاول مجدداً"
-        : (err.message || "تعذّر تحميل الفيديوهات — حاول مجدداً"));
+        : sanitizeUserFacingError(err.message, "تعذّر تحميل الفيديوهات — حاول مجددًا"));
     } finally {
       clearTimeout(timer);
       if (reqId === videosReqId.current) setLoadV(false);
@@ -849,8 +840,7 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/health/streams", { signal: controller.signal });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `تعذّر تحميل حالة البث (${res.status})`);
+        throw new Error("stream_snapshot_unavailable");
       }
 
       const body = await res.json();
@@ -866,7 +856,7 @@ export default function Dashboard() {
       if (controller.signal.aborted || reqId !== liveReqId.current) return;
       setErrLive(err.name === "AbortError"
         ? "انتهت مهلة تحميل حالة البث (30 ث)"
-        : (err.message || "تعذّر تحميل حالة البث"));
+        : "تعذّر تحميل حالة البث الآن");
     } finally {
       clearTimeout(timer);
       if (reqId === liveReqId.current) setLoadLive(false);
@@ -998,7 +988,6 @@ export default function Dashboard() {
                 {newsErrorHint && (
                   <p style={{ color:"#a36f2b", fontSize:"12px", marginBottom:"14px", direction:"rtl" }}>
                     {newsErrorHint}
-                    {feedMeta?.error_reason ? ` (${feedMeta.error_reason})` : ""}
                   </p>
                 )}
                 <button className="retry-btn" onClick={() => { delete nCache.current[cat]; fetchNews(cat); }}>🔄 إعادة المحاولة</button>
@@ -1091,7 +1080,7 @@ export default function Dashboard() {
                     <span style={{ marginRight:"auto", color:liveCh.color, fontSize:"11.5px", fontWeight:"700" }}>{liveCh.statusLabel}</span>
                   </div>
 
-                  {liveCh.embedUrl ? (
+                  {liveCh.playable && liveCh.embedUrl ? (
                     <div style={{ position:"relative", paddingBottom:"56.25%", background:"#000" }}>
                       <iframe
                         key={liveCh.id}
@@ -1110,11 +1099,11 @@ export default function Dashboard() {
                       <div style={{ color:"#8c8176", fontSize:"13px", lineHeight:"1.9", marginBottom:"14px" }}>{liveCh.statusHint}</div>
                       <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"14px" }}>
                         <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>الحالة: {liveCh.detailStatus}</span>
+                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>{liveCh.externalOnly ? "mode: external-only" : "mode: degraded"}</span>
                         <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر نجاح: {formatDateTime(liveCh.lastSuccessAt)}</span>
                         {liveCh.storyPublishedAt && <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر قصة: {formatDateTime(liveCh.storyPublishedAt)}</span>}
                       </div>
                       {liveCh.storyTitle && <div style={{ color:"#d1c6bb", fontSize:"13px", lineHeight:"1.8", marginBottom:"12px" }}>آخر قصة مرتبطة: {liveCh.storyTitle}</div>}
-                      {liveCh.lastErrorMessage && <div style={{ color:"#a56464", fontSize:"12px", lineHeight:"1.8", marginBottom:"12px" }}>آخر خطأ: {liveCh.lastErrorMessage}</div>}
                       {liveCh.externalUrl ? (
                         <a href={liveCh.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"rgba(192,57,43,.16)", border:"1px solid rgba(192,57,43,.34)", color:"#e3b9b3", textDecoration:"none", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", fontWeight:"700" }}>
                           فتح المصدر خارجيًا
@@ -1126,7 +1115,7 @@ export default function Dashboard() {
                   )}
 
                   <div style={{ padding:"12px 15px", color:"#5c5c5c", fontSize:"11.5px", textAlign:"center" }}>
-                    {liveCh.embedUrl ? "يوجد رابط خارجي بديل أسفل القائمة إذا منع المزود الـ embed." : "تم تفعيل degraded mode بدل عرض player مكسور أو Video unavailable."}
+                    {liveCh.playable ? "يوجد رابط خارجي بديل أسفل القائمة إذا منع المزود الـ embed." : "تم تفعيل degraded mode بدل عرض player مكسور أو Video unavailable."}
                   </div>
                 </div>
 
@@ -1134,7 +1123,7 @@ export default function Dashboard() {
                   <div style={{ color:"#3a3a3a", fontSize:"11.5px", marginBottom:"4px", fontWeight:"700", letterSpacing:"1px" }}>📡 المصادر المتاحة</div>
                   {liveSummary && (
                     <div style={{ background:"#101010", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"12px 14px", color:"#666", fontSize:"11.5px", lineHeight:"1.8" }}>
-                      active: {liveSummary.active_streams} · down: {liveSummary.down_streams} · featured: {liveSummary.featured_stream_id || "-"}
+                      active: {liveSummary.active_streams} · playable: {liveSummary.playable_streams} · external-only: {liveSummary.external_only_streams} · featured: {liveSummary.featured_stream_id || "-"}
                     </div>
                   )}
                   {liveStreams.map(ch => (

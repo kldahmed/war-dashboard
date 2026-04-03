@@ -3,6 +3,7 @@
 const express = require('express');
 const { query } = require('../../lib/db');
 const { asyncHandler } = require('../../lib/async-handler');
+const env = require('../../config/env');
 
 const router = express.Router();
 
@@ -11,8 +12,8 @@ function mapToUiItem(row) {
   const published = row.published_at_source || row.fetched_at || row.created_at;
   return {
     id: row.normalized_id,
-    title: row.canonical_title,
-    summary: row.canonical_body,
+    title: row.display_title,
+    summary: row.display_summary,
     category,
     urgency: 'medium',
     time: published ? new Date(published).toISOString() : 'unknown',
@@ -84,7 +85,7 @@ function buildFreshness(rows, lastIngestionAt) {
 }
 
 router.get('/news/feed', asyncHandler(async (req, res) => {
-  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const limit = Math.min(env.newsFeedMaxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
   const category = typeof req.query.category === 'string' ? req.query.category.toLowerCase() : null;
 
   const params = [limit];
@@ -119,8 +120,17 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        SELECT
          ni.id AS normalized_id,
          ni.raw_item_id,
+         ni.language,
          ni.canonical_title,
          ni.canonical_body,
+         CASE
+           WHEN LOWER(COALESCE(ni.language, '')) LIKE 'ar%' THEN ni.canonical_title
+           ELSE COALESCE(NULLIF(ni.translated_title_ar, ''), ni.canonical_title)
+         END AS display_title,
+         CASE
+           WHEN LOWER(COALESCE(ni.language, '')) LIKE 'ar%' THEN ni.canonical_body
+           ELSE COALESCE(NULLIF(ni.translated_summary_ar, ''), ni.canonical_body)
+         END AS display_summary,
          ni.category,
          ni.published_at_source,
          ni.normalized_hash,
@@ -229,8 +239,11 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
      SELECT
        normalized_id,
        raw_item_id,
+       language,
        canonical_title,
        canonical_body,
+       display_title,
+       display_summary,
        category,
        published_at_source,
        normalized_hash,

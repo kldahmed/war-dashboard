@@ -1,0 +1,22 @@
+
+> war-news-dashboard@1.0.0 ingest:rss
+> node backend/jobs/run-ingestion.js
+
+
+/workspaces/war-dashboard/war-dashboard/backend/lib/db.js:7
+  throw new Error('DATABASE_URL is not set');
+  ^
+
+Error: DATABASE_URL is not set
+    at Object.<anonymous> [90m(/workspaces/war-dashboard/war-dashboard/[39mbackend/lib/db.js:7:9[90m)[39m
+[90m    at Module._compile (node:internal/modules/cjs/loader:1761:14)[39m
+[90m    at Object..js (node:internal/modules/cjs/loader:1893:10)[39m
+[90m    at Module.load (node:internal/modules/cjs/loader:1481:32)[39m
+[90m    at Module._load (node:internal/modules/cjs/loader:1300:12)[39m
+[90m    at TracingChannel.traceSync (node:diagnostics_channel:328:14)[39m
+[90m    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)[39m
+[90m    at Module.require (node:internal/modules/cjs/loader:1504:12)[39m
+[90m    at require (node:internal/modules/helpers:152:16)[39m
+    at Object.<anonymous> [90m(/workspaces/war-dashboard/war-dashboard/[39mbackend/modules/ingestion/service.js:5:19[90m)[39m
+
+Node.js v24.11.1
