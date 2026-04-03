@@ -31,6 +31,7 @@ describe('resolveFeedMode', () => {
 describe('mapStoredItem', () => {
   test('returns ui-safe shape', () => {
     const item = __testing.mapStoredItem({
+      id: '123',
       title: 'Title',
       summary: 'Summary',
       category: 'gulf',
@@ -40,12 +41,42 @@ describe('mapStoredItem', () => {
       provenance: { raw_item_id: 5 },
     });
 
+    expect(item.id).toBe('123');
     expect(item.title).toBe('Title');
     expect(item.summary).toBe('Summary');
     expect(item.category).toBe('gulf');
     expect(item.urgency).toBe('high');
-    expect(item.source).toEqual({ id: 1 });
-    expect(item.provenance).toEqual({ raw_item_id: 5 });
+    expect(item.source).toMatchObject({ id: 1, domain: null, name: null, trust_score: null });
+    expect(item.provenance).toMatchObject({ raw_item_id: 5 });
+  });
+
+  test('normalizes production-shaped stored items defensively', () => {
+    const item = __testing.mapStoredItem({
+      title: '  Stored title  ',
+      summary: '',
+      category: 'general',
+      urgency: 'unexpected',
+      time: 'not-a-date',
+      source: { domain: 'state.gov', trust_score: '88.00' },
+      provenance: {
+        source_url: ' https://example.com/story ',
+        cluster: { corroboration_count: '3', contradiction_flag: 0 },
+        verification: { state: '', confidence_score: '0.4' },
+        editorial: { decision: '', priority: '', rank_score: '0.8' },
+      },
+    });
+
+    expect(item.title).toBe('Stored title');
+    expect(item.summary).toBe('...');
+    expect(item.category).toBe('usa');
+    expect(item.urgency).toBe('medium');
+    expect(item.time).toBe('منذ قليل');
+    expect(item.provenance).toMatchObject({
+      source_url: 'https://example.com/story',
+      cluster: { corroboration_count: 3, contradiction_flag: false },
+      verification: { state: 'single_source', confidence_score: 0.4 },
+      editorial: { decision: 'publish', priority: 'normal', rank_score: 0.8 },
+    });
   });
 });
 
@@ -68,6 +99,7 @@ describe('fetchNewsItems mode and fallback', () => {
 
     global.fetch.mockResolvedValueOnce({
       ok: true,
+      headers: { get: () => null },
       json: async () => ({ items: [{ title: 'A', summary: 'B', category: 'gulf', urgency: 'medium', time: 'x' }] }),
     });
 
