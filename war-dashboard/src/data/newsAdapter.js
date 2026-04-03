@@ -104,6 +104,17 @@ function normalizeProvenance(provenance) {
   };
 }
 
+function buildApiPath(pathname, query = {}) {
+  const parts = [];
+  for (const [key, rawValue] of Object.entries(query)) {
+    if (rawValue === undefined || rawValue === null || rawValue === "") continue;
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(rawValue))}`);
+  }
+
+  if (parts.length === 0) return pathname;
+  return `${pathname}?${parts.join("&")}`;
+}
+
 function buildAgeSec(isoTime) {
   if (!isoTime) return null;
   const ts = new Date(isoTime).getTime();
@@ -205,11 +216,33 @@ function mapStoredItem(item) {
 }
 
 async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
-  const params = new URLSearchParams();
-  params.set("limit", String(limit));
-  if (category) params.set("category", category);
+  const requestUrl = buildApiPath("/api/news/feed", {
+    limit,
+    category,
+  });
 
-  const res = await fetch(`/api/news/feed?${params.toString()}`, { signal });
+  let res;
+  try {
+    res = await fetch(requestUrl, { signal });
+  } catch (error) {
+    const requestError = new Error("stored_feed_request_failed");
+    requestError.cause = error;
+    requestError.feedMeta = normalizeStoredMetadata({
+      mode: "stored",
+      fallback_used: false,
+      item_count: 0,
+      freshness: {
+        latest_item_at: null,
+        oldest_item_at: null,
+        data_age_sec: null,
+        last_ingestion_at: null,
+      },
+      correlation_id: null,
+      error_reason: error?.message || "stored_feed_request_failed",
+    }, "stored");
+    throw requestError;
+  }
+
   const correlationId = res.headers.get("x-correlation-id") || null;
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -268,5 +301,6 @@ export async function fetchNewsItems(category, signal) {
 }
 
 export const __testing = {
+  buildApiPath,
   mapStoredItem,
 };

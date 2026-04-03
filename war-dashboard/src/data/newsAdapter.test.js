@@ -5,6 +5,9 @@ describe('resolveFeedMode', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    delete process.env.REACT_APP_PRODUCTION_VERIFY_MODE;
+    delete process.env.REACT_APP_FEED_MODE;
+    delete process.env.REACT_APP_FEED_FALLBACK;
   });
 
   afterEach(() => {
@@ -80,11 +83,26 @@ describe('mapStoredItem', () => {
   });
 });
 
+describe('buildApiPath', () => {
+  test('builds a stable relative feed URL without URLSearchParams', () => {
+    expect(__testing.buildApiPath('/api/news/feed', { limit: 20, category: 'all' }))
+      .toBe('/api/news/feed?limit=20&category=all');
+  });
+
+  test('skips empty optional query values', () => {
+    expect(__testing.buildApiPath('/api/news/feed', { limit: 20, category: '', ignored: null }))
+      .toBe('/api/news/feed?limit=20');
+  });
+});
+
 describe('fetchNewsItems mode and fallback', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    delete process.env.REACT_APP_PRODUCTION_VERIFY_MODE;
+    delete process.env.REACT_APP_FEED_MODE;
+    delete process.env.REACT_APP_FEED_FALLBACK;
     global.fetch = jest.fn();
   });
 
@@ -104,7 +122,7 @@ describe('fetchNewsItems mode and fallback', () => {
     });
 
     const out = await fetchNewsItems('all');
-    expect(global.fetch.mock.calls[0][0]).toContain('/api/news/feed');
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=20&category=all');
     expect(out).toHaveLength(1);
   });
 
@@ -121,6 +139,7 @@ describe('fetchNewsItems mode and fallback', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        headers: { get: () => null },
         json: async () => ({ items: [{ title: 'Legacy', summary: 'ok', category: 'all', urgency: 'medium', time: 'now' }] }),
       });
 
@@ -168,10 +187,12 @@ describe('fetchNewsItems mode and fallback', () => {
       .mockResolvedValueOnce({
         ok: false,
         status: 500,
+        headers: { get: () => null },
         json: async () => ({ error: 'stored failed' }),
       })
       .mockResolvedValueOnce({
         ok: true,
+        headers: { get: () => null },
         json: async () => ({ items: [{ title: 'Legacy', summary: 'ok', category: 'all', urgency: 'medium', time: 'now' }] }),
       });
 
