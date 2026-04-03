@@ -27,4 +27,7 @@ module.exports = {
   optimizerEnabled:
     String(process.env.OPTIMIZER_ENABLED || 'true').toLowerCase() === 'true',
   optimizerScheduleMs: toInt(process.env.OPTIMIZER_SCHEDULE_MS, 2 * 60 * 60 * 1000), // default 2h
+  sitrepEnabled:
+    String(process.env.SITREP_ENABLED || 'true').toLowerCase() === 'true',
+  sitrepScheduleMs: toInt(process.env.SITREP_SCHEDULE_MS, 30 * 60 * 1000), // default 30min
 };

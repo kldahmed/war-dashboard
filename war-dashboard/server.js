@@ -13,8 +13,9 @@ require('dotenv').config({ path: '.env.local' });
 const { randomUUID } = require('node:crypto');
 const createApp = require('./backend/app/createApp');
 const env = require('./backend/config/env');
-const { runRssIngestion } = require('./backend/modules/ingestion/service');
+const { runRssIngestion }  = require('./backend/modules/ingestion/service');
 const { runAutoOptimizer } = require('./backend/modules/self-optimization/service');
+const { generateSitrep }  = require('./backend/modules/intelligence/service');
 const { pool } = require('./backend/lib/db');
 
 const app = createApp();
@@ -24,6 +25,9 @@ let ingestionInFlight = false;
 
 let optimizerTimer = null;
 let optimizerInFlight = false;
+
+let sitrepTimer = null;
+let sitrepInFlight = false;
 
 function scheduleIngestion() {
   if (!env.ingestionScheduleEnabled) return;
@@ -64,6 +68,26 @@ function scheduleOptimizer() {
   optimizerTimer = setInterval(runScheduledOptimizer, env.optimizerScheduleMs);
 }
 
+function scheduleSitrep() {
+  if (!env.sitrepEnabled) return;
+
+  const runScheduledSitrep = async () => {
+    if (sitrepInFlight) return;
+    sitrepInFlight = true;
+    try {
+      await generateSitrep({ correlationId: randomUUID() });
+    } catch (error) {
+      console.error('[sitrep:schedule] failed', error.message);
+    } finally {
+      sitrepInFlight = false;
+    }
+  };
+
+  // Run once at startup (after 60s to let ingestion settle), then on schedule
+  setTimeout(runScheduledSitrep, 60_000);
+  sitrepTimer = setInterval(runScheduledSitrep, env.sitrepScheduleMs);
+}
+
 app.listen(env.port, () => {
   const keySet = !!process.env.ANTHROPIC_API_KEY;
   console.log(`\n⚡ Dev API server → http://localhost:${env.port}`);
@@ -78,11 +102,13 @@ app.listen(env.port, () => {
   }
   scheduleIngestion();
   scheduleOptimizer();
+  scheduleSitrep();
 });
 
 process.on('SIGINT', async () => {
   if (ingestionTimer) clearInterval(ingestionTimer);
   if (optimizerTimer) clearInterval(optimizerTimer);
+  if (sitrepTimer)    clearInterval(sitrepTimer);
   await pool.end().catch(() => {});
   process.exit(0);
 });

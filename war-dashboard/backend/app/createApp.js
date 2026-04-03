@@ -9,6 +9,7 @@ const sourcesRoutes = require('../modules/sources/routes');
 const ingestionRoutes = require('../modules/ingestion/routes');
 const newsFeedRoutes = require('../modules/news-feed/routes');
 const observabilityRoutes = require('../modules/observability/routes');
+const intelligenceRoutes = require('../modules/intelligence/routes');
 const legacyClaudeHandler = require('../../api/claude');
 
 function createApp() {
@@ -38,6 +39,7 @@ function createApp() {
   app.post('/api/claude', legacyClaudeHandler);
 
   app.use('/api', observabilityRoutes);
+  app.use('/api', intelligenceRoutes);
   app.use('/api', sourcesRoutes);
   app.use('/api', ingestionRoutes);
   app.use('/api', newsFeedRoutes);

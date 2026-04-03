@@ -226,6 +226,107 @@ function BriefingMetric({ label, value, tone = 'neutral' }) {
   );
 }
 
+/* ──────────────────────────────────────────────────────────────────
+   SITREP PANEL — Automated Intelligence Situation Report
+────────────────────────────────────────────────────────────────── */
+const ESCALATION_META = {
+  low:      { label: 'منخفض',   color: '#26c281', icon: '🟢' },
+  medium:   { label: 'متوسط',   color: '#f0a500', icon: '🟡' },
+  high:     { label: 'مرتفع',   color: '#e74c3c', icon: '🔴' },
+  critical: { label: 'حرج',     color: '#9b0000', icon: '⛔' },
+};
+
+function SitrepPanel({ sitrep }) {
+  const [expanded, setExpanded] = React.useState(false);
+
+  if (!sitrep) return null;
+
+  const meta  = ESCALATION_META[sitrep.escalation_level] || ESCALATION_META.medium;
+  const actors = Array.isArray(sitrep.key_actors)    ? sitrep.key_actors    : [];
+  const fronts = Array.isArray(sitrep.active_fronts) ? sitrep.active_fronts : [];
+  const contras = Array.isArray(sitrep.contradictions) ? sitrep.contradictions : [];
+  const age    = sitrep.generated_at
+    ? Math.round((Date.now() - new Date(sitrep.generated_at).getTime()) / 60000)
+    : null;
+
+  const TREND_ICON = { escalating: '↑', stable: '→', 'de-escalating': '↓' };
+
+  return (
+    <section className="sitrep" dir="rtl" style={{ '--sitrep-color': meta.color }}>
+      <div className="sitrep__header" onClick={() => setExpanded(e => !e)} role="button" tabIndex={0}
+           onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setExpanded(v => !v)}>
+        <div className="sitrep__title-row">
+          <span className="sitrep__label">تقرير الموقف • SITREP</span>
+          <span className="sitrep__badge" style={{ background: meta.color }}>
+            {meta.icon} {meta.label}
+          </span>
+          {age !== null && (
+            <span className="sitrep__age">منذ {age < 1 ? 'أقل من دقيقة' : `${age} د`}</span>
+          )}
+          <span className="sitrep__toggle">{expanded ? '▲' : '▼'}</span>
+        </div>
+        <h2 className="sitrep__headline">{sitrep.headline}</h2>
+      </div>
+
+      {expanded && (
+        <div className="sitrep__body">
+          <p className="sitrep__summary">{sitrep.situation_summary}</p>
+
+          {actors.length > 0 && (
+            <div className="sitrep__section">
+              <h3 className="sitrep__section-title">الأطراف الفاعلة</h3>
+              <ul className="sitrep__actors">
+                {actors.map((a, i) => (
+                  <li key={i} className="sitrep__actor">
+                    <strong>{a.name}</strong>
+                    {a.role && <span className="sitrep__actor-role"> — {a.role}</span>}
+                    {a.latest_action && <span className="sitrep__actor-action">: {a.latest_action}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {fronts.length > 0 && (
+            <div className="sitrep__section">
+              <h3 className="sitrep__section-title">الجبهات النشطة</h3>
+              <ul className="sitrep__fronts">
+                {fronts.map((f, i) => {
+                  const trend = f.trend || 'stable';
+                  const trendClass = `sitrep__trend--${trend}`;
+                  return (
+                    <li key={i} className="sitrep__front">
+                      <span className={`sitrep__trend ${trendClass}`}>{TREND_ICON[trend] || '→'}</span>
+                      <strong>{f.front}</strong>
+                      {f.status && <span className="sitrep__front-status"> — {f.status}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {contras.length > 0 && (
+            <div className="sitrep__section">
+              <h3 className="sitrep__section-title">⚠ تناقضات بين المصادر</h3>
+              <ul className="sitrep__contras">
+                {contras.map((c, i) => (
+                  <li key={i} className="sitrep__contra">
+                    <strong>{c.topic}:</strong>
+                    <span className="sitrep__contra-a"> {c.source_a}: «{c.version_a}»</span>
+                    <span className="sitrep__contra-sep"> مقابل </span>
+                    <span className="sitrep__contra-b"> {c.source_b}: «{c.version_b}»</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function BriefingPanel({ briefing }) {
   if (!briefing) return null;
 
@@ -843,6 +944,10 @@ export default function App() {
   const [theme, setTheme]   = useState('dark');
   const [globalAlert, setGlobalAlert] = useState(null);
 
+  /* ── SITREP ── */
+  const [sitrep,        setSitrep]        = useState(null);
+  const [sitrepLoading, setSitrepLoading] = useState(false);
+
   const PAGE_SIZE = 20;
 
   /* ─── News Loader ─── */
@@ -921,10 +1026,27 @@ export default function App() {
     }
   }, []);
 
+  /* ─── SITREP Loader ─── */
+  const loadSitrep = useCallback(async () => {
+    setSitrepLoading(true);
+    try {
+      const res = await fetch('/api/intelligence/latest');
+      if (res.status === 204) return; // no digest yet
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setSitrep(data);
+    } catch (_) {
+      // silent — SITREP is supplementary
+    } finally {
+      setSitrepLoading(false);
+    }
+  }, []);
+
   /* ─── Initial Loads ─── */
   useEffect(() => { loadNews('all', '', 1); }, [loadNews]);
   useEffect(() => { loadLive(); }, [loadLive]);
   useEffect(() => { loadOps(); }, [loadOps]);
+  useEffect(() => { loadSitrep(); }, [loadSitrep]);
 
   /* ─── Category Change ─── */
   useEffect(() => {
@@ -966,6 +1088,12 @@ export default function App() {
     }, 5 * 60 * 1_000);
     return () => clearInterval(id);
   }, [activeTab, category, searchQ, page, loadNews]);
+
+  /* ─── Auto-refresh SITREP every 30 min ─── */
+  useEffect(() => {
+    const id = setInterval(loadSitrep, 30 * 60 * 1_000);
+    return () => clearInterval(id);
+  }, [loadSitrep]);
 
   /* ─── Load More ─── */
   const loadMore = useCallback(() => {
@@ -1080,6 +1208,8 @@ export default function App() {
             </div>
 
             {errorNews && <ErrorBanner message={errorNews} onRetry={() => loadNews(category, searchQ, 1)} />}
+
+            {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
 
             {!loadingNews && page === 1 && <BriefingPanel briefing={editorialBriefing} />}
 
@@ -1436,6 +1566,99 @@ img { display: block; max-width: 100%; }
   margin-bottom: 22px;
   box-shadow: var(--shadow-sm);
 }
+
+/* ── SITREP Panel ── */
+.sitrep {
+  --sitrep-color: #f0a500;
+  background: color-mix(in srgb, var(--bg2) 88%, var(--sitrep-color) 12%);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--sitrep-color) 30%);
+  border-left: 4px solid var(--sitrep-color);
+  border-radius: var(--radius);
+  margin-bottom: 18px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px color-mix(in srgb, transparent 85%, var(--sitrep-color) 15%);
+}
+.sitrep__header {
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+.sitrep__header:hover { background: color-mix(in srgb, transparent 94%, var(--sitrep-color) 6%); }
+.sitrep__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.sitrep__label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.sitrep__badge {
+  font-size: .75rem;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.sitrep__age { font-size: .75rem; color: var(--text3); margin-right: auto; }
+.sitrep__toggle { color: var(--text3); font-size: .75rem; }
+.sitrep__headline {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.4;
+  color: var(--text1);
+}
+.sitrep__body {
+  padding: 0 18px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, var(--sitrep-color) 30%);
+  padding-top: 14px;
+}
+.sitrep__summary { color: var(--text2); line-height: 1.7; margin: 0 0 16px; font-size: .92rem; }
+.sitrep__section { margin-bottom: 16px; }
+.sitrep__section-title {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--sitrep-color);
+  margin: 0 0 8px;
+}
+.sitrep__actors, .sitrep__fronts, .sitrep__contras {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sitrep__actor, .sitrep__front {
+  font-size: .88rem;
+  color: var(--text2);
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--bg1) 60%, transparent 40%);
+  border-radius: 6px;
+}
+.sitrep__actor-role { color: var(--text3); }
+.sitrep__actor-action { color: var(--text1); }
+.sitrep__trend { font-weight: 900; margin-left: 6px; }
+.sitrep__trend--escalating   { color: #e74c3c; }
+.sitrep__trend--stable        { color: var(--text3); }
+.sitrep__trend--de-escalating { color: #26c281; }
+.sitrep__front-status { color: var(--text3); }
+.sitrep__contra {
+  font-size: .85rem;
+  color: var(--text2);
+  background: color-mix(in srgb, #e74c3c 8%, var(--bg1) 92%);
+  border-radius: 6px;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+.sitrep__contra-a { color: #f0a500; }
+.sitrep__contra-b { color: #e74c3c; }
+.sitrep__contra-sep { color: var(--text3); }
+
 .briefing-panel__header {
   display: flex;
   justify-content: space-between;
