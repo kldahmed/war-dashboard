@@ -131,6 +131,8 @@ function buildCategoryCounts(rows) {
 router.get('/news/feed', asyncHandler(async (req, res) => {
   const limit = Math.min(env.newsFeedMaxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
   const category = normalizeCategorySlug(req.query.category);
+  const categoryClause = '';
+  const params = [limit];
 
   const [result, lastJob] = await Promise.all([
     query(
@@ -348,7 +350,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        verification_state,
        confidence_score,
        editorial_decision,
-       article_version_count,
+       editorial_priority,
        rank_score,
        cluster_last_seen_at
      FROM ranked_items
@@ -358,11 +360,11 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
         fetched_at DESC
      LIMIT $1`,
     params,
-     ORDER BY rank_score DESC,
+    ),
     query(
       `SELECT ended_at
-     LIMIT $1`,
-    [env.newsFeedMaxLimit],
+       FROM processing_jobs
+       WHERE job_type = 'rss_ingestion'
          AND status IN ('completed', 'completed_with_errors')
        ORDER BY created_at DESC
        LIMIT 1`,
