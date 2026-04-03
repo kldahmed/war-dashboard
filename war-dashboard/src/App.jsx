@@ -7,6 +7,11 @@ const TABS = [
   { id: "live",   label: "بث مباشر", icon: "📡" },
 ];
 
+const LIVE_FILTERS = [
+  { id: "playable", label: "Playable" },
+  { id: "external", label: "External" },
+];
+
 const CATEGORIES = [
   { id: "all",    label: "الكل",     emoji: "🌐" },
   { id: "iran",   label: "إيران",    emoji: "🇮🇷" },
@@ -334,6 +339,35 @@ function pickPriorityRail(items, heroItem) {
     .slice(0, 4);
 }
 
+function pickBreakingStories(items) {
+  return dedupeVisualItems(items)
+    .filter((item) => item?.urgency === "high")
+    .sort((left, right) => getRankScore(right) - getRankScore(left))
+    .slice(0, 4);
+}
+
+function pickTrendingStories(items, heroItem) {
+  const heroKey = heroItem?.id || heroItem?.title;
+  return dedupeVisualItems(items)
+    .filter((item) => (item?.id || item?.title) !== heroKey)
+    .sort((left, right) => getRankScore(right) - getRankScore(left))
+    .slice(0, 4);
+}
+
+function pickAnalysisStories(items, heroItem) {
+  const heroKey = heroItem?.id || heroItem?.title;
+  return dedupeVisualItems(items)
+    .filter((item) => (item?.id || item?.title) !== heroKey)
+    .filter((item) => {
+      const title = String(item?.title || "").toLowerCase();
+      const summary = String(item?.summary || "").toLowerCase();
+      const priority = item?.provenance?.editorial?.priority;
+      return priority === "review" || priority === "elevated" || /(analysis|insight|assessment|تحليل|قراءة)/.test(`${title} ${summary}`);
+    })
+    .sort((left, right) => getRankScore(right) - getRankScore(left))
+    .slice(0, 4);
+}
+
 // ── Components ───────────────────────────────────────────────────────────────
 
 const NewsCard = memo(({ item, index }) => {
@@ -552,6 +586,30 @@ function PriorityRail({ items }) {
   );
 }
 
+function EditorialStrip({ title, caption, items, tone }) {
+  if (!items.length) return null;
+  return (
+    <div style={{ marginBottom:"16px" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
+        <h3 style={{ color:"#e8e4dc", fontSize:"15px", fontWeight:"800" }}>{title}</h3>
+        <span style={{ color:"#555", fontSize:"11px" }}>{caption}</span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:"12px" }}>
+        {items.map((item) => (
+          <div key={`${title}:${item?.id || item?.title}`} style={{ background:"#0f0f0f", border:`1px solid ${tone}`, borderRadius:"14px", padding:"12px 14px" }}>
+            <div style={{ color:"#f0ece4", fontSize:"13px", fontWeight:"800", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"8px" }}>{item.title}</div>
+            <div style={{ color:"#736a61", fontSize:"11.5px", lineHeight:"1.8", direction:"rtl", textAlign:"right", marginBottom:"10px" }}>{getWhyThisStory(item)}</div>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:"8px", color:"#5c5c5c", fontSize:"11px" }}>
+              <span>{getConfidenceHint(item)}</span>
+              <span>{item.time}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
 const VideoCard = memo(({ item, index }) => {
@@ -685,6 +743,7 @@ function Skeleton() {
 export default function Dashboard() {
   const [tab, setTab]             = useState("news");
   const [cat, setCat]             = useState("all");
+  const [liveFilter, setLiveFilter] = useState("playable");
   const [news, setNews]           = useState([]);
   const [videos, setVideos]       = useState([]);
   const [loadN, setLoadN]         = useState(false);
@@ -764,7 +823,12 @@ export default function Dashboard() {
   const displayNews = dedupeVisualItems(news);
   const heroStory = pickHeroStory(displayNews);
   const priorityRail = pickPriorityRail(displayNews, heroStory);
+  const breakingStories = pickBreakingStories(displayNews);
+  const trendingStories = pickTrendingStories(displayNews, heroStory);
+  const analysisStories = pickAnalysisStories(displayNews, heroStory);
   const remainingNews = displayNews.filter((item) => (item?.id || item?.title) !== (heroStory?.id || heroStory?.title));
+  const visibleLiveStreams = liveStreams.filter((channel) => liveFilter === "playable" ? channel.playable : channel.externalOnly || !channel.playable);
+  const activeLiveChannel = visibleLiveStreams.find((channel) => channel.id === liveCh?.id) || visibleLiveStreams[0] || liveCh || null;
 
   const fetchNews = useCallback(async (c) => {
     if (nCache.current[c]) { setNews(nCache.current[c]); return; }
@@ -913,10 +977,10 @@ export default function Dashboard() {
       <div style={{ background:"linear-gradient(180deg,#100303 0%,#090909 100%)", borderBottom:"1px solid rgba(192,57,43,.22)", padding:"18px 24px 0" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:"11px" }}>
-            <div style={{ width:36, height:36, borderRadius:"9px", background:"linear-gradient(135deg,#c0392b,#7b241c)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"17px", boxShadow:"0 0 16px rgba(192,57,43,.5)" }}>⚔️</div>
+            <div style={{ width:40, height:40, borderRadius:"12px", background:"linear-gradient(135deg,#0f766e,#0b3c5d)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"19px", boxShadow:"0 0 18px rgba(15,118,110,.45)" }}>🌐</div>
             <div>
-              <h1 style={{ fontSize:"19px", fontWeight:"900", color:"#f0ece4", animation:"glow 3s infinite" }}>داشبورد أخبار المنطقة</h1>
-              <p style={{ color:"#484848", fontSize:"11px", marginTop:"2px" }}>إيران · الخليج · أمريكا · إسرائيل</p>
+              <h1 style={{ fontSize:"19px", fontWeight:"900", color:"#f0ece4", animation:"glow 3s infinite" }}>عين العالم</h1>
+              <p style={{ color:"#6a737d", fontSize:"11px", marginTop:"2px" }}>🌐 عين العالم · World Eye</p>
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:"9px" }}>
@@ -1008,6 +1072,9 @@ export default function Dashboard() {
                   })}
                   <span style={{ color:"#282828", fontSize:"12px", marginRight:"auto" }}>{displayNews.length} خبر</span>
                 </div>
+                <EditorialStrip title="Breaking" caption="الأكثر إلحاحًا الآن" items={breakingStories} tone="rgba(231,76,60,.28)" />
+                <EditorialStrip title="Trending" caption="الأعلى ترتيبًا في الفيد" items={trendingStories} tone="rgba(22,160,133,.24)" />
+                <EditorialStrip title="Top Analysis" caption="قراءات وتحليلات مرفوعة تحريرياً" items={analysisStories} tone="rgba(155,89,182,.24)" />
                 <HeroStory item={heroStory} />
                 <PriorityRail items={priorityRail} />
                 <div className="news-grid">
@@ -1057,6 +1124,28 @@ export default function Dashboard() {
         {/* LIVE */}
         {tab === "live" && (
           <div className="live-grid" style={{ display:"grid", gridTemplateColumns:"1fr 300px", gap:"18px", alignItems:"start" }}>
+            <div style={{ gridColumn:"1 / -1", display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"2px" }}>
+              {LIVE_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => setLiveFilter(filter.id)}
+                  style={{
+                    background: liveFilter === filter.id ? "rgba(15,118,110,.22)" : "rgba(255,255,255,.03)",
+                    border: `1px solid ${liveFilter === filter.id ? "rgba(15,118,110,.52)" : "rgba(255,255,255,.08)"}`,
+                    color: liveFilter === filter.id ? "#7dd3c7" : "#777",
+                    borderRadius: "999px",
+                    padding: "7px 12px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
             {loadLive && (
               <div style={{ gridColumn:"1 / -1" }}>
                 <Skeleton />
@@ -1070,23 +1159,23 @@ export default function Dashboard() {
               </div>
             )}
 
-            {!loadLive && !errLive && liveCh && (
+            {!loadLive && !errLive && activeLiveChannel && (
               <>
                 <div style={{ background:"#0d0d0d", borderRadius:"16px", overflow:"hidden", border:"1px solid rgba(255,255,255,.07)" }}>
                   <div style={{ padding:"11px 15px", background:"#0f0f0f", borderBottom:"1px solid rgba(255,255,255,.05)", display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
-                    <span style={{ width:8, height:8, borderRadius:"50%", background:liveCh.color, display:"inline-block", animation:liveCh.uptimeStatus === "up" ? "pulse 1.1s infinite" : "none" }} />
-                    <span style={{ color:liveCh.color, fontWeight:"800", fontSize:"12.5px", letterSpacing:"1px" }}>حالة البث</span>
-                    <span style={{ color:"#666", fontSize:"13px", marginRight:"6px" }}>{liveCh.flag} {liveCh.name}</span>
-                    <span style={{ marginRight:"auto", color:liveCh.color, fontSize:"11.5px", fontWeight:"700" }}>{liveCh.statusLabel}</span>
+                    <span style={{ width:8, height:8, borderRadius:"50%", background:activeLiveChannel.color, display:"inline-block", animation:activeLiveChannel.uptimeStatus === "up" ? "pulse 1.1s infinite" : "none" }} />
+                    <span style={{ color:activeLiveChannel.color, fontWeight:"800", fontSize:"12.5px", letterSpacing:"1px" }}>حالة البث</span>
+                    <span style={{ color:"#666", fontSize:"13px", marginRight:"6px" }}>{activeLiveChannel.flag} {activeLiveChannel.name}</span>
+                    <span style={{ marginRight:"auto", color:activeLiveChannel.color, fontSize:"11.5px", fontWeight:"700" }}>{activeLiveChannel.statusLabel}</span>
                   </div>
 
-                  {liveCh.playable && liveCh.embedUrl ? (
+                  {activeLiveChannel.playable && activeLiveChannel.embedUrl ? (
                     <div style={{ position:"relative", paddingBottom:"56.25%", background:"#000" }}>
                       <iframe
-                        key={liveCh.id}
+                        key={activeLiveChannel.id}
                         style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none" }}
-                        src={liveCh.embedUrl}
-                        title={liveCh.name}
+                        src={activeLiveChannel.embedUrl}
+                        title={activeLiveChannel.name}
                         allow="autoplay; encrypted-media; fullscreen"
                         allowFullScreen
                         sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
@@ -1096,16 +1185,16 @@ export default function Dashboard() {
                   ) : (
                     <div style={{ padding:"28px 22px", background:"linear-gradient(160deg,#130909 0%,#0b0b0b 100%)", direction:"rtl", textAlign:"right" }}>
                       <div style={{ color:"#f0ece4", fontSize:"18px", fontWeight:"800", marginBottom:"10px" }}>لا يوجد embed صالح لهذا المصدر الآن</div>
-                      <div style={{ color:"#8c8176", fontSize:"13px", lineHeight:"1.9", marginBottom:"14px" }}>{liveCh.statusHint}</div>
+                      <div style={{ color:"#8c8176", fontSize:"13px", lineHeight:"1.9", marginBottom:"14px" }}>{activeLiveChannel.statusHint}</div>
                       <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"14px" }}>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>الحالة: {liveCh.detailStatus}</span>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>{liveCh.externalOnly ? "mode: external-only" : "mode: degraded"}</span>
-                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر نجاح: {formatDateTime(liveCh.lastSuccessAt)}</span>
-                        {liveCh.storyPublishedAt && <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر قصة: {formatDateTime(liveCh.storyPublishedAt)}</span>}
+                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>الحالة: {activeLiveChannel.detailStatus}</span>
+                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>{activeLiveChannel.externalOnly ? "mode: external-only" : "mode: degraded"}</span>
+                        <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر نجاح: {formatDateTime(activeLiveChannel.lastSuccessAt)}</span>
+                        {activeLiveChannel.storyPublishedAt && <span style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", color:"#9a8f83", borderRadius:"999px", padding:"4px 10px", fontSize:"11px" }}>آخر قصة: {formatDateTime(activeLiveChannel.storyPublishedAt)}</span>}
                       </div>
-                      {liveCh.storyTitle && <div style={{ color:"#d1c6bb", fontSize:"13px", lineHeight:"1.8", marginBottom:"12px" }}>آخر قصة مرتبطة: {liveCh.storyTitle}</div>}
-                      {liveCh.externalUrl ? (
-                        <a href={liveCh.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"rgba(192,57,43,.16)", border:"1px solid rgba(192,57,43,.34)", color:"#e3b9b3", textDecoration:"none", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", fontWeight:"700" }}>
+                      {activeLiveChannel.storyTitle && <div style={{ color:"#d1c6bb", fontSize:"13px", lineHeight:"1.8", marginBottom:"12px" }}>آخر قصة مرتبطة: {activeLiveChannel.storyTitle}</div>}
+                      {activeLiveChannel.externalUrl ? (
+                        <a href={activeLiveChannel.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"rgba(192,57,43,.16)", border:"1px solid rgba(192,57,43,.34)", color:"#e3b9b3", textDecoration:"none", borderRadius:"10px", padding:"10px 14px", fontSize:"13px", fontWeight:"700" }}>
                           فتح المصدر خارجيًا
                         </a>
                       ) : (
@@ -1115,7 +1204,7 @@ export default function Dashboard() {
                   )}
 
                   <div style={{ padding:"12px 15px", color:"#5c5c5c", fontSize:"11.5px", textAlign:"center" }}>
-                    {liveCh.playable ? "يوجد رابط خارجي بديل أسفل القائمة إذا منع المزود الـ embed." : "تم تفعيل degraded mode بدل عرض player مكسور أو Video unavailable."}
+                    {activeLiveChannel.playable ? "يوجد رابط خارجي بديل أسفل القائمة إذا منع المزود الـ embed." : "تم تفعيل degraded mode بدل عرض player مكسور أو Video unavailable."}
                   </div>
                 </div>
 
@@ -1126,9 +1215,9 @@ export default function Dashboard() {
                       active: {liveSummary.active_streams} · playable: {liveSummary.playable_streams} · external-only: {liveSummary.external_only_streams} · featured: {liveSummary.featured_stream_id || "-"}
                     </div>
                   )}
-                  {liveStreams.map(ch => (
+                  {visibleLiveStreams.map(ch => (
                     <div key={getLiveKey(ch)}>
-                      <ChannelCard ch={ch} active={liveCh?.id===ch.id} onSelect={setLiveCh} />
+                      <ChannelCard ch={ch} active={activeLiveChannel?.id===ch.id} onSelect={setLiveCh} />
                       {ch.externalUrl && (
                         <a href={ch.externalUrl} target="_blank" rel="noreferrer" style={{ display:"inline-flex", marginTop:"6px", color:"#88766a", fontSize:"11.5px", textDecoration:"none" }}>
                           فتح خارجي
@@ -1140,9 +1229,9 @@ export default function Dashboard() {
               </>
             )}
 
-            {!loadLive && !errLive && !liveCh && (
+            {!loadLive && !errLive && !activeLiveChannel && (
               <div style={{ gridColumn:"1 / -1", textAlign:"center", padding:"40px", color:"#666" }}>
-                لا توجد streams قابلة للعرض حالياً.
+                {liveFilter === "playable" ? "لا توجد قنوات playable متاحة الآن. انتقل إلى External للاطلاع على القنوات الموثقة خارجياً." : "لا توجد قنوات خارجية صالحة الآن."}
               </div>
             )}
           </div>

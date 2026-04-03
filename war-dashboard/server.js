@@ -10,10 +10,37 @@
 
 require('dotenv').config({ path: '.env.local' });
 
+const { randomUUID } = require('node:crypto');
 const createApp = require('./backend/app/createApp');
 const env = require('./backend/config/env');
+const { runRssIngestion } = require('./backend/modules/ingestion/service');
+const { pool } = require('./backend/lib/db');
 
 const app = createApp();
+
+let ingestionTimer = null;
+let ingestionInFlight = false;
+
+function scheduleIngestion() {
+  if (!env.ingestionScheduleEnabled) return;
+
+  const runScheduledIngestion = async () => {
+    if (ingestionInFlight) return;
+    ingestionInFlight = true;
+    try {
+      await runRssIngestion({
+        correlationId: randomUUID(),
+        triggeredBy: 'scheduled_server',
+      });
+    } catch (error) {
+      console.error('[ingestion:schedule] failed', error.message);
+    } finally {
+      ingestionInFlight = false;
+    }
+  };
+
+  ingestionTimer = setInterval(runScheduledIngestion, env.ingestionScheduleMs);
+}
 
 app.listen(env.port, () => {
   const keySet = !!process.env.ANTHROPIC_API_KEY;
@@ -22,7 +49,16 @@ app.listen(env.port, () => {
   console.log(`   FEED_MODE: ${env.feedMode}`);
   console.log(`   FEED_FALLBACK_ENABLED: ${env.feedFallbackEnabled}`);
   console.log(`   DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
+  console.log(`   INGESTION_SCHEDULE_ENABLED: ${env.ingestionScheduleEnabled}`);
+  console.log(`   INGESTION_SCHEDULE_MS: ${env.ingestionScheduleMs}`);
   if (!keySet) {
     console.warn('\n   ⚠️  Copy .env.example → .env.local and set your key.\n');
   }
+  scheduleIngestion();
+});
+
+process.on('SIGINT', async () => {
+  if (ingestionTimer) clearInterval(ingestionTimer);
+  await pool.end().catch(() => {});
+  process.exit(0);
 });

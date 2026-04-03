@@ -51,6 +51,18 @@ async function createFeedRun(jobId, feed) {
   return res.rows[0];
 }
 
+async function createIngestionRun(jobId, feed) {
+  const res = await query(
+    `INSERT INTO ingestion_runs (
+      source_id, source_feed_id, job_id, source_registry_id, status, items_fetched, items_stored, duration
+    )
+    VALUES ($1,$2,$3,$4,'running',0,0,NULL)
+    RETURNING id, created_at`,
+    [feed.source_id, feed.id, jobId, feed.source_registry_id || null],
+  );
+  return res.rows[0];
+}
+
 async function finishFeedRun(feedRunId, startedAt, details) {
   const endedAt = new Date();
   const latencyMs = Math.max(0, endedAt.getTime() - new Date(startedAt).getTime());
@@ -79,6 +91,29 @@ async function finishFeedRun(feedRunId, startedAt, details) {
       details.translatedCount,
       endedAt.toISOString(),
       latencyMs,
+      details.errorMessage || null,
+    ],
+  );
+}
+
+async function finishIngestionRun(runId, startedAt, details) {
+  const endedAt = new Date();
+  const duration = Math.max(0, endedAt.getTime() - new Date(startedAt).getTime());
+  await query(
+    `UPDATE ingestion_runs
+     SET status = $2,
+         items_fetched = $3,
+         items_stored = $4,
+         duration = $5,
+         error_message = $6,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [
+      runId,
+      details.status,
+      details.rawSeenCount,
+      details.normalizedCount,
+      duration,
       details.errorMessage || null,
     ],
   );
@@ -194,6 +229,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
     successfulSources: 0,
     failedSources: 0,
     totalRawItems: 0,
+    totalStoredItems: 0,
     totalNormalizedItems: 0,
     totalTranslatedItems: 0,
     feedsTotal: feeds.length,
@@ -203,9 +239,9 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
     rawUpdated: 0,
     normalizedUpserted: 0,
     sourceGroups: {
-      ar_direct: registryStats.arDirectSources,
-      en_translate: registryStats.enTranslateSources,
-      optional_specialist: registryStats.optionalSources,
+      arabic: registryStats.arabicSources,
+      global: registryStats.globalSources,
+      specialist: registryStats.specialistSources,
     },
     errors: [],
   };
@@ -213,6 +249,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
   try {
     for (const feed of feeds) {
       const feedRun = await createFeedRun(job.id, feed);
+      const ingestionRun = await createIngestionRun(job.id, feed);
       const feedSummary = {
         status: 'completed',
         attemptCount: 1,
@@ -244,6 +281,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
 
             const normalizedResult = await normalizeRawItem(rawResult.id, { correlationId });
             if (normalizedResult?.id) {
+              summary.totalStoredItems += 1;
               summary.normalizedUpserted += 1;
               summary.totalNormalizedItems += 1;
               feedSummary.normalizedCount += 1;
@@ -272,6 +310,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
         summary.feedsSucceeded += 1;
         summary.successfulSources += 1;
         await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
+        await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
         logger.info('rss_feed_completed', {
           correlationId,
           sourceRegistryId: feed.source_registry_id,
@@ -292,6 +331,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
           [feed.id, String(feedErr.message || 'unknown_error').slice(0, 500)],
         );
         await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
+        await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
         logger.warn('rss_feed_failed', {
           correlationId,
           sourceRegistryId: feed.source_registry_id,

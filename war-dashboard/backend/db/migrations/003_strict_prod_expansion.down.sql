@@ -6,9 +6,22 @@ DROP INDEX IF EXISTS idx_ingestion_feed_runs_status;
 DROP INDEX IF EXISTS idx_ingestion_feed_runs_job;
 DROP TABLE IF EXISTS ingestion_feed_runs;
 
+DROP INDEX IF EXISTS idx_ingestion_runs_status;
+DROP INDEX IF EXISTS idx_ingestion_runs_source;
+DROP TABLE IF EXISTS ingestion_runs;
+
+DROP INDEX IF EXISTS idx_normalized_items_news_category;
+
+ALTER TABLE normalized_items
+  DROP CONSTRAINT IF EXISTS fk_normalized_items_news_category;
+
+DROP TABLE IF EXISTS news_categories;
+
 DROP INDEX IF EXISTS idx_normalized_items_translation_status;
 
 ALTER TABLE normalized_items
+  DROP COLUMN IF EXISTS category_confidence_score,
+  DROP COLUMN IF EXISTS news_category_id,
   DROP COLUMN IF EXISTS translation_error_message,
   DROP COLUMN IF EXISTS translation_updated_at,
   DROP COLUMN IF EXISTS translation_provider,

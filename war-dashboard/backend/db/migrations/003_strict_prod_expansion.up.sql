@@ -28,6 +28,50 @@ ALTER TABLE normalized_items
 CREATE INDEX IF NOT EXISTS idx_normalized_items_translation_status
   ON normalized_items(translation_status, updated_at DESC);
 
+ALTER TABLE normalized_items
+  ADD COLUMN IF NOT EXISTS news_category_id BIGINT,
+  ADD COLUMN IF NOT EXISTS category_confidence_score NUMERIC(5,4);
+
+CREATE TABLE IF NOT EXISTS news_categories (
+  id BIGSERIAL PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  label_ar TEXT NOT NULL,
+  keyword_hints TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE normalized_items
+  ADD CONSTRAINT fk_normalized_items_news_category
+  FOREIGN KEY (news_category_id)
+  REFERENCES news_categories(id)
+  ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_normalized_items_news_category
+  ON normalized_items(news_category_id, category_confidence_score DESC NULLS LAST, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id BIGSERIAL PRIMARY KEY,
+  source_id BIGINT REFERENCES sources(id) ON DELETE SET NULL,
+  source_feed_id BIGINT REFERENCES source_feeds(id) ON DELETE SET NULL,
+  job_id BIGINT REFERENCES processing_jobs(id) ON DELETE SET NULL,
+  source_registry_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  items_fetched INTEGER NOT NULL DEFAULT 0,
+  items_stored INTEGER NOT NULL DEFAULT 0,
+  duration INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_source
+  ON ingestion_runs(source_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status
+  ON ingestion_runs(status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS ingestion_feed_runs (
   id BIGSERIAL PRIMARY KEY,
   job_id BIGINT REFERENCES processing_jobs(id) ON DELETE CASCADE,

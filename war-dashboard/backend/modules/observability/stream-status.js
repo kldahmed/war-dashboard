@@ -131,7 +131,7 @@ function pickFeaturedStream(streams) {
 
 async function getStreamStatusSnapshot() {
   const runtimeMetrics = metrics.snapshot();
-  const [streamsResult, recentEventsResult] = await Promise.all([
+  const [streamsResult, recentEventsResult, removedStreamsResult] = await Promise.all([
     query(
       `SELECT
          sc.id AS stream_id,
@@ -239,16 +239,23 @@ async function getStreamStatusSnapshot() {
            MAX(latest_story_corroboration_count) FILTER (WHERE story_rank = 1) AS latest_story_corroboration_count
          FROM ranked_stories
        ) stories ON matched_source.source_id IS NOT NULL
+       WHERE sc.status = 'active'
        ORDER BY sc.sort_order ASC, sc.id ASC`
     ),
     query(
       `SELECT
          COUNT(*)::int AS processing_jobs_24h,
          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_jobs_24h,
-         COUNT(*) FILTER (WHERE job_type = 'ingestion_rss')::int AS ingestion_jobs_24h,
+         COUNT(*) FILTER (WHERE job_type = 'rss_ingestion')::int AS ingestion_jobs_24h,
          MAX(created_at) AS latest_job_at
        FROM processing_jobs
        WHERE created_at >= NOW() - INTERVAL '24 hours'`
+    ),
+    query(
+      `SELECT COUNT(*)::int AS removed_streams
+       FROM stream_channels
+       WHERE status = 'inactive'
+         AND last_verification_status = 'removed_unavailable'`,
     ),
   ]);
 
@@ -347,6 +354,7 @@ async function getStreamStatusSnapshot() {
       processing_jobs_24h: recentEventsResult.rows[0]?.processing_jobs_24h || 0,
       failed_jobs_24h: recentEventsResult.rows[0]?.failed_jobs_24h || 0,
       ingestion_jobs_24h: recentEventsResult.rows[0]?.ingestion_jobs_24h || 0,
+      removed_streams: removedStreamsResult.rows[0]?.removed_streams || 0,
       featured_stream_id: featuredStream?.stream_id || null,
     },
     featured_stream: featuredStream,

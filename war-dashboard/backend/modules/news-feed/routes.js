@@ -7,6 +7,25 @@ const env = require('../../config/env');
 
 const router = express.Router();
 
+function safeIsoTime(value) {
+  if (!value) return 'unknown';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'unknown' : parsed.toISOString();
+}
+
+function inferUrgency(row) {
+  const haystack = String([
+    row.news_category_slug,
+    row.display_title,
+    row.display_summary,
+    row.editorial_priority,
+  ].filter(Boolean).join(' ')).toLowerCase();
+
+  if (row.news_category_slug === 'breaking' || /(breaking|urgent|developing|عاجل|فوري)/.test(haystack)) return 'high';
+  if (row.editorial_priority === 'high' || row.editorial_priority === 'review' || Number(row.corroboration_count || 0) >= 2) return 'medium';
+  return 'low';
+}
+
 function mapToUiItem(row) {
   const category = row.category || row.source_category || 'all';
   const published = row.published_at_source || row.fetched_at || row.created_at;
@@ -15,8 +34,8 @@ function mapToUiItem(row) {
     title: row.display_title,
     summary: row.display_summary,
     category,
-    urgency: 'medium',
-    time: published ? new Date(published).toISOString() : 'unknown',
+    urgency: inferUrgency(row),
+    time: safeIsoTime(published),
     source: {
       id: row.source_id,
       name: row.source_name,
@@ -132,6 +151,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
            ELSE COALESCE(NULLIF(ni.translated_summary_ar, ''), ni.canonical_body)
          END AS display_summary,
          ni.category,
+         nc.slug AS news_category_slug,
          ni.published_at_source,
          ni.normalized_hash,
          ni.created_at,
@@ -212,6 +232,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        FROM normalized_items ni
        JOIN raw_items ri ON ri.id = ni.raw_item_id
        JOIN sources s ON s.id = ni.source_id
+      LEFT JOIN news_categories nc ON nc.id = ni.news_category_id
        LEFT JOIN cluster_events ce ON ce.normalized_item_id = ni.id
        LEFT JOIN story_clusters sc ON sc.id = ce.cluster_id
        LEFT JOIN cluster_signals cs ON cs.cluster_id = ce.cluster_id

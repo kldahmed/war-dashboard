@@ -5,6 +5,37 @@ const { query } = require('../../lib/db');
 const { assignStoryCluster, recordArticleVersionIfNeeded } = require('./cluster-service');
 const { translateNormalizedItem } = require('../translation/service');
 
+const CATEGORY_RULES = [
+  { slug: 'breaking', confidence: 0.94, keywords: ['breaking', 'urgent', 'developing', 'flash', 'عاجل', 'فوري'] },
+  { slug: 'war', confidence: 0.9, keywords: ['war', 'attack', 'strike', 'missile', 'drone', 'military', 'troops', 'قتال', 'هجوم', 'ضربة', 'صاروخ'] },
+  { slug: 'energy', confidence: 0.88, keywords: ['oil', 'gas', 'energy', 'pipeline', 'opec', 'fuel', 'نفط', 'غاز', 'طاقة'] },
+  { slug: 'politics', confidence: 0.84, keywords: ['election', 'government', 'minister', 'parliament', 'policy', 'diplomacy', 'انتخابات', 'حكومة', 'وزير', 'برلمان'] },
+  { slug: 'economy', confidence: 0.82, keywords: ['economy', 'market', 'trade', 'inflation', 'bank', 'finance', 'اقتصاد', 'أسواق', 'تجارة', 'بنك'] },
+  { slug: 'technology', confidence: 0.8, keywords: ['technology', 'artificial intelligence', 'cyber', 'software', 'chip', 'تقنية', 'ذكاء اصطناعي', 'سيبراني'] },
+  { slug: 'analysis', confidence: 0.78, keywords: ['analysis', 'opinion', 'insight', 'assessment', 'explainer', 'تحليل', 'قراءة', 'تقدير'] },
+  { slug: 'middle-east', confidence: 0.76, keywords: ['middle east', 'gaza', 'iran', 'israel', 'syria', 'lebanon', 'saudi', 'الشرق الأوسط', 'غزة', 'إيران', 'إسرائيل', 'سوريا', 'لبنان'] },
+  { slug: 'world', confidence: 0.65, keywords: ['world', 'global', 'international', 'un', 'الأمم المتحدة', 'العالم', 'دولي'] },
+];
+
+let newsCategoryCache = null;
+
+async function getNewsCategoryMap() {
+  if (newsCategoryCache) return newsCategoryCache;
+  const result = await query('SELECT id, slug FROM news_categories WHERE status = $1', ['active']);
+  newsCategoryCache = new Map(result.rows.map((row) => [row.slug, row.id]));
+  return newsCategoryCache;
+}
+
+function classifyNormalizedContent(title, body) {
+  const haystack = normalizeUnicode(`${title || ''} ${body || ''}`).toLowerCase();
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()))) {
+      return { slug: rule.slug, confidence: rule.confidence };
+    }
+  }
+  return { slug: 'world', confidence: 0.45 };
+}
+
 function sanitizeWhitespace(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
@@ -79,13 +110,17 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
   const contentFingerprint = hashFingerprint(body);
   const timeBucket30m = buildTimeBucket30m(row.published_at_source || payload.isoDate || payload.pubDate || null);
   const initialTranslationStatus = language.startsWith('ar') ? 'not_required' : 'pending';
+  const classifiedCategory = classifyNormalizedContent(title, body);
+  const newsCategoryMap = await getNewsCategoryMap();
+  const newsCategoryId = newsCategoryMap.get(classifiedCategory.slug) || null;
 
   const insert = await query(
     `INSERT INTO normalized_items (
       raw_item_id, source_id, canonical_title, canonical_body, language, published_at_source, source_url, normalized_hash,
-      title_fingerprint, content_fingerprint, time_bucket_30m, category, original_title, original_summary, translation_status, status
+      title_fingerprint, content_fingerprint, time_bucket_30m, category, original_title, original_summary, translation_status,
+      news_category_id, category_confidence_score, status
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'ready')
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'ready')
     ON CONFLICT (raw_item_id) DO UPDATE
     SET canonical_title = EXCLUDED.canonical_title,
         canonical_body = EXCLUDED.canonical_body,
@@ -97,6 +132,8 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
         content_fingerprint = EXCLUDED.content_fingerprint,
         time_bucket_30m = EXCLUDED.time_bucket_30m,
         category = EXCLUDED.category,
+        news_category_id = EXCLUDED.news_category_id,
+        category_confidence_score = EXCLUDED.category_confidence_score,
         original_title = EXCLUDED.original_title,
         original_summary = EXCLUDED.original_summary,
         translation_status = CASE
@@ -153,6 +190,8 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
       title || 'Untitled',
       body || title || 'No content',
       initialTranslationStatus,
+      newsCategoryId,
+      classifiedCategory.confidence,
     ],
   );
 
@@ -164,6 +203,8 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
     content_fingerprint: contentFingerprint,
     normalized_hash: normalizedHash,
     category: payload.category ? String(payload.category).toLowerCase() : null,
+    news_category_id: newsCategoryId,
+    category_confidence_score: classifiedCategory.confidence,
     published_at_source: row.published_at_source,
     time_bucket_30m: timeBucket30m,
     created_at: new Date().toISOString(),

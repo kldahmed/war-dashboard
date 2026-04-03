@@ -1,4 +1,4 @@
-const DEFAULT_LIMIT = 20;
+const DEFAULT_LIMIT = 60;
 const ALLOWED_CATEGORIES = new Set(["all", "iran", "gulf", "usa", "israel"]);
 const ALLOWED_URGENCY = new Set(["high", "medium", "low"]);
 const GENERIC_STORED_ERROR = "stored_feed_unavailable";
