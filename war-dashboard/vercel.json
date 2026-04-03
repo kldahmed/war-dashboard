@@ -15,11 +15,15 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "handle": "filesystem"
     },
     {
-      "handle": "filesystem"
+      "src": "/api/health$",
+      "dest": "/api/health/index.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
     },
     {
       "src": "/(.*)",
