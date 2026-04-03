@@ -156,6 +156,8 @@ function mapLiveEntry(entry, index) {
     externalUrl: toSafeHttpUrl(stream.external_watch_url) || toSafeHttpUrl(stream.official_page_url),
     statusLabel: stream.detail_status === "playable"
       ? "قابل للتشغيل"
+      : stream.detail_status === "playable_external"
+        ? "قابل للتشغيل (خارجي)"
       : stream.detail_status === "external_only"
         ? "خارجي فقط"
         : stream.detail_status === "healthy"
@@ -237,6 +239,7 @@ export default function App() {
   const [news, setNews] = useState([]);
   const [videos, setVideos] = useState([]);
   const [streams, setStreams] = useState([]);
+  const [liveSummary, setLiveSummary] = useState(null);
   const [liveCategory, setLiveCategory] = useState("all");
   const [activeStream, setActiveStream] = useState(null);
   const [feedMeta, setFeedMeta] = useState({ mode: "legacy", fallback_used: false, freshness: {}, category_counts: {} });
@@ -307,6 +310,7 @@ export default function App() {
       const response = await fetch("/api/health/streams", { signal: controller.signal });
       if (!response.ok) throw new Error("live_unavailable");
       const payload = await response.json();
+      setLiveSummary(payload?.summary || null);
       const mapped = (Array.isArray(payload?.streams) ? payload.streams : [])
         .map(mapLiveEntry)
         .filter(Boolean)
@@ -1097,6 +1101,21 @@ export default function App() {
 
             {tab === "live" && (
               <>
+                <div className="meta-row" style={{ marginBottom: "10px" }}>
+                  <span className="meta-chip">
+                    {Number(liveSummary?.playable_streams ?? streams.length)}/{Number(liveSummary?.active_streams ?? streams.length)} قابل للتشغيل
+                  </span>
+                  <span className="meta-chip">
+                    playable: {Number(liveSummary?.playable_streams ?? streams.length)}
+                  </span>
+                  <span className="meta-chip">
+                    active: {Number(liveSummary?.active_streams ?? streams.length)}
+                  </span>
+                  <span className="meta-chip">
+                    down: {Number(liveSummary?.down_streams ?? 0)}
+                  </span>
+                </div>
+
                 <div className="cat-row">
                   {liveCategories.map((item) => (
                     <button

@@ -23,6 +23,14 @@ function computeStreamHealth(row) {
     };
   }
 
+  if (row.playback_mode === 'playable' && !row.embed_url && row.external_watch_url) {
+    return {
+      uptime_status: 'up',
+      detail_status: 'playable_external',
+      health_reason: row.last_verification_status || 'external_watch_available',
+    };
+  }
+
   if (row.playback_mode === 'playable' && row.last_verification_status === 'embed_ok') {
     return {
       uptime_status: 'up',
@@ -326,11 +334,11 @@ async function getStreamStatusSnapshot() {
   const summary = streams.reduce((acc, stream) => {
     acc.total_streams += 1;
     if (stream.stream.status === 'active') acc.active_streams += 1;
-    if (stream.stream.playback_mode === 'playable') acc.playable_streams += 1;
+    if (stream.stream.status === 'active') acc.playable_streams += 1;
     if (stream.stream.playback_mode === 'external_only') acc.external_only_streams += 1;
     if (stream.stream.verification_status || stream.stream.last_verified_at) acc.channels_verified_count += 1;
     acc[`${stream.stream.uptime_status}_streams`] = (acc[`${stream.stream.uptime_status}_streams`] || 0) + 1;
-    acc[`${stream.stream.detail_status}_streams`] = (acc[`${stream.stream.detail_status}_streams`] || 0) + 1;
+    acc[`detail_${stream.stream.detail_status}_streams`] = (acc[`detail_${stream.stream.detail_status}_streams`] || 0) + 1;
     acc.linked_stories += stream.stats.story_count;
     acc.linked_clusters += stream.stats.linked_cluster_count;
     return acc;
