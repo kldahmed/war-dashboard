@@ -78,13 +78,36 @@ module.exports = async function handler(req, res) {
 
   try {
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
     const category = typeof req.query.category === 'string' ? req.query.category.toLowerCase() : null;
+    const searchQ = typeof req.query.q === 'string' ? req.query.q.trim() : null;
 
-    const params = [limit];
-    const categoryClause = category && category !== 'all' ? 'AND COALESCE(ni.category, s.category) = $2' : '';
-    if (categoryClause) params.push(category);
+    const whereClauses = [
+      "ni.status = 'ready'",
+      'ni.canonical_title IS NOT NULL',
+      "LENGTH(TRIM(ni.canonical_title)) > 0",
+      'ni.canonical_body IS NOT NULL',
+      "LENGTH(TRIM(ni.canonical_body)) > 0",
+    ];
+    const params = [];
 
-    const [result, lastJob] = await Promise.all([
+    if (category && category !== 'all') {
+      params.push(category);
+      whereClauses.push(`COALESCE(ni.category, s.category) = $${params.length}`);
+    }
+    if (searchQ) {
+      params.push(`%${searchQ}%`);
+      whereClauses.push(`(ni.canonical_title ILIKE $${params.length} OR ni.canonical_body ILIKE $${params.length})`);
+    }
+
+    const whereStr = whereClauses.map(c => `(${c})`).join(' AND ');
+
+    params.push(limit);
+    const limitPlaceholder = `$${params.length}`;
+    params.push(offset);
+    const offsetPlaceholder = `$${params.length}`;
+
+    const [result, countResult, lastJob] = await Promise.all([
       query(
       `SELECT
         ni.id AS normalized_id,
@@ -106,15 +129,18 @@ module.exports = async function handler(req, res) {
        FROM normalized_items ni
        JOIN raw_items ri ON ri.id = ni.raw_item_id
        JOIN sources s ON s.id = ni.source_id
-       WHERE ni.status = 'ready'
-         AND ni.canonical_title IS NOT NULL
-         AND LENGTH(TRIM(ni.canonical_title)) > 0
-         AND ni.canonical_body IS NOT NULL
-         AND LENGTH(TRIM(ni.canonical_body)) > 0
-         ${categoryClause}
+       WHERE ${whereStr}
        ORDER BY ni.published_at_source DESC NULLS LAST, ri.fetched_at DESC
-       LIMIT $1`,
+       LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}`,
       params,
+      ),
+      query(
+      `SELECT COUNT(*)::int AS total
+       FROM normalized_items ni
+       JOIN raw_items ri ON ri.id = ni.raw_item_id
+       JOIN sources s ON s.id = ni.source_id
+       WHERE ${whereStr}`,
+      params.slice(0, params.length - 2),
       ),
       query(
         `SELECT ended_at
@@ -135,6 +161,7 @@ module.exports = async function handler(req, res) {
       fallback_used: false,
       freshness: buildFreshness(result.rows, lastIngestionAt),
       item_count: result.rowCount,
+      total_count: countResult.rows[0]?.total ?? result.rowCount,
       correlation_id: correlationId,
       error_reason: null,
       items: result.rows.map(mapToUiItem),

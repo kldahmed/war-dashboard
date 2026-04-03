@@ -263,23 +263,24 @@ function ListItem({ item, idx }) {
 function ChannelCard({ stream, onSelect, isActive }) {
   if (!stream) return null;
   const s = stream.stream || stream;
-  const isOnline = ['active', 'playable'].includes(s.status);
+  const name = stream.source?.name || s.name || s.registry_id || '';
+  const isOnline = s.uptime_status === 'up' || s.uptime_status === 'degraded' || s.status === 'active';
   return (
     <button
       className={`ch-card ${isActive ? 'ch-card--active' : ''} ${isOnline ? '' : 'ch-card--offline'}`}
       onClick={() => onSelect(stream)}
-      title={s.name}
+      title={name}
     >
       <div className="ch-card__logo">
         {s.logo_url
-          ? <img src={s.logo_url} alt={s.name} loading="lazy" onError={e => { e.target.style.display='none'; }} />
-          : <span className="ch-card__logo-text">{(s.name || '').slice(0, 3)}</span>
+          ? <img src={s.logo_url} alt={name} loading="lazy" onError={e => { e.target.style.display='none'; }} />
+          : <span className="ch-card__logo-text">{name.slice(0, 3)}</span>
         }
         <span className={`ch-status-dot ${isOnline ? 'ch-status-dot--live' : ''}`} />
       </div>
       <div className="ch-card__info">
-        <span className="ch-card__name">{s.name}</span>
-        <span className="ch-card__country">{s.country || ''}</span>
+        <span className="ch-card__name">{name}</span>
+        <span className="ch-card__country">{stream.source?.language || s.language || ''}</span>
       </div>
     </button>
   );
@@ -288,20 +289,22 @@ function ChannelCard({ stream, onSelect, isActive }) {
 function PlayerPanel({ stream, onClose }) {
   if (!stream) return null;
   const s = stream.stream || stream;
-  const embedUrl = s.embed_url || s.embedUrl || s.external_watch_url;
+  const name = stream.source?.name || s.name || s.registry_id || '';
+  const embedUrl = s.embed_url || s.embedUrl;
+  const watchUrl = s.external_watch_url || s.official_page_url;
   return (
     <div className="player-panel" dir="rtl">
       <div className="player-panel__header">
         <div className="player-panel__title">
-          {s.logo_url && <img src={s.logo_url} alt={s.name} className="player-panel__logo" />}
-          <span>{s.name}</span>
-          {['active', 'playable'].includes(s.status) && (
+          {s.logo_url && <img src={s.logo_url} alt={name} className="player-panel__logo" />}
+          <span>{name}</span>
+          {(s.uptime_status === 'up' || s.status === 'active') && (
             <span className="live-badge">● مباشر</span>
           )}
         </div>
         <div className="player-panel__actions">
-          {embedUrl && (
-            <a href={embedUrl} target="_blank" rel="noopener noreferrer" className="btn btn--ghost btn--sm">
+          {(embedUrl || watchUrl) && (
+            <a href={embedUrl || watchUrl} target="_blank" rel="noopener noreferrer" className="btn btn--ghost btn--sm">
               ↗ فتح خارجي
             </a>
           )}
@@ -312,7 +315,7 @@ function PlayerPanel({ stream, onClose }) {
         {embedUrl ? (
           <iframe
             src={embedUrl}
-            title={s.name}
+            title={name}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
             className="player-iframe"
@@ -322,8 +325,8 @@ function PlayerPanel({ stream, onClose }) {
           <div className="player-no-embed">
             <div className="player-no-embed__icon">📡</div>
             <p>لا يتوفر رابط تضمين مباشر لهذه القناة</p>
-            {s.external_watch_url && (
-              <a href={s.external_watch_url} target="_blank" rel="noopener noreferrer" className="btn btn--primary">
+            {watchUrl && (
+              <a href={watchUrl} target="_blank" rel="noopener noreferrer" className="btn btn--primary">
                 مشاهدة على الموقع الرسمي ↗
               </a>
             )}
@@ -659,10 +662,10 @@ export default function App() {
     try {
       const params = { limit: PAGE_SIZE, offset: (pg - 1) * PAGE_SIZE };
       if (cat && cat !== 'all') params.category = cat;
-      if (q && q.trim()) params.query = q.trim();
+      if (q && q.trim()) params.q = q.trim();
       const envelope = await fetchNewsFeedEnvelope(params);
       const items = envelope?.items ?? envelope?.data ?? [];
-      const total = envelope?.total ?? envelope?.count ?? items.length;
+      const total = envelope?.total ?? envelope?.metadata?.total_available_items ?? envelope?.metadata?.item_count ?? items.length;
       setTotalCount(total);
       setHasMore(items.length === PAGE_SIZE && (pg * PAGE_SIZE) < total);
       if (pg === 1) {
@@ -780,9 +783,9 @@ export default function App() {
     if (!channelSearch.trim()) return streams;
     const q = channelSearch.trim().toLowerCase();
     return streams.filter(st => {
-      const s = st.stream || st;
-      return (s.name || '').toLowerCase().includes(q) ||
-             (s.country || '').toLowerCase().includes(q);
+      const name = st.source?.name || (st.stream || st).name || (st.stream || st).registry_id || '';
+      const lang = st.source?.language || (st.stream || st).language || '';
+      return name.toLowerCase().includes(q) || lang.toLowerCase().includes(q);
     });
   }, [streams, channelSearch]);
 

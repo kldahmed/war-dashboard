@@ -249,10 +249,13 @@ function mapStoredItem(item) {
   };
 }
 
-async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
+async function callStoredNews(params, signal) {
+  const { category, limit = DEFAULT_LIMIT, offset = 0, query: searchQ } = (params && typeof params === 'object') ? params : { category: params };
   const requestUrl = buildApiPath("/api/news/feed", {
     limit,
-    category,
+    offset: offset > 0 ? offset : undefined,
+    category: category && category !== 'all' ? category : undefined,
+    q: searchQ || undefined,
   });
 
   let res;
@@ -291,11 +294,13 @@ async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
   if (!Array.isArray(body.items)) throw buildStoredRequestError("stored_feed_invalid_shape");
   return {
     items: body.items.map(mapStoredItem).filter(Boolean),
-    metadata: normalizeStoredMetadata({ ...body, correlation_id: body?.correlation_id || correlationId }, "stored"),
+    total: body.total_count ?? body.item_count ?? 0,
+    metadata: normalizeStoredMetadata({ ...body, total_available_items: body.total_count ?? body.item_count, correlation_id: body?.correlation_id || correlationId }, "stored"),
   };
 }
 
-export async function fetchNewsFeedEnvelope(category, signal) {
+export async function fetchNewsFeedEnvelope(paramsOrCategory, signal) {
+  const category = paramsOrCategory && typeof paramsOrCategory === 'object' ? paramsOrCategory.category : paramsOrCategory;
   const { mode, fallbackEnabled, verifyProductionMode } = resolveFeedMode();
   if (mode === "legacy") {
     return callLegacyNewsEnvelope(category, signal, {
@@ -306,7 +311,7 @@ export async function fetchNewsFeedEnvelope(category, signal) {
   }
 
   try {
-    return await callStoredNews(category, signal);
+    return await callStoredNews(paramsOrCategory, signal);
   } catch (error) {
     if (!fallbackEnabled) {
       const feedMeta = error?.feedMeta || {
