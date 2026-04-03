@@ -42,11 +42,20 @@ CREATE TABLE IF NOT EXISTS news_categories (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE normalized_items
-  ADD CONSTRAINT fk_normalized_items_news_category
-  FOREIGN KEY (news_category_id)
-  REFERENCES news_categories(id)
-  ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_normalized_items_news_category'
+  ) THEN
+    ALTER TABLE normalized_items
+      ADD CONSTRAINT fk_normalized_items_news_category
+      FOREIGN KEY (news_category_id)
+      REFERENCES news_categories(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_normalized_items_news_category
   ON normalized_items(news_category_id, category_confidence_score DESC NULLS LAST, updated_at DESC);

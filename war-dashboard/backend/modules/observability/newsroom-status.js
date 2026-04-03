@@ -47,7 +47,7 @@ async function getNewsroomStatusSnapshot() {
        latest_ingestion AS (
          SELECT MAX(COALESCE(ended_at, created_at)) AS latest_ingestion_at
          FROM processing_jobs
-         WHERE job_type = 'ingestion_rss'
+         WHERE job_type = 'rss_ingestion'
        )
        SELECT
          (SELECT latest_item_at FROM latest_feed_item) AS latest_item_at,
@@ -64,7 +64,7 @@ async function getNewsroomStatusSnapshot() {
        )
        SELECT json_build_object(
          'failed_jobs_24h', (SELECT COUNT(*)::int FROM processing_jobs WHERE status = 'failed' AND created_at >= NOW() - INTERVAL '24 hours'),
-         'failed_ingestion_jobs_24h', (SELECT COUNT(*)::int FROM processing_jobs WHERE status = 'failed' AND job_type = 'ingestion_rss' AND created_at >= NOW() - INTERVAL '24 hours'),
+         'failed_ingestion_jobs_24h', (SELECT COUNT(*)::int FROM processing_jobs WHERE status = 'failed' AND job_type = 'rss_ingestion' AND created_at >= NOW() - INTERVAL '24 hours'),
          'recent_failures', COALESCE((SELECT json_agg(recent_failures) FROM recent_failures), '[]'::json)
        ) AS payload`
     ),

@@ -139,6 +139,16 @@ async function finishJob(jobId, status, startedAt, errorMessage = null) {
   });
 }
 
+async function markSourceRuntimeState(sourceId, status) {
+  await query(
+    `UPDATE sources
+     SET status = $2,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [sourceId, status],
+  );
+}
+
 async function listActiveRssFeeds() {
   const res = await query(
     `SELECT sf.id, sf.source_id, sf.registry_feed_id, sf.endpoint, sf.polling_interval_sec, sf.retry_limit,
@@ -298,6 +308,13 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
               scope: 'item',
             });
             feedSummary.status = 'completed_with_errors';
+            logger.warn('rss_feed_item_failed', {
+              correlationId,
+              sourceRegistryId: feed.source_registry_id,
+              sourceId: feed.source_id,
+              endpoint: feed.endpoint,
+              message: itemError.message,
+            });
           }
         }
 
@@ -307,6 +324,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
            WHERE id = $1`,
           [feed.id],
         );
+        await markSourceRuntimeState(feed.source_id, 'active');
         summary.feedsSucceeded += 1;
         summary.successfulSources += 1;
         await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
@@ -330,13 +348,16 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
            WHERE id = $1`,
           [feed.id, String(feedErr.message || 'unknown_error').slice(0, 500)],
         );
+        await markSourceRuntimeState(feed.source_id, 'failed');
         await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
         await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
         logger.warn('rss_feed_failed', {
           correlationId,
           sourceRegistryId: feed.source_registry_id,
+          sourceId: feed.source_id,
           endpoint: feed.endpoint,
           message: feedErr.message,
+          attempts: feedSummary.attemptCount,
         });
       }
     }

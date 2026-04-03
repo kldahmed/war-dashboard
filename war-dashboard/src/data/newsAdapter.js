@@ -1,5 +1,5 @@
 const DEFAULT_LIMIT = 60;
-const ALLOWED_CATEGORIES = new Set(["all", "iran", "gulf", "usa", "israel"]);
+const ALLOWED_CATEGORIES = new Set(["all", "breaking", "politics", "economy", "war", "gulf", "iran", "israel", "usa", "world", "energy", "analysis", "technology"]);
 const ALLOWED_URGENCY = new Set(["high", "medium", "low"]);
 const GENERIC_STORED_ERROR = "stored_feed_unavailable";
 
@@ -29,7 +29,7 @@ function normalizeCategory(item) {
   if (rawCategory === "general" || rawCategory === "official") {
     const sourceDomain = normalizeText(item?.source?.domain, "").toLowerCase();
     if (sourceDomain.includes("state.gov")) return "usa";
-    return "all";
+    return "world";
   }
 
   const sourceCategory = normalizeText(item?.source?.category, "").toLowerCase();
@@ -37,7 +37,30 @@ function normalizeCategory(item) {
 
   const sourceDomain = normalizeText(item?.source?.domain, "").toLowerCase();
   if (sourceDomain.includes("state.gov")) return "usa";
-  return "all";
+  return "world";
+}
+
+function normalizeCategoryCounts(value, fallbackCount = 0) {
+  const counts = { all: Number.isFinite(fallbackCount) ? fallbackCount : 0 };
+  for (const category of ALLOWED_CATEGORIES) {
+    if (category === "all") continue;
+    counts[category] = 0;
+  }
+
+  if (!value || typeof value !== "object") return counts;
+  for (const [key, rawCount] of Object.entries(value)) {
+    const normalizedKey = normalizeText(key, "").toLowerCase();
+    if (!ALLOWED_CATEGORIES.has(normalizedKey)) continue;
+    counts[normalizedKey] = Number.isFinite(Number(rawCount)) ? Number(rawCount) : 0;
+  }
+
+  if (!Number.isFinite(counts.all) || counts.all <= 0) {
+    counts.all = Object.entries(counts)
+      .filter(([key]) => key !== "all")
+      .reduce((sum, [, count]) => sum + (Number.isFinite(count) ? count : 0), 0);
+  }
+
+  return counts;
 }
 
 function normalizeSource(source) {
@@ -142,7 +165,9 @@ function normalizeStoredMetadata(body, mode) {
     mode,
     fallback_used: toBool(body?.fallback_used, false),
     item_count: Number.isFinite(body?.item_count) ? body.item_count : (Array.isArray(body?.items) ? body.items.length : 0),
+    total_available_items: Number.isFinite(body?.total_available_items) ? body.total_available_items : (Array.isArray(body?.items) ? body.items.length : 0),
     freshness,
+    category_counts: normalizeCategoryCounts(body?.category_counts, Array.isArray(body?.items) ? body.items.length : 0),
     correlation_id: body?.correlation_id || null,
     error_reason: normalizeText(body?.error_reason, null),
     verify_mode: toBool(process.env.REACT_APP_PRODUCTION_VERIFY_MODE, false),
@@ -202,6 +227,8 @@ async function callLegacyNewsEnvelope(category, signal, context = {}) {
         data_age_sec: null,
         last_ingestion_at: null,
       },
+      total_available_items: items.length,
+      category_counts: normalizeCategoryCounts({ all: items.length }, items.length),
       correlation_id: context.correlationId || null,
       error_reason: context.errorReason || null,
       verify_mode: toBool(process.env.REACT_APP_PRODUCTION_VERIFY_MODE, false),
@@ -244,6 +271,8 @@ async function callStoredNews(category, signal, limit = DEFAULT_LIMIT) {
         data_age_sec: null,
         last_ingestion_at: null,
       },
+      total_available_items: 0,
+      category_counts: normalizeCategoryCounts(null, 0),
       correlation_id: null,
         error_reason: "stored_feed_request_failed",
     }, "stored");
@@ -285,6 +314,8 @@ export async function fetchNewsFeedEnvelope(category, signal) {
         fallback_used: false,
         item_count: 0,
         freshness: { latest_item_at: null, oldest_item_at: null, data_age_sec: null, last_ingestion_at: null },
+        total_available_items: 0,
+        category_counts: normalizeCategoryCounts(null, 0),
         correlation_id: null,
         error_reason: error.reason || error.code || GENERIC_STORED_ERROR,
         verify_mode: verifyProductionMode,

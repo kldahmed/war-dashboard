@@ -5,16 +5,91 @@ const { query } = require('../../lib/db');
 const { assignStoryCluster, recordArticleVersionIfNeeded } = require('./cluster-service');
 const { translateNormalizedItem } = require('../translation/service');
 
-const CATEGORY_RULES = [
-  { slug: 'breaking', confidence: 0.94, keywords: ['breaking', 'urgent', 'developing', 'flash', 'عاجل', 'فوري'] },
-  { slug: 'war', confidence: 0.9, keywords: ['war', 'attack', 'strike', 'missile', 'drone', 'military', 'troops', 'قتال', 'هجوم', 'ضربة', 'صاروخ'] },
-  { slug: 'energy', confidence: 0.88, keywords: ['oil', 'gas', 'energy', 'pipeline', 'opec', 'fuel', 'نفط', 'غاز', 'طاقة'] },
-  { slug: 'politics', confidence: 0.84, keywords: ['election', 'government', 'minister', 'parliament', 'policy', 'diplomacy', 'انتخابات', 'حكومة', 'وزير', 'برلمان'] },
-  { slug: 'economy', confidence: 0.82, keywords: ['economy', 'market', 'trade', 'inflation', 'bank', 'finance', 'اقتصاد', 'أسواق', 'تجارة', 'بنك'] },
-  { slug: 'technology', confidence: 0.8, keywords: ['technology', 'artificial intelligence', 'cyber', 'software', 'chip', 'تقنية', 'ذكاء اصطناعي', 'سيبراني'] },
-  { slug: 'analysis', confidence: 0.78, keywords: ['analysis', 'opinion', 'insight', 'assessment', 'explainer', 'تحليل', 'قراءة', 'تقدير'] },
-  { slug: 'middle-east', confidence: 0.76, keywords: ['middle east', 'gaza', 'iran', 'israel', 'syria', 'lebanon', 'saudi', 'الشرق الأوسط', 'غزة', 'إيران', 'إسرائيل', 'سوريا', 'لبنان'] },
-  { slug: 'world', confidence: 0.65, keywords: ['world', 'global', 'international', 'un', 'الأمم المتحدة', 'العالم', 'دولي'] },
+const CATEGORY_DEFINITIONS = [
+  {
+    slug: 'breaking',
+    titleKeywords: ['breaking', 'urgent', 'developing', 'flash', 'alert', 'عاجل', 'فوري', 'هام'],
+    summaryKeywords: ['live updates', 'just in', 'تطورات متسارعة', 'تحديثات مباشرة'],
+    sourceKeywords: [],
+    hintKeywords: ['breaking'],
+  },
+  {
+    slug: 'war',
+    titleKeywords: ['war', 'attack', 'strike', 'missile', 'drone', 'military', 'troops', 'raid', 'artillery', 'قتال', 'هجوم', 'ضربة', 'صاروخ', 'مسيرة', 'قصف'],
+    summaryKeywords: ['frontline', 'defense', 'airstrike', 'navy', 'army', 'معارك', 'عسكري', 'جبهة'],
+    sourceKeywords: ['defense', 'war', 'military'],
+    hintKeywords: ['war', 'defense'],
+  },
+  {
+    slug: 'iran',
+    titleKeywords: ['iran', 'iranian', 'tehran', 'irgc', 'khamenei', 'إيران', 'إيراني', 'طهران', 'الحرس الثوري', 'خامنئي'],
+    summaryKeywords: ['islamic republic', 'iran nuclear', 'iranian foreign ministry', 'البرنامج النووي الإيراني'],
+    sourceKeywords: ['iran'],
+    hintKeywords: ['iran', 'middle-east'],
+  },
+  {
+    slug: 'israel',
+    titleKeywords: ['israel', 'israeli', 'idf', 'netanyahu', 'tel aviv', 'إسرائيل', 'إسرائيلي', 'الجيش الإسرائيلي', 'نتنياهو', 'تل أبيب'],
+    summaryKeywords: ['knesset', 'gaza border', 'occupation', 'الكنيست', 'غزة'],
+    sourceKeywords: ['israel'],
+    hintKeywords: ['israel', 'middle-east'],
+  },
+  {
+    slug: 'gulf',
+    titleKeywords: ['gulf', 'gcc', 'saudi', 'uae', 'emirates', 'qatar', 'kuwait', 'oman', 'bahrain', 'riyadh', 'dubai', 'abu dhabi', 'الخليج', 'السعودية', 'الإمارات', 'قطر', 'الكويت', 'عمان', 'البحرين', 'الرياض', 'أبوظبي', 'دبي'],
+    summaryKeywords: ['crown prince', 'opec+', 'gulf states', 'مجلس التعاون', 'ولي العهد'],
+    sourceKeywords: ['arabia', 'gulf', 'asharq'],
+    hintKeywords: ['gulf', 'middle-east'],
+  },
+  {
+    slug: 'usa',
+    titleKeywords: ['us ', 'u.s.', 'usa', 'america', 'american', 'washington', 'white house', 'pentagon', 'state department', 'congress', 'trump', 'biden', 'أمريكا', 'الولايات المتحدة', 'واشنطن', 'البيت الأبيض', 'البنتاغون', 'الكونغرس'],
+    summaryKeywords: ['federal reserve', 'homeland', 'u.s. election', 'انتخابات أمريكية'],
+    sourceKeywords: ['reuters', 'politico', 'state', 'defense'],
+    hintKeywords: ['usa', 'politics'],
+  },
+  {
+    slug: 'politics',
+    titleKeywords: ['election', 'government', 'minister', 'parliament', 'cabinet', 'policy', 'diplomacy', 'summit', 'انتخابات', 'حكومة', 'وزير', 'برلمان', 'قمة', 'دبلوماسية'],
+    summaryKeywords: ['foreign minister', 'prime minister', 'president', 'diplomatic', 'رئيس الوزراء', 'الرئاسة'],
+    sourceKeywords: ['politico', 'state'],
+    hintKeywords: ['politics'],
+  },
+  {
+    slug: 'economy',
+    titleKeywords: ['economy', 'market', 'trade', 'inflation', 'bank', 'finance', 'stocks', 'bond', 'tariff', 'اقتصاد', 'أسواق', 'تضخم', 'بنك', 'تمويل'],
+    summaryKeywords: ['shares', 'earnings', 'gdp', 'central bank', 'growth', 'أسهم', 'نمو اقتصادي'],
+    sourceKeywords: ['bloomberg', 'business', 'markets'],
+    hintKeywords: ['economy'],
+  },
+  {
+    slug: 'energy',
+    titleKeywords: ['oil', 'gas', 'energy', 'pipeline', 'opec', 'fuel', 'electricity', 'lng', 'نفط', 'غاز', 'طاقة', 'أوبك', 'وقود'],
+    summaryKeywords: ['crude', 'refinery', 'barrel', 'power grid', 'خام', 'مصفاة', 'برميل'],
+    sourceKeywords: ['oilprice', 'energy'],
+    hintKeywords: ['energy', 'economy'],
+  },
+  {
+    slug: 'analysis',
+    titleKeywords: ['analysis', 'opinion', 'insight', 'assessment', 'explainer', 'what to know', 'تحليل', 'قراءة', 'تقدير', 'ماذا نعرف'],
+    summaryKeywords: ['outlook', 'scenario', 'deep dive', 'backgrounder', 'سيناريو', 'خلفيات'],
+    sourceKeywords: ['crisis', 'isw'],
+    hintKeywords: ['analysis'],
+  },
+  {
+    slug: 'technology',
+    titleKeywords: ['technology', 'artificial intelligence', 'ai', 'cyber', 'software', 'chip', 'digital', 'satellite', 'تقنية', 'ذكاء اصطناعي', 'سيبراني', 'برمجيات', 'رقمي'],
+    summaryKeywords: ['data center', 'cybersecurity', 'semiconductor', 'hack', 'أمن سيبراني', 'أشباه موصلات'],
+    sourceKeywords: ['tech'],
+    hintKeywords: ['technology'],
+  },
+  {
+    slug: 'world',
+    titleKeywords: ['world', 'global', 'international', 'un', 'united nations', 'summit', 'العالم', 'دولي', 'أمم متحدة'],
+    summaryKeywords: ['international community', 'humanitarian', 'multilateral', 'مجتمع دولي', 'إنساني'],
+    sourceKeywords: ['un', 'reuters', 'ap'],
+    hintKeywords: ['world'],
+  },
 ];
 
 let newsCategoryCache = null;
@@ -26,14 +101,64 @@ async function getNewsCategoryMap() {
   return newsCategoryCache;
 }
 
-function classifyNormalizedContent(title, body) {
-  const haystack = normalizeUnicode(`${title || ''} ${body || ''}`).toLowerCase();
-  for (const rule of CATEGORY_RULES) {
-    if (rule.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()))) {
-      return { slug: rule.slug, confidence: rule.confidence };
+function countKeywordHits(text, keywords) {
+  if (!text) return 0;
+  return keywords.reduce((count, keyword) => {
+    if (!keyword) return count;
+    return text.includes(String(keyword).toLowerCase()) ? count + 1 : count;
+  }, 0);
+}
+
+function buildKeywordPool(value) {
+  if (Array.isArray(value)) return value.map((entry) => normalizeUnicode(entry).toLowerCase()).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  return value.split(/[|,\n]/).map((entry) => normalizeUnicode(entry).toLowerCase()).filter(Boolean);
+}
+
+function classifyNormalizedContent({ title, body, sourceName, sourceDomain, sourceCategory, payloadCategory, payloadKeywords }) {
+  const normalizedTitle = normalizeUnicode(title).toLowerCase();
+  const normalizedBody = normalizeUnicode(body).toLowerCase();
+  const normalizedSource = normalizeUnicode(`${sourceName || ''} ${sourceDomain || ''} ${sourceCategory || ''}`).toLowerCase();
+  const normalizedHints = buildKeywordPool(payloadKeywords).concat(buildKeywordPool(payloadCategory)).join(' ');
+
+  const scoredCategories = CATEGORY_DEFINITIONS.map((definition) => {
+    const titleHits = countKeywordHits(normalizedTitle, definition.titleKeywords);
+    const bodyHits = countKeywordHits(normalizedBody, definition.summaryKeywords.concat(definition.titleKeywords));
+    const sourceHits = countKeywordHits(normalizedSource, definition.sourceKeywords);
+    const hintHits = countKeywordHits(normalizedHints, definition.hintKeywords);
+    const hasStrongTitleSignal = titleHits > 0;
+
+    let score = 0;
+    score += Math.min(titleHits, 3) * 0.36;
+    score += Math.min(bodyHits, 4) * 0.17;
+    score += Math.min(sourceHits, 2) * 0.12;
+    score += Math.min(hintHits, 2) * 0.08;
+
+    if (definition.slug === 'breaking' && hasStrongTitleSignal) score += 0.18;
+    if (definition.slug === 'world') score += 0.08;
+    if ((definition.slug === 'iran' || definition.slug === 'israel' || definition.slug === 'gulf' || definition.slug === 'usa') && hasStrongTitleSignal) {
+      score += 0.09;
     }
-  }
-  return { slug: 'world', confidence: 0.45 };
+
+    return {
+      slug: definition.slug,
+      score: Number(score.toFixed(4)),
+      hits: titleHits + bodyHits + sourceHits + hintHits,
+    };
+  }).sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    return right.hits - left.hits;
+  });
+
+  const best = scoredCategories[0] || { slug: 'world', score: 0.2 };
+  const runnerUp = scoredCategories[1] || { score: 0 };
+  const margin = Math.max(0, best.score - runnerUp.score);
+  const confidence = Math.max(0.42, Math.min(0.99, 0.44 + best.score * 0.42 + margin * 0.35));
+
+  return {
+    slug: best.score >= 0.16 ? best.slug : 'world',
+    confidence: Number(confidence.toFixed(4)),
+  };
 }
 
 function sanitizeWhitespace(text) {
@@ -82,7 +207,7 @@ function inferLanguage(raw, sourceLanguage = null) {
 async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
   const res = await query(
     `SELECT ri.id, ri.source_feed_id, ri.source_url, ri.title, ri.published_at_source, ri.raw_payload_json,
-            sf.source_id, s.language AS source_language
+            sf.source_id, s.language AS source_language, s.name AS source_name, s.domain AS source_domain, s.category AS source_category
      FROM raw_items ri
      JOIN source_feeds sf ON sf.id = ri.source_feed_id
      JOIN sources s ON s.id = sf.source_id
@@ -110,7 +235,15 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
   const contentFingerprint = hashFingerprint(body);
   const timeBucket30m = buildTimeBucket30m(row.published_at_source || payload.isoDate || payload.pubDate || null);
   const initialTranslationStatus = language.startsWith('ar') ? 'not_required' : 'pending';
-  const classifiedCategory = classifyNormalizedContent(title, body);
+  const classifiedCategory = classifyNormalizedContent({
+    title,
+    body,
+    sourceName: row.source_name,
+    sourceDomain: row.source_domain,
+    sourceCategory: row.source_category,
+    payloadCategory: payload.category,
+    payloadKeywords: payload.categories || payload.keywords || payload.tags || [],
+  });
   const newsCategoryMap = await getNewsCategoryMap();
   const newsCategoryId = newsCategoryMap.get(classifiedCategory.slug) || null;
 
@@ -186,7 +319,7 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
       titleFingerprint,
       contentFingerprint,
       timeBucket30m,
-      payload.category ? String(payload.category).toLowerCase() : null,
+      classifiedCategory.slug,
       title || 'Untitled',
       body || title || 'No content',
       initialTranslationStatus,
@@ -202,7 +335,7 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
     title_fingerprint: titleFingerprint,
     content_fingerprint: contentFingerprint,
     normalized_hash: normalizedHash,
-    category: payload.category ? String(payload.category).toLowerCase() : null,
+    category: classifiedCategory.slug,
     news_category_id: newsCategoryId,
     category_confidence_score: classifiedCategory.confidence,
     published_at_source: row.published_at_source,

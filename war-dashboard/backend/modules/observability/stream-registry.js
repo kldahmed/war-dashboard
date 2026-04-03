@@ -27,10 +27,12 @@ const OFFICIAL_STREAM_REGISTRY = [
   { id: 'rt-ar-live', name: 'RT Arabic', language: 'ar', provider: 'native_web', sourceDomain: 'arabic.rt.com', officialPageUrl: 'https://arabic.rt.com/live/', embedUrl: null, externalWatchUrl: 'https://arabic.rt.com/live/', embedSupported: false, sortOrder: 90, active: true },
   { id: 'trt-arabi-live', name: 'TRT Arabic', language: 'ar', provider: 'native_web', sourceDomain: 'trtarabi.com', officialPageUrl: 'https://www.trtarabi.com/live', embedUrl: null, externalWatchUrl: 'https://www.trtarabi.com/live', embedSupported: false, sortOrder: 100, active: true },
   { id: 'asharq-news-live', name: 'Asharq News', language: 'ar', provider: 'native_web', sourceDomain: 'asharq.com', officialPageUrl: 'https://asharq.com/live', embedUrl: null, externalWatchUrl: 'https://asharq.com/live', embedSupported: false, sortOrder: 110, active: true },
+  { id: 'alhurra-live', name: 'Alhurra', language: 'ar', provider: 'native_web', sourceDomain: 'alhurra.com', officialPageUrl: 'https://www.alhurra.com/live', embedUrl: null, externalWatchUrl: 'https://www.alhurra.com/live', embedSupported: false, sortOrder: 115, active: true },
   { id: 'al-mayadeen-live', name: 'Al Mayadeen', language: 'ar', provider: 'native_web', sourceDomain: 'almayadeen.net', officialPageUrl: 'https://www.almayadeen.net/live', embedUrl: null, externalWatchUrl: 'https://www.almayadeen.net/live', embedSupported: false, sortOrder: 120, active: true },
   { id: 'al-manar-live', name: 'Al Manar', language: 'ar', provider: 'native_web', sourceDomain: 'almanar.com.lb', officialPageUrl: 'https://www.almanar.com.lb/live', embedUrl: null, externalWatchUrl: 'https://www.almanar.com.lb/live', embedSupported: false, sortOrder: 130, active: true },
   { id: 'alalam-live', name: 'Alalam', language: 'ar', provider: 'native_web', sourceDomain: 'alalam.ir', officialPageUrl: 'https://www.alalam.ir/live', embedUrl: null, externalWatchUrl: 'https://www.alalam.ir/live', embedSupported: false, sortOrder: 140, active: true },
   { id: 'cgtn-ar-live', name: 'CGTN Arabic', language: 'ar', provider: 'native_web', sourceDomain: 'arabic.cgtn.com', officialPageUrl: 'https://arabic.cgtn.com', embedUrl: null, externalWatchUrl: 'https://arabic.cgtn.com', embedSupported: false, sortOrder: 150, active: true },
+  { id: 'euronews-ar-live', name: 'Euronews Arabic', language: 'ar', provider: 'native_web', sourceDomain: 'euronews.com', officialPageUrl: 'https://arabic.euronews.com/live', embedUrl: null, externalWatchUrl: 'https://arabic.euronews.com/live', embedSupported: false, sortOrder: 155, active: true },
   { id: 'cnn-live', name: 'CNN', language: 'en', provider: 'native_web', sourceDomain: 'cnn.com', officialPageUrl: 'https://edition.cnn.com/videos/live', embedUrl: null, externalWatchUrl: 'https://edition.cnn.com/videos/live', embedSupported: false, sortOrder: 160, active: true },
   { id: 'bbc-world-live', name: 'BBC World', language: 'en', provider: 'native_web', sourceDomain: 'bbc.com', officialPageUrl: 'https://www.bbc.com/news/live', embedUrl: null, externalWatchUrl: 'https://www.bbc.com/news/live', embedSupported: false, sortOrder: 170, active: true },
   { id: 'sky-news-live', name: 'Sky News', language: 'en', provider: 'native_web', sourceDomain: 'news.sky.com', officialPageUrl: 'https://news.sky.com/watch-live', embedUrl: null, externalWatchUrl: 'https://news.sky.com/watch-live', embedSupported: false, sortOrder: 180, active: true },
@@ -40,6 +42,9 @@ const OFFICIAL_STREAM_REGISTRY = [
   { id: 'al-jazeera-en-live', name: 'Al Jazeera English', language: 'en', provider: 'native_web', sourceDomain: 'aljazeera.com', officialPageUrl: 'https://www.aljazeera.com/live/', embedUrl: null, externalWatchUrl: 'https://www.aljazeera.com/live/', embedSupported: false, sortOrder: 220, active: true },
   { id: 'dw-live', name: 'DW News', language: 'en', provider: 'youtube', sourceDomain: 'dw.com', officialPageUrl: 'https://www.dw.com/en/live-tv/s-100825', embedUrl: 'https://www.youtube.com/embed/live_stream?channel=UCknLrEdhRCp1aegoMqRaCZg', externalWatchUrl: 'https://www.dw.com/en/live-tv/s-100825', embedSupported: true, sortOrder: 230, active: true },
   { id: 'reuters-live', name: 'Reuters Live', language: 'en', provider: 'youtube', sourceDomain: 'reuters.com', officialPageUrl: 'https://www.reuters.com/world/', embedUrl: 'https://www.youtube.com/embed/live_stream?channel=UChqUTb7kYRX8-EiaN3XFrSQ', externalWatchUrl: 'https://www.reuters.com/world/', embedSupported: true, sortOrder: 240, active: true },
+  { id: 'trt-world-live', name: 'TRT World', language: 'en', provider: 'native_web', sourceDomain: 'trtworld.com', officialPageUrl: 'https://www.trtworld.com/live', embedUrl: null, externalWatchUrl: 'https://www.trtworld.com/live', embedSupported: false, sortOrder: 245, active: true },
+  { id: 'abc-news-live', name: 'ABC News Live', language: 'en', provider: 'native_web', sourceDomain: 'abcnews.go.com', officialPageUrl: 'https://abcnews.go.com/Live', embedUrl: null, externalWatchUrl: 'https://abcnews.go.com/Live', embedSupported: false, sortOrder: 250, active: true },
+  { id: 'nbc-news-now', name: 'NBC News NOW', language: 'en', provider: 'native_web', sourceDomain: 'nbcnews.com', officialPageUrl: 'https://www.nbcnews.com/now', embedUrl: null, externalWatchUrl: 'https://www.nbcnews.com/now', embedSupported: false, sortOrder: 260, active: true },
 ].map((entry) => ({
   ...entry,
   officialPageUrl: safeHttpUrl(entry.officialPageUrl),
@@ -97,6 +102,29 @@ function detectBlockedEmbedding(headers) {
   return false;
 }
 
+async function probeWatchUrl(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), env.streamVerificationTimeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'war-dashboard-stream-verifier/1.0',
+      },
+    });
+
+    return {
+      ok: response.ok,
+      status: Number(response.status || 0),
+      blocked: detectBlockedEmbedding(response.headers),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function verifySingleChannel(channel) {
   if (!channel.embed_url && !channel.external_watch_url && !channel.official_page_url) {
     await query(
@@ -115,6 +143,40 @@ async function verifySingleChannel(channel) {
   }
 
   if (!channel.embed_url) {
+    const watchUrl = channel.external_watch_url || channel.official_page_url;
+    try {
+      const probe = await probeWatchUrl(watchUrl);
+      if ([404, 410, 451].includes(probe.status) || !probe.ok) {
+        await query(
+          `UPDATE stream_channels
+           SET status = 'inactive',
+               embed_supported = FALSE,
+               playback_mode = 'external_only',
+               verification_checked_at = NOW(),
+               last_verification_status = 'removed_unavailable',
+               last_verification_error = $2,
+               updated_at = NOW()
+           WHERE id = $1`,
+          [channel.id, `external_unavailable_${probe.status || 'unknown'}`],
+        );
+        return { id: channel.registry_id, embedSupported: false, verificationStatus: 'removed_unavailable', removed: true };
+      }
+    } catch (error) {
+      await query(
+        `UPDATE stream_channels
+         SET status = 'inactive',
+             embed_supported = FALSE,
+             playback_mode = 'external_only',
+             verification_checked_at = NOW(),
+             last_verification_status = 'removed_unavailable',
+             last_verification_error = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [channel.id, String(error.message || 'external_verification_failed').slice(0, 500)],
+      );
+      return { id: channel.registry_id, embedSupported: false, verificationStatus: 'removed_unavailable', removed: true };
+    }
+
     await query(
       `UPDATE stream_channels
        SET embed_supported = FALSE,
@@ -155,6 +217,32 @@ async function verifySingleChannel(channel) {
              updated_at = NOW()
          WHERE id = $1`,
         [channel.id, `embed_unavailable_${response.status}`],
+      );
+      return {
+        id: channel.registry_id,
+        embedSupported: false,
+        verificationStatus: 'removed_unavailable',
+        removed: true,
+      };
+    }
+
+    const watchProbe = channel.external_watch_url || channel.official_page_url
+      ? await probeWatchUrl(channel.external_watch_url || channel.official_page_url).catch(() => null)
+      : null;
+    const watchUnavailable = watchProbe && ([404, 410, 451].includes(watchProbe.status) || !watchProbe.ok);
+
+    if (watchUnavailable && unavailable) {
+      await query(
+        `UPDATE stream_channels
+         SET status = 'inactive',
+             embed_supported = FALSE,
+             playback_mode = 'external_only',
+             verification_checked_at = NOW(),
+             last_verification_status = 'removed_unavailable',
+             last_verification_error = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [channel.id, `stream_removed_${response.status}_${watchProbe.status}`],
       );
       return {
         id: channel.registry_id,

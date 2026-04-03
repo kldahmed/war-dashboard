@@ -6,11 +6,18 @@ const { asyncHandler } = require('../../lib/async-handler');
 const env = require('../../config/env');
 
 const router = express.Router();
+const KNOWN_CATEGORIES = new Set(['breaking', 'politics', 'economy', 'war', 'gulf', 'iran', 'israel', 'usa', 'world', 'energy', 'analysis', 'technology']);
 
 function safeIsoTime(value) {
   if (!value) return 'unknown';
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? 'unknown' : parsed.toISOString();
+}
+
+function normalizeCategorySlug(value) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!normalized || normalized === 'all') return 'all';
+  return KNOWN_CATEGORIES.has(normalized) ? normalized : 'all';
 }
 
 function inferUrgency(row) {
@@ -27,7 +34,7 @@ function inferUrgency(row) {
 }
 
 function mapToUiItem(row) {
-  const category = row.category || row.source_category || 'all';
+  const category = row.news_category_slug || row.category || row.source_category || 'world';
   const published = row.published_at_source || row.fetched_at || row.created_at;
   return {
     id: row.normalized_id,
@@ -49,6 +56,11 @@ function mapToUiItem(row) {
       fetched_at: row.fetched_at,
       published_at_source: row.published_at_source,
       normalized_hash: row.normalized_hash,
+      original_title: row.original_title || row.canonical_title || null,
+      original_summary: row.original_summary || row.canonical_body || null,
+      translation_status: row.translation_status || 'not_required',
+      translation_provider: row.translation_provider || null,
+      category_confidence: Number.isFinite(Number(row.category_confidence_score)) ? Number(row.category_confidence_score) : 0.35,
       cluster: {
         id: row.cluster_id || null,
         corroboration_count: Number.isFinite(row.corroboration_count) ? row.corroboration_count : 0,
@@ -103,13 +115,22 @@ function buildFreshness(rows, lastIngestionAt) {
   };
 }
 
+function buildCategoryCounts(rows) {
+  const counts = {
+    all: Array.isArray(rows) ? rows.length : 0,
+  };
+
+  for (const slug of KNOWN_CATEGORIES) counts[slug] = 0;
+  for (const row of rows || []) {
+    const slug = normalizeCategorySlug(row.news_category_slug || row.category || row.source_category || 'world');
+    if (slug !== 'all') counts[slug] += 1;
+  }
+  return counts;
+}
+
 router.get('/news/feed', asyncHandler(async (req, res) => {
   const limit = Math.min(env.newsFeedMaxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-  const category = typeof req.query.category === 'string' ? req.query.category.toLowerCase() : null;
-
-  const params = [limit];
-  const categoryClause = category && category !== 'all' ? 'AND COALESCE(ni.category, s.category) = $2' : '';
-  if (categoryClause) params.push(category);
+  const category = normalizeCategorySlug(req.query.category);
 
   const [result, lastJob] = await Promise.all([
     query(
@@ -152,6 +173,11 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          END AS display_summary,
          ni.category,
          nc.slug AS news_category_slug,
+         ni.category_confidence_score,
+         ni.original_title,
+         ni.original_summary,
+         ni.translation_status,
+         ni.translation_provider,
          ni.published_at_source,
          ni.normalized_hash,
          ni.created_at,
@@ -199,6 +225,20 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
            WHEN COALESCE(cs.corroboration_count, 0) > 0 THEN 'elevated'
            ELSE 'normal'
          END AS editorial_priority,
+         CASE COALESCE(nc.slug, ni.category, s.category, 'world')
+           WHEN 'breaking' THEN 1.00
+           WHEN 'war' THEN 0.93
+           WHEN 'iran' THEN 0.9
+           WHEN 'israel' THEN 0.88
+           WHEN 'gulf' THEN 0.86
+           WHEN 'usa' THEN 0.82
+           WHEN 'politics' THEN 0.79
+           WHEN 'economy' THEN 0.77
+           WHEN 'energy' THEN 0.75
+           WHEN 'analysis' THEN 0.73
+           WHEN 'technology' THEN 0.71
+           ELSE 0.66
+         END AS category_weight,
          GREATEST(
            0.05,
            LEAST(
@@ -222,6 +262,23 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
                  )
                ) * 0.3
              )
+             + CASE WHEN COALESCE(nc.slug, ni.category, s.category, 'world') = 'breaking' THEN 0.14 ELSE 0 END
+             + CASE WHEN COALESCE(nc.slug, ni.category, s.category, 'world') IN ('war', 'iran', 'israel') THEN 0.08 ELSE 0 END
+             + CASE WHEN COALESCE(nc.slug, ni.category, s.category, 'world') IN ('gulf', 'usa', 'politics') THEN 0.05 ELSE 0 END
+             + CASE COALESCE(nc.slug, ni.category, s.category, 'world')
+                 WHEN 'breaking' THEN 1.00
+                 WHEN 'war' THEN 0.93
+                 WHEN 'iran' THEN 0.9
+                 WHEN 'israel' THEN 0.88
+                 WHEN 'gulf' THEN 0.86
+                 WHEN 'usa' THEN 0.82
+                 WHEN 'politics' THEN 0.79
+                 WHEN 'economy' THEN 0.77
+                 WHEN 'energy' THEN 0.75
+                 WHEN 'analysis' THEN 0.73
+                 WHEN 'technology' THEN 0.71
+                 ELSE 0.66
+               END * 0.12
              + LEAST(COALESCE(cs.corroboration_count, 0), 4) / 4.0 * 0.15
              + COALESCE(cs.average_novelty, COALESCE(ce.novelty_hint, 0.5)) * 0.15
              + (1 - COALESCE(cs.average_duplicate_risk, COALESCE(ce.duplicate_risk_hint, 0.35))) * 0.1
@@ -282,10 +339,16 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        source_diversity,
       article_version_count,
        contradiction_flag,
+       news_category_slug,
+       category_confidence_score,
+       original_title,
+       original_summary,
+       translation_status,
+       translation_provider,
        verification_state,
        confidence_score,
        editorial_decision,
-       editorial_priority,
+       article_version_count,
        rank_score,
        cluster_last_seen_at
      FROM ranked_items
@@ -295,11 +358,11 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
         fetched_at DESC
      LIMIT $1`,
     params,
-    ),
+     ORDER BY rank_score DESC,
     query(
       `SELECT ended_at
-       FROM processing_jobs
-       WHERE job_type = 'rss_ingestion'
+     LIMIT $1`,
+    [env.newsFeedMaxLimit],
          AND status IN ('completed', 'completed_with_errors')
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -309,15 +372,22 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
   const lastIngestionAt = lastJob.rowCount > 0 && lastJob.rows[0].ended_at
     ? new Date(lastJob.rows[0].ended_at).toISOString()
     : null;
+  const categoryCounts = buildCategoryCounts(result.rows);
+  const filteredRows = category === 'all'
+    ? result.rows
+    : result.rows.filter((row) => normalizeCategorySlug(row.news_category_slug || row.category || row.source_category || 'world') === category);
+  const selectedRows = filteredRows.slice(0, limit);
 
   res.json({
     mode: 'stored',
     fallback_used: false,
-    freshness: buildFreshness(result.rows, lastIngestionAt),
-    item_count: result.rowCount,
+    freshness: buildFreshness(selectedRows, lastIngestionAt),
+    item_count: selectedRows.length,
+    total_available_items: filteredRows.length,
+    category_counts: categoryCounts,
     correlation_id: req.correlationId || null,
     error_reason: null,
-    items: result.rows.map(mapToUiItem),
+    items: selectedRows.map(mapToUiItem),
   });
 }));
 

@@ -122,13 +122,14 @@ describe('fetchNewsItems mode and fallback', () => {
     });
 
     const out = await fetchNewsItems('all');
-    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=20&category=all');
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=60&category=all');
     expect(out).toHaveLength(1);
   });
 
   test('maps stored request failures to generic user-safe code', async () => {
     process.env.REACT_APP_FEED_MODE = 'stored';
     process.env.REACT_APP_FEED_FALLBACK = 'false';
+    process.env.REACT_APP_PRODUCTION_VERIFY_MODE = 'true';
 
     global.fetch.mockResolvedValueOnce({
       ok: false,

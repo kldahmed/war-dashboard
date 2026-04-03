@@ -9,15 +9,18 @@ const { syncStreamRegistry, verifyStreamRegistry } = require('../modules/observa
 const SEEDS_DIR = path.join(__dirname, 'seeds');
 
 const NEWS_CATEGORIES = [
-  { slug: 'politics', label: 'سياسة', hints: ['election', 'government', 'minister', 'cabinet', 'parliament', 'policy', 'diplomacy'] },
-  { slug: 'economy', label: 'اقتصاد', hints: ['economy', 'market', 'trade', 'inflation', 'gdp', 'bank', 'finance'] },
-  { slug: 'war', label: 'حروب', hints: ['war', 'attack', 'strike', 'missile', 'military', 'battle', 'troops'] },
-  { slug: 'middle-east', label: 'شرق الأوسط', hints: ['middle east', 'gaza', 'iran', 'israel', 'syria', 'lebanon', 'saudi'] },
-  { slug: 'world', label: 'العالم', hints: ['world', 'global', 'international', 'united nations', 'summit'] },
-  { slug: 'energy', label: 'الطاقة', hints: ['oil', 'gas', 'energy', 'pipeline', 'opec', 'electricity'] },
-  { slug: 'technology', label: 'التقنية', hints: ['technology', 'ai', 'cyber', 'software', 'chip', 'digital'] },
-  { slug: 'analysis', label: 'التحليل', hints: ['analysis', 'opinion', 'insight', 'assessment', 'explainer'] },
-  { slug: 'breaking', label: 'عاجل', hints: ['breaking', 'urgent', 'developing', 'alert', 'flash'] },
+  { slug: 'breaking', label: 'عاجل', hints: ['breaking', 'urgent', 'developing', 'alert', 'flash', 'عاجل', 'فوري', 'هام'] },
+  { slug: 'politics', label: 'سياسة', hints: ['election', 'government', 'minister', 'cabinet', 'parliament', 'policy', 'diplomacy', 'سياسة', 'حكومة', 'وزارة'] },
+  { slug: 'economy', label: 'اقتصاد', hints: ['economy', 'market', 'trade', 'inflation', 'gdp', 'bank', 'finance', 'اقتصاد', 'أسواق', 'تضخم'] },
+  { slug: 'war', label: 'حروب', hints: ['war', 'attack', 'strike', 'missile', 'military', 'battle', 'troops', 'حرب', 'هجوم', 'ضربة'] },
+  { slug: 'gulf', label: 'الخليج', hints: ['gulf', 'gcc', 'saudi', 'uae', 'emirates', 'qatar', 'kuwait', 'oman', 'bahrain', 'الخليج', 'السعودية', 'الإمارات'] },
+  { slug: 'iran', label: 'إيران', hints: ['iran', 'tehran', 'irgc', 'iranian', 'إيران', 'طهران', 'الحرس الثوري'] },
+  { slug: 'israel', label: 'إسرائيل', hints: ['israel', 'israeli', 'idf', 'تل أبيب', 'إسرائيل', 'الجيش الإسرائيلي'] },
+  { slug: 'usa', label: 'أمريكا', hints: ['usa', 'us ', 'u.s.', 'washington', 'white house', 'pentagon', 'trump', 'biden', 'أمريكا', 'واشنطن'] },
+  { slug: 'world', label: 'العالم', hints: ['world', 'global', 'international', 'united nations', 'summit', 'العالم', 'دولي', 'أمم متحدة'] },
+  { slug: 'energy', label: 'طاقة', hints: ['oil', 'gas', 'energy', 'pipeline', 'opec', 'electricity', 'نفط', 'غاز', 'طاقة'] },
+  { slug: 'analysis', label: 'تحليل', hints: ['analysis', 'opinion', 'insight', 'assessment', 'explainer', 'تحليل', 'قراءة', 'تقدير موقف'] },
+  { slug: 'technology', label: 'تقنية', hints: ['technology', 'ai', 'cyber', 'software', 'chip', 'digital', 'تقنية', 'ذكاء اصطناعي', 'سيبراني'] },
 ];
 
 async function seedNewsCategories() {

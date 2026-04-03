@@ -61,7 +61,11 @@ const RAW_NEWS_SOURCE_REGISTRY = [
   { id: 'alhurra', name: 'Alhurra', language: 'ar', url: 'https://www.alhurra.com', homepageUrl: 'https://www.alhurra.com', active: false, trustScoreBaseline: 71, region: 'usa', category: 'middle-east', sourceGroup: 'arabic', officialFlag: true },
   { id: 'reuters-world', name: 'Reuters', language: 'en', url: 'https://www.reutersagency.com/feed/?best-topics=world&post_type=best', homepageUrl: 'https://www.reuters.com/world/', active: true, trustScoreBaseline: 82, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
   { id: 'reuters-middle-east', name: 'Reuters Middle East', language: 'en', url: 'https://www.reutersagency.com/feed/?best-topics=middle-east&post_type=best', homepageUrl: 'https://www.reuters.com/world/middle-east/', active: true, trustScoreBaseline: 82, region: 'mena', category: 'middle-east', sourceGroup: 'global', officialFlag: true },
+  { id: 'reuters-business', name: 'Reuters Business', language: 'en', url: 'https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best', homepageUrl: 'https://www.reuters.com/business/', active: true, trustScoreBaseline: 82, region: 'global', category: 'economy', sourceGroup: 'global', officialFlag: true },
+  { id: 'reuters-usa', name: 'Reuters United States', language: 'en', url: 'https://www.reutersagency.com/feed/?best-topics=united-states&post_type=best', homepageUrl: 'https://www.reuters.com/world/us/', active: true, trustScoreBaseline: 82, region: 'usa', category: 'politics', sourceGroup: 'global', officialFlag: true },
   { id: 'ap-top-news', name: 'Associated Press', language: 'en', url: 'https://apnews.com/hub/ap-top-news?output=rss', homepageUrl: 'https://apnews.com/', active: true, trustScoreBaseline: 84, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
+  { id: 'ap-politics', name: 'AP Politics', language: 'en', url: 'https://apnews.com/hub/politics?output=rss', homepageUrl: 'https://apnews.com/hub/politics', active: true, trustScoreBaseline: 84, region: 'usa', category: 'politics', sourceGroup: 'global', officialFlag: true },
+  { id: 'ap-business', name: 'AP Business', language: 'en', url: 'https://apnews.com/hub/business?output=rss', homepageUrl: 'https://apnews.com/hub/business', active: true, trustScoreBaseline: 84, region: 'global', category: 'economy', sourceGroup: 'global', officialFlag: true },
   { id: 'bloomberg', name: 'Bloomberg', language: 'en', url: 'https://www.bloomberg.com', homepageUrl: 'https://www.bloomberg.com', active: false, trustScoreBaseline: 81, region: 'global', category: 'economy', sourceGroup: 'global', officialFlag: true },
   { id: 'nyt-world', name: 'NYTimes', language: 'en', url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', homepageUrl: 'https://www.nytimes.com/section/world', active: true, trustScoreBaseline: 79, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
   { id: 'guardian-world', name: 'Guardian', language: 'en', url: 'https://www.theguardian.com/world/rss', homepageUrl: 'https://www.theguardian.com/world', active: true, trustScoreBaseline: 77, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
@@ -73,6 +77,8 @@ const RAW_NEWS_SOURCE_REGISTRY = [
   { id: 'economist-world', name: 'The Economist', language: 'en', url: 'https://www.economist.com', homepageUrl: 'https://www.economist.com', active: false, trustScoreBaseline: 80, region: 'global', category: 'analysis', sourceGroup: 'global', officialFlag: true },
   { id: 'cnn-world', name: 'CNN', language: 'en', url: 'http://rss.cnn.com/rss/edition_world.rss', homepageUrl: 'https://edition.cnn.com/world', active: true, trustScoreBaseline: 73, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
   { id: 'bbc-world', name: 'BBC World', language: 'en', url: 'https://feeds.bbci.co.uk/news/world/rss.xml', homepageUrl: 'https://www.bbc.com/news/world', active: true, trustScoreBaseline: 84, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
+  { id: 'bbc-business', name: 'BBC Business', language: 'en', url: 'https://feeds.bbci.co.uk/news/business/rss.xml', homepageUrl: 'https://www.bbc.com/news/business', active: true, trustScoreBaseline: 84, region: 'global', category: 'economy', sourceGroup: 'global', officialFlag: true },
+  { id: 'bbc-technology', name: 'BBC Technology', language: 'en', url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', homepageUrl: 'https://www.bbc.com/news/technology', active: true, trustScoreBaseline: 84, region: 'global', category: 'technology', sourceGroup: 'global', officialFlag: true },
   { id: 'sky-news-world', name: 'Sky News', language: 'en', url: 'https://feeds.skynews.com/feeds/rss/world.xml', homepageUrl: 'https://news.sky.com/world', active: true, trustScoreBaseline: 74, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
   { id: 'france24-en', name: 'France24', language: 'en', url: 'https://www.france24.com/en/rss', homepageUrl: 'https://www.france24.com/en/', active: true, trustScoreBaseline: 79, region: 'global', category: 'world', sourceGroup: 'global', officialFlag: true },
   { id: 'defense-news', name: 'Defense News', language: 'en', url: 'https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml', homepageUrl: 'https://www.defensenews.com', active: true, trustScoreBaseline: 78, region: 'usa', category: 'war', sourceGroup: 'specialist', officialFlag: true },
@@ -100,7 +106,7 @@ const RAW_NEWS_SOURCE_REGISTRY = [
   { id: 'ap-world-news', name: 'AP World News', language: 'en', url: 'https://apnews.com/hub/world-news?output=rss', homepageUrl: 'https://apnews.com/hub/world-news', active: true, trustScoreBaseline: 84, region: 'global', category: 'world', sourceGroup: 'specialist', officialFlag: true },
 ];
 
-const NEWS_SOURCE_REGISTRY = RAW_NEWS_SOURCE_REGISTRY.map(buildSource).filter(Boolean).slice(0, 50);
+const NEWS_SOURCE_REGISTRY = RAW_NEWS_SOURCE_REGISTRY.map(buildSource).filter(Boolean);
 
 function getSourceRegistryStats() {
   return {
@@ -167,7 +173,7 @@ async function syncSourceRegistry() {
           source.url,
           300,
           source.active ? 'active' : 'inactive',
-          2,
+          3,
         ],
       );
     }

@@ -8,24 +8,40 @@ const TABS = [
 ];
 
 const LIVE_FILTERS = [
-  { id: "playable", label: "Playable" },
-  { id: "external", label: "External" },
+  { id: "playable", label: "قابل للتشغيل" },
+  { id: "external", label: "خارجي فقط" },
 ];
 
 const CATEGORIES = [
-  { id: "all",    label: "الكل",     emoji: "🌐" },
-  { id: "iran",   label: "إيران",    emoji: "🇮🇷" },
-  { id: "gulf",   label: "الخليج",   emoji: "🇸🇦" },
-  { id: "usa",    label: "أمريكا",   emoji: "🇺🇸" },
-  { id: "israel", label: "إسرائيل",  emoji: "🇮🇱" },
+  { id: "all", label: "الكل", emoji: "🌐" },
+  { id: "breaking", label: "عاجل", emoji: "🚨" },
+  { id: "politics", label: "سياسة", emoji: "🏛️" },
+  { id: "economy", label: "اقتصاد", emoji: "💹" },
+  { id: "war", label: "حروب", emoji: "🛡️" },
+  { id: "gulf", label: "الخليج", emoji: "🌍" },
+  { id: "iran", label: "إيران", emoji: "🇮🇷" },
+  { id: "israel", label: "إسرائيل", emoji: "🇮🇱" },
+  { id: "usa", label: "أمريكا", emoji: "🇺🇸" },
+  { id: "world", label: "العالم", emoji: "🗺️" },
+  { id: "energy", label: "طاقة", emoji: "⚡" },
+  { id: "analysis", label: "تحليل", emoji: "🧭" },
+  { id: "technology", label: "تقنية", emoji: "🧠" },
 ];
 
 const CAT_COLORS = {
-  iran:   { accent:"#c0392b", glow:"rgba(192,57,43,.35)",  light:"#e74c3c", bg:"#180808" },
-  gulf:   { accent:"#16a085", glow:"rgba(22,160,133,.35)", light:"#1abc9c", bg:"#081813" },
-  usa:    { accent:"#2471a3", glow:"rgba(36,113,163,.35)", light:"#3498db", bg:"#080f18" },
-  israel: { accent:"#7d3c98", glow:"rgba(125,60,152,.35)", light:"#9b59b6", bg:"#0d0814" },
-  all:    { accent:"#c0392b", glow:"rgba(192,57,43,.35)",  light:"#e74c3c", bg:"#0d0d0d" },
+  all: { accent:"#c0392b", glow:"rgba(192,57,43,.35)", light:"#e74c3c", bg:"#0d0d0d" },
+  breaking: { accent:"#e74c3c", glow:"rgba(231,76,60,.35)", light:"#ff8d7c", bg:"#1a0a0a" },
+  politics: { accent:"#8e44ad", glow:"rgba(142,68,173,.35)", light:"#c792ea", bg:"#120b18" },
+  economy: { accent:"#d68910", glow:"rgba(214,137,16,.35)", light:"#f5c26b", bg:"#181208" },
+  war: { accent:"#b03a2e", glow:"rgba(176,58,46,.35)", light:"#f1948a", bg:"#170b0a" },
+  gulf: { accent:"#16a085", glow:"rgba(22,160,133,.35)", light:"#66d9c4", bg:"#081813" },
+  iran: { accent:"#c0392b", glow:"rgba(192,57,43,.35)", light:"#f28b82", bg:"#180808" },
+  israel: { accent:"#2471a3", glow:"rgba(36,113,163,.35)", light:"#7fb8e6", bg:"#080f18" },
+  usa: { accent:"#2980b9", glow:"rgba(41,128,185,.35)", light:"#7cc6ff", bg:"#08121a" },
+  world: { accent:"#117a65", glow:"rgba(17,122,101,.35)", light:"#63d7bf", bg:"#081413" },
+  energy: { accent:"#ca6f1e", glow:"rgba(202,111,30,.35)", light:"#f8b26a", bg:"#181108" },
+  analysis: { accent:"#7d3c98", glow:"rgba(125,60,152,.35)", light:"#c8a2dc", bg:"#120914" },
+  technology: { accent:"#148f77", glow:"rgba(20,143,119,.35)", light:"#79e0cb", bg:"#081514" },
 };
 
 const URGENCY_MAP = {
@@ -35,10 +51,18 @@ const URGENCY_MAP = {
 };
 
 const CAT_UNSPLASH = {
+  breaking: ["photo-1495020689067-958852a7765e","photo-1516321318423-f06f85e504b3","photo-1521295121783-8a321d551ad2"],
+  politics: ["photo-1541872703-74c5e44368f9","photo-1529107386315-e1a2ed48a620","photo-1495020689067-958852a7765e"],
+  economy: ["photo-1520607162513-77705c0f0d4a","photo-1559526324-593bc073d938","photo-1454165804606-c3d57bc86b40"],
+  war: ["photo-1541872703-74c5e44368f9","photo-1501594907352-04cda38ebc29","photo-1515187029135-18ee286d815b"],
   iran:   ["photo-1597852074816-d57796d60ea6","photo-1564419320461-6870880221ad","photo-1576086213369-97a306d36557"],
   gulf:   ["photo-1512632578888-169bbbc64f33","photo-1555448248-2571daf6344b","photo-1469041797191-50ace28483c3"],
   usa:    ["photo-1515187029135-18ee286d815b","photo-1501594907352-04cda38ebc29","photo-1473091534298-04dcbce3278c"],
   israel: ["photo-1544967082-d9d25d867d66","photo-1582555172866-f73bb12a2ab3","photo-1570957392122-7768e3cfc3d6"],
+  world: ["photo-1489515217757-5fd1be406fef","photo-1464037866556-6812c9d1c72e","photo-1500530855697-b586d89ba3ee"],
+  energy: ["photo-1473448912268-2022ce9509d8","photo-1497436072909-60f360e1d4b1","photo-1446776709462-d6b525c57bd3"],
+  analysis: ["photo-1454165804606-c3d57bc86b40","photo-1520607162513-77705c0f0d4a","photo-1516321318423-f06f85e504b3"],
+  technology: ["photo-1518770660439-4636190af475","photo-1519389950473-47ba0277781c","photo-1485827404703-89b55fcc595e"],
 };
 
 // AI prompts are defined server-side in /api/claude.js — not exposed in client bundle.
@@ -354,6 +378,14 @@ function pickTrendingStories(items, heroItem) {
     .slice(0, 4);
 }
 
+function pickLatestStories(items, heroItem) {
+  const heroKey = heroItem?.id || heroItem?.title;
+  return dedupeVisualItems(items)
+    .filter((item) => (item?.id || item?.title) !== heroKey)
+    .sort((left, right) => new Date(right?.time || 0).getTime() - new Date(left?.time || 0).getTime())
+    .slice(0, 4);
+}
+
 function pickAnalysisStories(items, heroItem) {
   const heroKey = heroItem?.id || heroItem?.title;
   return dedupeVisualItems(items)
@@ -484,11 +516,11 @@ const HeroStory = memo(({ item }) => {
       background:`linear-gradient(145deg, ${col.bg} 0%, #111 100%)`,
       border:`1px solid ${col.accent}55`, borderRadius:"18px", overflow:"hidden",
       boxShadow:`0 0 24px ${col.glow}`,
-      marginBottom:"18px",
+      marginBottom:"14px",
       position:"relative",
     }}>
-      <div style={{ display:"grid", gridTemplateColumns:"1.25fr .9fr", gap:"0", alignItems:"stretch" }}>
-        <div style={{ padding:"20px 22px" }}>
+      <div style={{ display:"grid", gridTemplateColumns:"1.2fr .82fr", gap:"0", alignItems:"stretch" }}>
+        <div style={{ padding:"16px 18px" }}>
           <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
             <span style={{ background:urgencyBadge(item).bg, color:urgencyBadge(item).fg, border:`1px solid ${urgencyBadge(item).border}`, borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontWeight:"800" }}>
               {urgencyBadge(item).label}
@@ -500,10 +532,10 @@ const HeroStory = memo(({ item }) => {
               {editorialDecision}
             </span>
           </div>
-          <h2 style={{ color:"#f4efe8", fontSize:"25px", lineHeight:"1.6", margin:"0 0 12px", fontWeight:"900", direction:"rtl", textAlign:"right" }}>
+          <h2 style={{ color:"#f4efe8", fontSize:"22px", lineHeight:"1.55", margin:"0 0 10px", fontWeight:"900", direction:"rtl", textAlign:"right" }}>
             {item.title}
           </h2>
-          <p style={{ color:"#9b9187", fontSize:"14px", lineHeight:"2", direction:"rtl", textAlign:"right", margin:"0 0 14px" }}>
+          <p style={{ color:"#9b9187", fontSize:"13.5px", lineHeight:"1.9", direction:"rtl", textAlign:"right", margin:"0 0 12px" }}>
             {item.summary}
           </p>
           <div style={{ color:"#c0b7ac", fontSize:"12px", lineHeight:"1.9", direction:"rtl", textAlign:"right", margin:"0 0 12px" }}>
@@ -526,7 +558,7 @@ const HeroStory = memo(({ item }) => {
             <span>{getTimelineHint(item)}</span>
           </div>
         </div>
-        <div style={{ minHeight:"240px", position:"relative", background:`linear-gradient(160deg, ${col.accent}22, transparent)` }}>
+        <div style={{ minHeight:"210px", position:"relative", background:`linear-gradient(160deg, ${col.accent}22, transparent)` }}>
           <img src={getImg(item.category, 0)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:"brightness(.55) saturate(.9)" }} loading="lazy" />
           <div style={{ position:"absolute", inset:0, background:`linear-gradient(90deg, transparent 0%, ${col.bg} 100%)` }} />
         </div>
@@ -534,6 +566,60 @@ const HeroStory = memo(({ item }) => {
     </div>
   );
 });
+
+function LiveDeskCard({ summary, activeChannel, onOpen }) {
+  if (!summary) return null;
+
+  return (
+    <div style={{
+      background:"linear-gradient(145deg,#0b1110 0%,#090909 100%)",
+      border:"1px solid rgba(20,143,119,.28)",
+      borderRadius:"16px",
+      padding:"14px 16px",
+      marginBottom:"14px",
+      display:"grid",
+      gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr)) auto",
+      gap:"10px",
+      alignItems:"center",
+    }}>
+      <div>
+        <div style={{ color:"#7dd3c7", fontSize:"11px", fontWeight:"800", marginBottom:"4px" }}>مباشر</div>
+        <div style={{ color:"#f0ece4", fontSize:"15px", fontWeight:"800", marginBottom:"3px" }}>غرفة البث المباشر</div>
+        <div style={{ color:"#7b857d", fontSize:"12px" }}>{activeChannel?.name || "القنوات الرسمية الموثقة"}</div>
+      </div>
+      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
+        <div style={{ color:"#5fae9f", fontSize:"11px", fontWeight:"700" }}>قابل للتشغيل</div>
+        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.playable_streams || 0}</div>
+      </div>
+      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
+        <div style={{ color:"#b89d72", fontSize:"11px", fontWeight:"700" }}>خارجي فقط</div>
+        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.external_only_streams || 0}</div>
+      </div>
+      <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"10px 12px" }}>
+        <div style={{ color:"#8f8f8f", fontSize:"11px", fontWeight:"700" }}>مزال</div>
+        <div style={{ color:"#f0ece4", fontSize:"20px", fontWeight:"900" }}>{summary.removed_streams || 0}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        style={{
+          justifySelf:"end",
+          background:"rgba(20,143,119,.16)",
+          border:"1px solid rgba(20,143,119,.36)",
+          color:"#a9eadf",
+          borderRadius:"10px",
+          padding:"10px 14px",
+          cursor:"pointer",
+          fontFamily:"inherit",
+          fontSize:"12.5px",
+          fontWeight:"800",
+        }}
+      >
+        افتح قسم المباشر
+      </button>
+    </div>
+  );
+}
 
 function urgencyBadge(item) {
   const urg = URGENCY_MAP[item?.urgency] || URGENCY_MAP.medium;
@@ -824,9 +910,11 @@ export default function Dashboard() {
   const heroStory = pickHeroStory(displayNews);
   const priorityRail = pickPriorityRail(displayNews, heroStory);
   const breakingStories = pickBreakingStories(displayNews);
+  const latestStories = pickLatestStories(displayNews, heroStory);
   const trendingStories = pickTrendingStories(displayNews, heroStory);
   const analysisStories = pickAnalysisStories(displayNews, heroStory);
   const remainingNews = displayNews.filter((item) => (item?.id || item?.title) !== (heroStory?.id || heroStory?.title));
+  const categoryCounts = feedMeta?.category_counts || { all: displayNews.length };
   const visibleLiveStreams = liveStreams.filter((channel) => liveFilter === "playable" ? channel.playable : channel.externalOnly || !channel.playable);
   const activeLiveChannel = visibleLiveStreams.find((channel) => channel.id === liveCh?.id) || visibleLiveStreams[0] || liveCh || null;
 
@@ -848,9 +936,9 @@ export default function Dashboard() {
       setFeedMeta(envelope.metadata);
       setUpdated(formatTimeLabel(Date.now()));
       if (items.length === 0) {
-        setTicker("⚠️ لا توجد بيانات مخزنة بعد — شغّل ingestion");
+        setTicker(c === "all" ? "المخزن يعمل لكن لا توجد عناصر صالحة للعرض الآن" : `لا توجد نتائج حالياً ضمن تصنيف ${CATEGORIES.find((entry) => entry.id === c)?.label || c}`);
       } else {
-        setTicker(items.map(i => `🔴 ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
+        setTicker(items.slice(0, 10).map(i => `• ${typeof i.title === "string" ? i.title : ""}`).join("   ◆   "));
       }
     } catch (err) {
       clearTimeout(timer);
@@ -928,6 +1016,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchNews(cat); }, [cat, fetchNews]);
+  useEffect(() => { fetchLiveStreams(); }, [fetchLiveStreams]);
   useEffect(() => { if (tab === "videos") fetchVideos(cat); }, [tab, cat, fetchVideos]);
   useEffect(() => {
     if (tab === "live" && !loadLive && !errLive && liveStreams.length === 0) fetchLiveStreams();
@@ -974,35 +1063,38 @@ export default function Dashboard() {
       `}</style>
 
       {/* HEADER */}
-      <div style={{ background:"linear-gradient(180deg,#100303 0%,#090909 100%)", borderBottom:"1px solid rgba(192,57,43,.22)", padding:"18px 24px 0" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+      <div style={{ background:"linear-gradient(180deg,#100303 0%,#090909 100%)", borderBottom:"1px solid rgba(192,57,43,.18)", padding:"10px 20px 0" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px", flexWrap:"wrap", gap:"10px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:"11px" }}>
-            <div style={{ width:40, height:40, borderRadius:"12px", background:"linear-gradient(135deg,#0f766e,#0b3c5d)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"19px", boxShadow:"0 0 18px rgba(15,118,110,.45)" }}>🌐</div>
+            <div style={{ width:36, height:36, borderRadius:"11px", background:"linear-gradient(135deg,#0f766e,#0b3c5d)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"18px", boxShadow:"0 0 18px rgba(15,118,110,.4)" }}>🌐</div>
             <div>
-              <h1 style={{ fontSize:"19px", fontWeight:"900", color:"#f0ece4", animation:"glow 3s infinite" }}>عين العالم</h1>
-              <p style={{ color:"#6a737d", fontSize:"11px", marginTop:"2px" }}>🌐 عين العالم · World Eye</p>
+              <h1 style={{ fontSize:"18px", fontWeight:"900", color:"#f0ece4", letterSpacing:".2px" }}>عين العالم</h1>
+              <p style={{ color:"#6a737d", fontSize:"10.5px", marginTop:"2px" }}>غرفة أخبار عربية مركزة على التخزين والتحقق والبث</p>
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:"9px" }}>
-            {updated && <span style={{ color:"#303030", fontSize:"11px" }}>⏱ {updated}</span>}
+            {updated && <span style={{ color:"#5d5d5d", fontSize:"11px" }}>تحديث {updated}</span>}
             <button className="refbtn" onClick={refresh} disabled={loadN||loadV} style={{ background:"rgba(192,57,43,.14)", border:"1px solid rgba(192,57,43,.3)", color:"#c0392b", borderRadius:"8px", padding:"7px 13px", cursor:"pointer", fontSize:"13px", fontWeight:"600", fontFamily:"inherit", transition:"all .2s", display:"flex", alignItems:"center", gap:"5px" }}>
               {loadN||loadV?"⏳":"🔄"} تحديث
             </button>
           </div>
         </div>
 
-        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"12px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:"8px", marginBottom:"10px" }}>
           <div style={{ background:sourceBadge.bg, border:`1px solid ${sourceBadge.border}`, color:sourceBadge.color, borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px", fontWeight:"700" }}>
             {sourceBadge.label}
           </div>
           <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
-            source mode: {feedMeta.mode}
+            النمط: {feedMeta.mode}
           </div>
           <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
             عمر البيانات: {formatAge(feedMeta?.freshness?.data_age_sec)}
           </div>
           <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
             آخر ingestion: {formatDateTime(feedMeta?.freshness?.last_ingestion_at)}
+          </div>
+          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#8a8a8a", borderRadius:"999px", padding:"4px 10px", fontSize:"11.5px" }}>
+            الأخبار المتاحة: {feedMeta?.total_available_items || feedMeta?.item_count || 0}
           </div>
           {feedMeta?.correlation_id && (
             <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.09)", color:"#6a6a6a", borderRadius:"999px", padding:"4px 10px", fontSize:"11px", fontFamily:"monospace" }}>
@@ -1012,7 +1104,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display:"flex", gap:"4px", marginBottom:"10px" }}>
+        <div style={{ display:"flex", gap:"4px", marginBottom:"8px" }}>
           {TABS.map(t => (
             <button key={t.id} className="tab" onClick={() => setTab(t.id)} style={{ background: tab===t.id?"rgba(192,57,43,.2)":"transparent", border:`1px solid ${tab===t.id?"rgba(192,57,43,.6)":"rgba(255,255,255,.07)"}`, color: tab===t.id?"#e74c3c":"#555", borderRadius:"8px 8px 0 0", padding:"8px 18px", cursor:"pointer", fontSize:"13.5px", fontWeight: tab===t.id?"700":"400", fontFamily:"inherit", transition:"all .2s", display:"flex", alignItems:"center", gap:"6px" }}>
               {t.icon} {t.label}
@@ -1021,10 +1113,11 @@ export default function Dashboard() {
         </div>
 
         {tab !== "live" && (
-          <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", paddingBottom:"8px" }}>
             {CATEGORIES.map(c => (
-              <button key={c.id} className="catbtn" onClick={() => changeCat(c.id)} style={{ background: cat===c.id?CAT_COLORS[c.id].accent+"22":"rgba(255,255,255,.03)", border:`1px solid ${cat===c.id?CAT_COLORS[c.id].accent+"66":"rgba(255,255,255,.07)"}`, color: cat===c.id?CAT_COLORS[c.id].light:"#555", borderRadius:"6px", padding:"5px 13px", cursor:"pointer", fontSize:"12.5px", fontWeight: cat===c.id?"700":"400", fontFamily:"inherit", transition:"all .2s" }}>
-                {c.emoji} {c.label}
+              <button key={c.id} className="catbtn" onClick={() => changeCat(c.id)} style={{ background: cat===c.id?CAT_COLORS[c.id].accent+"22":"rgba(255,255,255,.03)", border:`1px solid ${cat===c.id?CAT_COLORS[c.id].accent+"66":"rgba(255,255,255,.07)"}`, color: cat===c.id?CAT_COLORS[c.id].light:"#777", borderRadius:"8px", padding:"6px 12px", cursor:"pointer", fontSize:"12px", fontWeight: cat===c.id?"700":"500", fontFamily:"inherit", transition:"all .2s", display:"inline-flex", alignItems:"center", gap:"7px" }}>
+                <span>{c.emoji} {c.label}</span>
+                <span style={{ background:"rgba(255,255,255,.06)", borderRadius:"999px", padding:"2px 7px", fontSize:"10.5px", color: cat===c.id?CAT_COLORS[c.id].light:"#999" }}>{categoryCounts?.[c.id] ?? 0}</span>
               </button>
             ))}
           </div>
@@ -1032,15 +1125,15 @@ export default function Dashboard() {
       </div>
 
       {/* TICKER */}
-      <div style={{ background:"#0b0505", borderBottom:"1px solid rgba(192,57,43,.15)", padding:"8px 0", overflow:"hidden" }}>
+      <div style={{ background:"#0b0505", borderBottom:"1px solid rgba(192,57,43,.12)", padding:"6px 0", overflow:"hidden" }}>
         <div style={{ whiteSpace:"nowrap", animation:"ticker 50s linear infinite", display:"inline-block" }}>
-          <span style={{ color:"#c0392b", fontSize:"12px", padding:"0 36px" }}>{ticker}&nbsp;&nbsp;&nbsp;&nbsp;{ticker}</span>
+          <span style={{ color:"#b86e62", fontSize:"11.5px", padding:"0 28px" }}>{ticker}&nbsp;&nbsp;&nbsp;&nbsp;{ticker}</span>
         </div>
       </div>
 
       {/* CONTENT */}
       <ErrorBoundary>
-      <div style={{ padding:"20px 24px 40px" }}>
+      <div style={{ padding:"14px 20px 34px" }}>
 
         {/* NEWS */}
         {tab === "news" && (
@@ -1070,12 +1163,14 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
-                  <span style={{ color:"#282828", fontSize:"12px", marginRight:"auto" }}>{displayNews.length} خبر</span>
+                  <span style={{ color:"#626262", fontSize:"12px", marginRight:"auto" }}>{feedMeta?.total_available_items || displayNews.length} خبر في المخزن · {displayNews.length} ظاهر الآن</span>
                 </div>
-                <EditorialStrip title="Breaking" caption="الأكثر إلحاحًا الآن" items={breakingStories} tone="rgba(231,76,60,.28)" />
-                <EditorialStrip title="Trending" caption="الأعلى ترتيبًا في الفيد" items={trendingStories} tone="rgba(22,160,133,.24)" />
-                <EditorialStrip title="Top Analysis" caption="قراءات وتحليلات مرفوعة تحريرياً" items={analysisStories} tone="rgba(155,89,182,.24)" />
                 <HeroStory item={heroStory} />
+                <LiveDeskCard summary={liveSummary} activeChannel={activeLiveChannel} onOpen={() => setTab("live")} />
+                <EditorialStrip title="الأهم" caption="القصص الأعلى ترتيبًا الآن" items={trendingStories} tone="rgba(22,160,133,.24)" />
+                <EditorialStrip title="الأحدث" caption="أحدث ما دخل الفيد المخزن" items={latestStories} tone="rgba(41,128,185,.24)" />
+                <EditorialStrip title="تحليلات" caption="قراءات وتحليلات مرفوعة تحريرياً" items={analysisStories} tone="rgba(155,89,182,.24)" />
+                <EditorialStrip title="عاجل" caption="الأكثر إلحاحًا الآن" items={breakingStories} tone="rgba(231,76,60,.28)" />
                 <PriorityRail items={priorityRail} />
                 <div className="news-grid">
                   {remainingNews.map((item,i) => <NewsCard key={getNewsKey(item)} item={item} index={i} />)}
@@ -1084,8 +1179,8 @@ export default function Dashboard() {
             )}
             {!loadN && !errN && news.length === 0 && (
               <div style={{ textAlign:"center", padding:"40px" }}>
-                <p style={{ color:"#f39c12", fontSize:"14px", marginBottom:"8px", direction:"rtl" }}>
-                  ⚠️ {feedMeta?.fallback_used ? "لا توجد بيانات fallback حالياً" : "لا توجد بيانات مخزنة بعد"}
+                <p style={{ color:"#f0c36d", fontSize:"14px", marginBottom:"8px", direction:"rtl" }}>
+                  {feedMeta?.fallback_used ? "لا توجد بيانات fallback حالياً" : (cat === "all" ? "لا توجد بيانات مخزنة جاهزة للعرض الآن" : `لا توجد نتائج في تصنيف ${CATEGORIES.find((entry) => entry.id === cat)?.label || cat}`)}
                 </p>
                 <p style={{ color:"#555", fontSize:"12px", direction:"rtl" }}>
                   {feedMeta?.fallback_used
@@ -1142,7 +1237,7 @@ export default function Dashboard() {
                     fontFamily: "inherit",
                   }}
                 >
-                  {filter.label}
+                  {filter.label} ({filter.id === "playable" ? (liveSummary?.playable_streams || 0) : (liveSummary?.external_only_streams || 0)})
                 </button>
               ))}
             </div>
@@ -1211,8 +1306,8 @@ export default function Dashboard() {
                 <div style={{ display:"flex", flexDirection:"column", gap:"9px" }}>
                   <div style={{ color:"#3a3a3a", fontSize:"11.5px", marginBottom:"4px", fontWeight:"700", letterSpacing:"1px" }}>📡 المصادر المتاحة</div>
                   {liveSummary && (
-                    <div style={{ background:"#101010", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"12px 14px", color:"#666", fontSize:"11.5px", lineHeight:"1.8" }}>
-                      active: {liveSummary.active_streams} · playable: {liveSummary.playable_streams} · external-only: {liveSummary.external_only_streams} · featured: {liveSummary.featured_stream_id || "-"}
+                    <div style={{ background:"#101010", border:"1px solid rgba(255,255,255,.06)", borderRadius:"12px", padding:"12px 14px", color:"#7b7b7b", fontSize:"11.5px", lineHeight:"1.8" }}>
+                      النشطة: {liveSummary.active_streams} · القابلة للتشغيل: {liveSummary.playable_streams} · الخارجية فقط: {liveSummary.external_only_streams} · المزالة: {liveSummary.removed_streams || 0}
                     </div>
                   )}
                   {visibleLiveStreams.map(ch => (
@@ -1240,9 +1335,9 @@ export default function Dashboard() {
       </ErrorBoundary>
 
       {/* FOOTER */}
-      <div style={{ borderTop:"1px solid rgba(255,255,255,.04)", padding:"13px 24px", display:"flex", justifyContent:"space-between", color:"#333", fontSize:"11.5px", flexWrap:"wrap", gap:"6px" }}>
-        <span>⚡ مدعوم بالذكاء الاصطناعي · <span style={{ color:"#c0392b" }}>البيانات مُولَّدة بواسطة AI وليست أخباراً رسمية</span></span>
-        <span>للأغراض الإخبارية والمعلوماتية فقط</span>
+      <div style={{ borderTop:"1px solid rgba(255,255,255,.04)", padding:"12px 20px", display:"flex", justifyContent:"space-between", color:"#4a4a4a", fontSize:"11.5px", flexWrap:"wrap", gap:"6px" }}>
+        <span>عين العالم · stored newsroom view</span>
+        <span>يُعرض الأصل عند تعذر الترجمة ويُخفى الخطأ الخام عن الواجهة</span>
       </div>
     </div>
   );

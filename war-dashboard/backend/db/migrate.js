@@ -29,6 +29,36 @@ async function listMigrationNames() {
     .sort();
 }
 
+async function migrationNeedsRepair(client, name) {
+  if (name !== '003_strict_prod_expansion') return false;
+
+  const result = await client.query(
+    `SELECT
+       to_regclass('public.news_categories') IS NOT NULL AS has_news_categories,
+       to_regclass('public.stream_channels') IS NOT NULL AS has_stream_channels,
+       EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'normalized_items'
+           AND column_name = 'news_category_id'
+       ) AS has_news_category_column,
+       EXISTS (
+         SELECT 1
+         FROM pg_constraint
+         WHERE conname = 'fk_normalized_items_news_category'
+       ) AS has_news_category_fk`,
+  );
+
+  const row = result.rows[0] || {};
+  return !(
+    row.has_news_categories
+    && row.has_stream_channels
+    && row.has_news_category_column
+    && row.has_news_category_fk
+  );
+}
+
 async function applyUp() {
   await withTransaction(async (client) => {
     await ensureMigrationsTable(client);
@@ -36,12 +66,18 @@ async function applyUp() {
     const all = await listMigrationNames();
 
     for (const name of all) {
-      if (applied.has(name)) continue;
+      const alreadyApplied = applied.has(name);
+      if (alreadyApplied && !(await migrationNeedsRepair(client, name))) continue;
+
       const upPath = path.join(MIGRATIONS_DIR, `${name}.up.sql`);
       const sql = await fs.readFile(upPath, 'utf8');
       await client.query(sql);
-      await client.query('INSERT INTO schema_migrations(name) VALUES ($1)', [name]);
-      console.log(`[migrate] applied ${name}`);
+      if (!alreadyApplied) {
+        await client.query('INSERT INTO schema_migrations(name) VALUES ($1)', [name]);
+        console.log(`[migrate] applied ${name}`);
+      } else {
+        console.log(`[migrate] repaired ${name}`);
+      }
     }
   });
 }
