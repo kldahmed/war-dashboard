@@ -142,6 +142,88 @@ function sanitizeVideoItem(item) {
   };
 }
 
+// ── Chat handler ────────────────────────────────────────────────────────────────
+const MAX_MSG_LEN = 600;
+const MAX_CTX_LEN = 12_000;
+
+function sanitizeChat(val, max) {
+  if (typeof val !== 'string') return '';
+  return val.replace(/<[^>]*>/g, '').replace(/[<>"';]/g, '').slice(0, max).trim();
+}
+
+async function handleChatMessage(req, res, body) {
+  const message = sanitizeChat(body.message, MAX_MSG_LEN);
+  if (!message) {
+    return res.status(400).json({ error: 'رسالة غير صالحة' });
+  }
+  const context = sanitizeChat(body.context || '', MAX_CTX_LEN);
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('[/api/claude:chat] ANTHROPIC_API_KEY is not configured');
+    return res.status(503).json({ error: 'الخدمة غير متاحة — مفتاح API غير مضبوط' });
+  }
+
+  const systemPrompt = [
+    'أنت محلل إخباري متخصص في الشؤون الجيوسياسية للشرق الأوسط.',
+    'تتلقى قائمة من الأخبار الفعلية مع معلومات المصدر ودرجات الموثوقية وحالة التحقق.',
+    'أجب بدقة وإيجاز باللغة العربية. استند إلى الأخبار المقدمة كمرجع أساسي.',
+    'إذا كانت المعلومات غير كافية، أشر إلى ذلك بأمانة.',
+    'لا تخترع أحداثاً أو مصادر غير واردة في السياق.',
+  ].join(' ');
+
+  const userContent = context
+    ? `سياق الأخبار الحالية:\n${context}\n\n---\nسؤالي: ${message}`
+    : message;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 28_000);
+
+  try {
+    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: {
+        'Content-Type':      'application/json',
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system:     systemPrompt,
+        messages:   [{ role: 'user', content: userContent }],
+      }),
+    });
+
+    clearTimeout(timer);
+
+    if (!upstream.ok) {
+      const raw = await upstream.text().catch(() => '');
+      console.error(`[/api/claude:chat] Anthropic error ${upstream.status}:`, raw.slice(0, 300));
+      return res.status(502).json({ error: `خطأ في الاتصال بـ AI (${upstream.status}) — حاول مجدداً` });
+    }
+
+    const data     = await upstream.json();
+    const blocks   = Array.isArray(data.content) ? data.content : [];
+    const response = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+
+    if (!response) {
+      return res.status(502).json({ error: 'استجابة AI فارغة' });
+    }
+
+    return res.status(200).json({ response });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      console.error('[/api/claude:chat] Request timed out');
+      return res.status(504).json({ error: 'انتهت مهلة AI (28 ث) — حاول مجدداً' });
+    }
+    console.error('[/api/claude:chat] Unexpected error:', err.message);
+    return res.status(500).json({ error: 'خطأ داخلي في الخادم' });
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 module.exports = async function handler(req, res) {
@@ -161,6 +243,12 @@ module.exports = async function handler(req, res) {
   }
 
   const body = req.body ?? {};
+
+  // ── Chat mode: message field present → bypass promptType flow ───────────────
+  if (typeof body.message === 'string') {
+    return handleChatMessage(req, res, body);
+  }
+
   const { promptType, category } = body;
 
   // ── Input validation (allow-list only, never trust client) ──────────────────

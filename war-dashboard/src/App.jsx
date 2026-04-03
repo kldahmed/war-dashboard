@@ -48,6 +48,14 @@ const ALERT_THRESHOLDS = {
   failing_sources_warning:  2,
 };
 
+const SUGGESTED_PROMPTS = [
+  { label: '⚡ العاجل',          q: 'ما أبرز الأخبار العاجلة الآن؟ رتّبها حسب الأهمية.' },
+  { label: '🔍 تحليل الموقف', q: 'حلّل التوترات في الشرق الأوسط من الأخبار الحالية.' },
+  { label: '⚖️ تناقضات',       q: 'هل هناك تناقضات بين المصادر حول نفس الحدث؟' },
+  { label: '📊 الأوثق',          q: 'ما الأخبار الأكثر توثيقاً ومصداقية في هذه الدفعة؟' },
+  { label: '🌍 الصورة الكبيرة', q: 'كيف تلخص المشهد الجيوسياسي الراهن في المنطقة؟' },
+];
+
 const PLACEHOLDER_IMGS = [
   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=60',
   'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&q=60',
@@ -536,9 +544,9 @@ function AlertsPanel({ alerts }) {
 /* ─────────────────────────────────────────────────
    AI CHAT
 ───────────────────────────────────────────────── */
-function AiChat({ headlines }) {
+function AiChat({ newsItems }) {
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: 'مرحباً! أنا مساعدك الذكي. يمكنك سؤالي عن أي خبر أو تحليل سياسي.' }
+    { role: 'assistant', text: 'مرحباً! أنا محللك الجيوسياسي. يمكنك سؤالي عن أي حدث أو تطلب تحليلاً بناءً على أخبار اليوم الفعلية.' }
   ]);
   const [input, setInput]   = useState('');
   const [loading, setLoading] = useState(false);
@@ -548,20 +556,33 @@ function AiChat({ headlines }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const send = useCallback(async () => {
-    const text = input.trim();
+  const send = useCallback(async (forcedText = '') => {
+    const text = (forcedText || input).trim();
     if (!text || loading) return;
-    setInput('');
+    if (!forcedText) setInput('');
     setMessages(m => [...m, { role: 'user', text }]);
     setLoading(true);
     try {
-      const ctx = headlines.slice(0, 10).map(h => `- ${h.title}`).join('\n');
+      const items = (newsItems || []).slice(0, 25);
+      const ctx = items.map(h => {
+        const cat     = CATEGORIES.find(c => c.id === h.category)?.label || h.category;
+        const urgTag  = h.urgency === 'high' ? ' ⚡عاجل' : h.urgency === 'medium' ? ' ●مهم' : '';
+        const trust   = h.source?.trust_score != null
+          ? ` [ثقة: ${Math.round(h.source.trust_score * 100)}%]` : '';
+        const vState  = h.provenance?.verification?.state
+          ? ` [${verificationLabel(h.provenance.verification.state)}]` : '';
+        const corr    = Number(h.provenance?.cluster?.corroboration_count || 0);
+        const corrTag = corr > 1 ? ` (${corr} مصادر داعمة)` : '';
+        const sum     = h.summary
+          ? `\n   الملخص: ${stripHtml(h.summary).slice(0, 120)}` : '';
+        return `• [${cat}]${urgTag}${trust}${vState}${corrTag}\n   ${h.title}${sum}\n   المصدر: ${h.source?.name || '؟'}`;
+      }).join('\n\n');
       const res = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
-          context: `أحدث الأخبار:\n${ctx}`,
+          context: ctx ? `أخبار اليوم (${items.length} خبر):\n${ctx}` : '',
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -573,7 +594,7 @@ function AiChat({ headlines }) {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, headlines]);
+  }, [input, loading, newsItems]);
 
   const handleKey = useCallback(e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -596,6 +617,18 @@ function AiChat({ headlines }) {
         )}
         <div ref={bottomRef} />
       </div>
+      <div className="ai-chat__suggestions">
+        {SUGGESTED_PROMPTS.map((p, i) => (
+          <button
+            key={i}
+            className="ai-suggest-btn"
+            onClick={() => send(p.q)}
+            disabled={loading}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
       <div className="ai-chat__input-row">
         <textarea
           className="ai-chat__input"
@@ -607,7 +640,7 @@ function AiChat({ headlines }) {
           disabled={loading}
           dir="rtl"
         />
-        <button className="btn btn--primary" onClick={send} disabled={loading || !input.trim()}>
+        <button className="btn btn--primary" onClick={() => send()} disabled={loading || !input.trim()}>
           {loading ? '…' : 'إرسال'}
         </button>
       </div>
@@ -925,6 +958,15 @@ export default function App() {
     return () => clearInterval(id);
   }, [activeTab, loadLive]);
 
+  /* ─── Auto-refresh news (silent, page 1 only, no active search) ─── */
+  useEffect(() => {
+    if (activeTab !== 'news') return;
+    const id = setInterval(() => {
+      if (page === 1 && !searchQ.trim()) loadNews(category, '', 1);
+    }, 5 * 60 * 1_000);
+    return () => clearInterval(id);
+  }, [activeTab, category, searchQ, page, loadNews]);
+
   /* ─── Load More ─── */
   const loadMore = useCallback(() => {
     const next = page + 1;
@@ -1188,7 +1230,7 @@ export default function App() {
               <h2>🤖 المساعد الذكي</h2>
               <p className="ai-view__sub">مدعوم بـ Claude AI — اسألني عن أي خبر أو حدث</p>
             </div>
-            <AiChat headlines={breakingHeadlines.length ? breakingHeadlines : newsItems} />
+            <AiChat newsItems={newsItems} />
           </div>
         )}
 
@@ -1850,6 +1892,20 @@ img { display: block; max-width: 100%; }
   transition: border-color .15s;
 }
 .ai-chat__input:focus { border-color: var(--accent); }
+.ai-chat__suggestions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 14px; border-top: 1px solid var(--border);
+  background: var(--bg2);
+}
+.ai-suggest-btn {
+  padding: 5px 12px; border-radius: 999px; font-size: .78rem;
+  border: 1px solid var(--border); background: var(--bg3);
+  color: var(--text2); cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.ai-suggest-btn:hover:not(:disabled) {
+  border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,.1);
+}
+.ai-suggest-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ════════════════════════════════
    FOOTER
