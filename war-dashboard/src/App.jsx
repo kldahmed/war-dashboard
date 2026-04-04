@@ -16,7 +16,7 @@ const CATEGORIES = [
   { id: 'war',        label: 'حرب' },
   { id: 'politics',   label: 'سياسة' },
   { id: 'economy',    label: 'اقتصاد' },
-  { id: 'gulf',       label: 'الخليج' },
+  { id: 'gulf',       label: 'gulf' },
   { id: 'iran',       label: 'إيران' },
   { id: 'israel',     label: 'إسرائيل' },
   { id: 'usa',        label: 'أمريكا' },
