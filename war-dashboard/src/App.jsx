@@ -678,7 +678,7 @@ function AiChat({ newsItems }) {
           ? `\n   الملخص: ${stripHtml(h.summary).slice(0, 120)}` : '';
         return `• [${cat}]${urgTag}${trust}${vState}${corrTag}\n   ${h.title}${sum}\n   المصدر: ${h.source?.name || '؟'}`;
       }).join('\n\n');
-      const res = await fetch('/api/claude', {
+      const res = await fetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
