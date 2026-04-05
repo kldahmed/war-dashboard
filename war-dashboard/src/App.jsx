@@ -523,83 +523,135 @@ function ListItem({ item, idx }) {
 }
 
 /* ─────────────────────────────────────────────────
-   LIVE CHANNEL COMPONENTS
+   LIVE CHANNEL COMPONENTS  ★ LUXURY REBUILD ★
 ───────────────────────────────────────────────── */
-function ChannelCard({ stream, onSelect, isActive }) {
+function LuxChannelCard({ stream, onSelect, isActive }) {
   if (!stream) return null;
   const s = stream.stream || stream;
   const name = stream.source?.name || s.name || s.registry_id || '';
+  const lang = stream.source?.language || s.language || '';
   const isOnline = s.uptime_status === 'up' || s.uptime_status === 'degraded' || s.status === 'active';
+  const isDegraded = s.uptime_status === 'degraded';
+  const hasEmbed = !!(s.embed_url || s.embedUrl);
+
   return (
     <button
-      className={`ch-card ${isActive ? 'ch-card--active' : ''} ${isOnline ? '' : 'ch-card--offline'}`}
+      className={`lux-ch-card${isActive ? ' lux-ch-card--active' : ''}${!isOnline ? ' lux-ch-card--offline' : ''}${isDegraded ? ' lux-ch-card--degraded' : ''}`}
       onClick={() => onSelect(stream)}
       title={name}
     >
-      <div className="ch-card__logo">
-        {s.logo_url
-          ? <img src={s.logo_url} alt={name} loading="lazy" onError={e => { e.target.style.display='none'; }} />
-          : <span className="ch-card__logo-text">{name.slice(0, 3)}</span>
-        }
-        <span className={`ch-status-dot ${isOnline ? 'ch-status-dot--live' : ''}`} />
-      </div>
-      <div className="ch-card__info">
-        <span className="ch-card__name">{name}</span>
-        <span className="ch-card__country">{stream.source?.language || s.language || ''}</span>
+      <div className="lux-ch-card__inner">
+        {/* Glow ring — top-right corner status */}
+        <div className={`lux-ch-card__glow-ring${isOnline ? ' lux-ch-card__glow-ring--live' : ''}`} />
+
+        {/* LIVE / degraded badge */}
+        {isOnline && (
+          <div className={`lux-ch-card__status-badge${isDegraded ? ' lux-ch-card__status-badge--degraded' : ''}`}>
+            <span className="lux-ch-card__status-dot" />
+            {isDegraded ? 'جزئي' : 'بث'}
+          </div>
+        )}
+
+        {/* Logo */}
+        <div className="lux-ch-card__logo-wrap">
+          {s.logo_url
+            ? <img src={s.logo_url} alt={name} loading="lazy"
+                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+            : null
+          }
+          <span className="lux-ch-card__logo-fallback" style={s.logo_url ? { display: 'none' } : {}}>
+            {name.slice(0, 2)}
+          </span>
+        </div>
+
+        {/* Info */}
+        <div className="lux-ch-card__info">
+          <span className="lux-ch-card__name">{name}</span>
+          {lang && <span className="lux-ch-card__lang">{lang}</span>}
+        </div>
+
+        {/* Embed indicator dot */}
+        {hasEmbed && isOnline && <div className="lux-ch-card__embed-dot" title="يدعم التشغيل المدمج" />}
+
+        {/* Active state shimmer */}
+        {isActive && <div className="lux-ch-card__active-overlay" />}
       </div>
     </button>
   );
 }
 
-function PlayerPanel({ stream, onClose }) {
+function CinematicPlayer({ stream, onClose }) {
   if (!stream) return null;
   const s = stream.stream || stream;
   const name = stream.source?.name || s.name || s.registry_id || '';
+  const lang = stream.source?.language || s.language || '';
   const embedUrl = s.embed_url || s.embedUrl;
   const watchUrl = s.external_watch_url || s.official_page_url;
+  const isLive = s.uptime_status === 'up' || s.status === 'active';
+
   return (
-    <div className="player-panel" dir="rtl">
-      <div className="player-panel__header">
-        <div className="player-panel__title">
-          {s.logo_url && <img src={s.logo_url} alt={name} className="player-panel__logo" />}
-          <span>{name}</span>
-          {(s.uptime_status === 'up' || s.status === 'active') && (
-            <span className="live-badge">● مباشر</span>
+    <div className="cinematic-player" dir="rtl">
+      {/* ── Header ── */}
+      <div className="cinematic-player__header">
+        <div className="cinematic-player__brand">
+          <div className="cinematic-player__logo-wrap">
+            {s.logo_url
+              ? <img src={s.logo_url} alt={name} className="cinematic-player__logo"
+                  onError={e => { e.target.style.display = 'none'; }} />
+              : <span className="cinematic-player__logo-text">{name.slice(0, 2)}</span>
+            }
+          </div>
+          <div>
+            <div className="cinematic-player__channel-name">{name}</div>
+            {lang && <div className="cinematic-player__channel-meta">{lang}</div>}
+          </div>
+          {isLive && (
+            <div className="cinematic-player__live-badge">
+              <span className="cinematic-player__live-dot" />
+              مباشر
+            </div>
           )}
         </div>
-        <div className="player-panel__actions">
+        <div className="cinematic-player__controls">
           {(embedUrl || watchUrl) && (
-            <a href={embedUrl || watchUrl} target="_blank" rel="noopener noreferrer" className="btn btn--ghost btn--sm">
-              ↗ فتح خارجي
+            <a href={embedUrl || watchUrl} target="_blank" rel="noopener noreferrer"
+               className="cinematic-player__btn cinematic-player__btn--ghost">
+              ↗ خارجي
             </a>
           )}
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>✕</button>
+          <button className="cinematic-player__btn cinematic-player__btn--close" onClick={onClose}>✕</button>
         </div>
       </div>
-      <div className="player-panel__screen">
+
+      {/* ── Screen ── */}
+      <div className="cinematic-player__screen">
         {embedUrl ? (
           <iframe
             src={embedUrl}
             title={name}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
-            className="player-iframe"
+            className="cinematic-player__iframe"
             sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
           />
         ) : (
-          <div className="player-no-embed">
-            <div className="player-no-embed__icon">📡</div>
-            <p>لا يتوفر رابط تضمين مباشر لهذه القناة</p>
+          <div className="cinematic-player__no-embed">
+            <div className="cinematic-player__no-embed-icon">📡</div>
+            <h3 className="cinematic-player__no-embed-title">لا يتوفر بث مدمج</h3>
+            <p className="cinematic-player__no-embed-sub">شاهد هذه القناة عبر الموقع الرسمي</p>
             {watchUrl && (
-              <a href={watchUrl} target="_blank" rel="noopener noreferrer" className="btn btn--primary">
+              <a href={watchUrl} target="_blank" rel="noopener noreferrer"
+                 className="cinematic-player__watch-btn">
                 مشاهدة على الموقع الرسمي ↗
               </a>
             )}
           </div>
         )}
+        <div className="cinematic-player__scanlines" />
       </div>
+
       {s.description && (
-        <p className="player-panel__desc">{s.description}</p>
+        <p className="cinematic-player__desc">{s.description}</p>
       )}
     </div>
   );
@@ -1352,6 +1404,103 @@ export default function App() {
         )}
 
         {/* ═══════════════════════════════
+            LIVE TAB  ★ LUXURY
+        ═══════════════════════════════ */}
+        {activeTab === 'live' && (
+          <div className="live-view" dir="rtl">
+
+            {/* ── Section Header ── */}
+            <div className="live-view__header">
+              <div>
+                <h2 className="live-view__title">
+                  <span className="live-view__pulse-icon">●</span>
+                  قنوات البث المباشر
+                </h2>
+                <p className="live-view__subtitle">
+                  {liveSummary
+                    ? `${liveSummary.active_streams ?? streams.length} قناة نشطة من أصل ${liveSummary.total_streams ?? streams.length}`
+                    : 'تغطية إخبارية مباشرة على مدار الساعة'
+                  }
+                </p>
+              </div>
+              <button className="live-view__refresh-btn" onClick={loadLive} title="تحديث القنوات">
+                ↻ تحديث
+              </button>
+            </div>
+
+            {/* ── HUD Stats Bar ── */}
+            {liveSummary && (
+              <div className="live-hud">
+                <div className="live-hud__stat">
+                  <span className="live-hud__stat-value live-hud__stat-value--green">
+                    {liveSummary.playable_streams ?? liveSummary.active_streams ?? '?'}
+                  </span>
+                  <span className="live-hud__stat-label">قابل للتشغيل</span>
+                </div>
+                <div className="live-hud__stat">
+                  <span className="live-hud__stat-value live-hud__stat-value--blue">
+                    {liveSummary.active_streams ?? '?'}
+                  </span>
+                  <span className="live-hud__stat-label">نشط الآن</span>
+                </div>
+                {(liveSummary.down_streams ?? 0) > 0 && (
+                  <div className="live-hud__stat">
+                    <span className="live-hud__stat-value live-hud__stat-value--red">
+                      {liveSummary.down_streams}
+                    </span>
+                    <span className="live-hud__stat-label">متوقف</span>
+                  </div>
+                )}
+                <div className="live-hud__stat">
+                  <span className="live-hud__stat-value live-hud__stat-value--gold">
+                    {liveSummary.total_streams ?? streams.length}
+                  </span>
+                  <span className="live-hud__stat-label">الإجمالي</span>
+                </div>
+              </div>
+            )}
+
+            {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
+
+            {/* ── Cinematic Player ── */}
+            {selectedStream && (
+              <CinematicPlayer
+                stream={selectedStream}
+                onClose={() => setSelectedStream(null)}
+              />
+            )}
+
+            {/* ── Channel Search ── */}
+            <div className="lux-ch-search" dir="rtl">
+              <SearchBar value={channelSearch} onChange={setChannelSearch} />
+            </div>
+
+            {/* ── Luxury Channel Grid ── */}
+            {loadingLive
+              ? <LoadingSpinner label="تحميل القنوات…" />
+              : (
+                <div className="lux-ch-grid">
+                  {filteredStreams.map((st, i) => (
+                    <LuxChannelCard
+                      key={st.stream?.id || st.id || i}
+                      stream={st}
+                      onSelect={setSelectedStream}
+                      isActive={selectedStream === st}
+                    />
+                  ))}
+                  {filteredStreams.length === 0 && (
+                    <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                      <span className="empty-state__icon">📡</span>
+                      <p>لا توجد قنوات مطابقة</p>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+          </div>
+        )}
+
+        {/* ═══════════════════════════════
             AI TAB
         ═══════════════════════════════ */}
         {activeTab === 'ai' && (
@@ -1907,79 +2056,508 @@ img { display: block; max-width: 100%; }
 }
 .empty-state__icon { font-size: 3rem; }
 
-/* ════════════════════════════════
-   LIVE VIEW
-════════════════════════════════ */
-.live-view { }
+/* ════════════════════════════════════════════════
+   LIVE VIEW  ★ LUXURY REBUILD
+════════════════════════════════════════════════ */
 
-.live-summary-bar {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center;
+/* ── Section header ── */
+.live-view__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
 }
-.live-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 12px; border-radius: 999px; font-size: .8rem; font-weight: 600;
+.live-view__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: -.03em;
+  color: var(--text);
+  margin-bottom: 4px;
 }
-.live-badge--green { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
-.live-badge--blue  { background: rgba(59,130,246,.15); color: var(--accent2); border: 1px solid rgba(59,130,246,.3); }
-.live-badge--red   { background: rgba(239,68,68,.15);  color: #f87171; border: 1px solid rgba(239,68,68,.3); }
-.live-badge--gray  { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.live-view__pulse-icon {
+  color: var(--red);
+  font-size: .7em;
+  animation: blink 1.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px var(--red));
+}
+.live-view__subtitle {
+  font-size: .8rem;
+  color: var(--text3);
+  margin-right: 24px;
+  letter-spacing: .01em;
+}
+.live-view__refresh-btn {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  color: var(--text2);
+  padding: 7px 14px;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .18s;
+  flex-shrink: 0;
+}
+.live-view__refresh-btn:hover {
+  background: rgba(59,130,246,.15);
+  border-color: rgba(59,130,246,.4);
+  color: var(--accent2);
+}
 
-/* Player panel */
-.player-panel {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden;
-  margin-bottom: 20px; box-shadow: var(--shadow);
+/* ── HUD Stats Bar ── */
+.live-hud {
+  display: flex;
+  align-items: stretch;
+  background: linear-gradient(135deg,
+    rgba(0,0,0,.55) 0%,
+    var(--bg2) 100%
+  );
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
+  position: relative;
 }
-.player-panel__header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 1px solid var(--border);
+.live-hud::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(59,130,246,.03) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
 }
-.player-panel__title {
-  display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1rem;
+.live-hud__stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 12px;
+  position: relative;
+  transition: background .2s;
 }
-.player-panel__logo { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
-.player-panel__actions { display: flex; gap: 8px; }
-.player-panel__screen { aspect-ratio: 16/9; background: #000; position: relative; }
-.player-iframe { width: 100%; height: 100%; border: none; display: block; }
-.player-no-embed {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; color: var(--text2);
+.live-hud__stat:hover { background: rgba(255,255,255,.03); }
+.live-hud__stat + .live-hud__stat::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 15%;
+  height: 70%;
+  width: 1px;
+  background: rgba(255,255,255,.07);
 }
-.player-no-embed__icon { font-size: 3rem; }
-.player-panel__desc { padding: 10px 16px; font-size: .82rem; color: var(--text2); border-top: 1px solid var(--border); }
+.live-hud__stat-value {
+  font-size: 1.75rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -.04em;
+}
+.live-hud__stat-value--green { color: var(--green); text-shadow: 0 0 20px rgba(34,197,94,.4); }
+.live-hud__stat-value--blue  { color: var(--accent2); text-shadow: 0 0 20px rgba(96,165,250,.4); }
+.live-hud__stat-value--red   { color: #f87171; text-shadow: 0 0 20px rgba(239,68,68,.4); }
+.live-hud__stat-value--gold  { color: var(--gold); text-shadow: 0 0 20px rgba(245,158,11,.4); }
+.live-hud__stat-label {
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
 
-/* Channel grid */
-.ch-search-bar { margin-bottom: 14px; }
-.ch-grid {
+/* ── Cinematic Player ── */
+.cinematic-player {
+  background: #08090d;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  overflow: hidden;
+  margin-bottom: 28px;
+  box-shadow:
+    0 32px 80px rgba(0,0,0,.75),
+    0 0 0 1px rgba(255,255,255,.04),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  position: relative;
+}
+.cinematic-player__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  background: linear-gradient(
+    135deg,
+    rgba(12,14,22,.98) 0%,
+    rgba(18,21,34,.92) 100%
+  );
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  gap: 16px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.cinematic-player__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+.cinematic-player__logo-wrap {
+  width: 46px; height: 46px;
+  background: rgba(255,255,255,.06);
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.1);
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+.cinematic-player__logo { width: 100%; height: 100%; object-fit: contain; }
+.cinematic-player__logo-text {
+  font-size: .9rem; font-weight: 800;
+  color: rgba(255,255,255,.6); letter-spacing: -.02em;
+}
+.cinematic-player__channel-name {
+  font-size: 1.05rem; font-weight: 700;
+  color: #fff; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cinematic-player__channel-meta {
+  font-size: .72rem; color: rgba(255,255,255,.35);
+  margin-top: 3px; text-transform: uppercase; letter-spacing: .06em;
+}
+.cinematic-player__live-badge {
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.35);
+  border-radius: 7px;
+  padding: 6px 13px;
+  font-size: .7rem; font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #ff6b6b;
+  flex-shrink: 0;
+}
+.cinematic-player__live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #ff4444;
+  box-shadow: 0 0 8px #ff4444, 0 0 16px rgba(255,68,68,.5);
+  animation: blink 1s ease-in-out infinite;
+}
+.cinematic-player__controls { display: flex; gap: 8px; flex-shrink: 0; }
+.cinematic-player__btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: .78rem; font-weight: 600;
+  cursor: pointer;
+  transition: all .18s;
+  border: none;
+  text-decoration: none;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.cinematic-player__btn--ghost {
+  background: rgba(255,255,255,.07);
+  color: rgba(255,255,255,.65);
+  border: 1px solid rgba(255,255,255,.12);
+}
+.cinematic-player__btn--ghost:hover {
+  background: rgba(255,255,255,.13);
+  color: #fff;
+  border-color: rgba(255,255,255,.22);
+}
+.cinematic-player__btn--close {
+  background: rgba(239,68,68,.1);
+  color: rgba(239,68,68,.75);
+  border: 1px solid rgba(239,68,68,.2);
+}
+.cinematic-player__btn--close:hover {
+  background: rgba(239,68,68,.22);
+  color: #f87171;
+  border-color: rgba(239,68,68,.4);
+}
+.cinematic-player__screen {
+  aspect-ratio: 16/9;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+}
+.cinematic-player__iframe {
+  width: 100%; height: 100%;
+  border: none; display: block;
+  position: relative; z-index: 1;
+}
+.cinematic-player__scanlines {
+  position: absolute; inset: 0; z-index: 2;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(0,0,0,.025) 3px,
+    rgba(0,0,0,.025) 4px
+  );
+  pointer-events: none;
+}
+.cinematic-player__no-embed {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(24,28,44,.9) 0%,
+    rgba(8,9,13,.97) 100%
+  );
+}
+.cinematic-player__no-embed-icon { font-size: 3.8rem; filter: grayscale(.3); }
+.cinematic-player__no-embed-title {
+  font-size: 1.1rem; font-weight: 700;
+  color: rgba(255,255,255,.7);
+}
+.cinematic-player__no-embed-sub {
+  font-size: .82rem; color: rgba(255,255,255,.3);
+}
+.cinematic-player__watch-btn {
+  background: linear-gradient(135deg, var(--accent) 0%, #1d4ed8 100%);
+  color: #fff;
+  padding: 11px 26px;
+  border-radius: 9px;
+  font-size: .86rem; font-weight: 700;
+  text-decoration: none;
+  transition: all .22s;
+  box-shadow: 0 6px 20px rgba(59,130,246,.35);
+}
+.cinematic-player__watch-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(59,130,246,.55);
+}
+.cinematic-player__desc {
+  padding: 12px 22px;
+  font-size: .82rem;
+  color: rgba(255,255,255,.3);
+  border-top: 1px solid rgba(255,255,255,.06);
+  background: rgba(0,0,0,.25);
+}
+
+/* ── Channel Search ── */
+.lux-ch-search { margin-bottom: 20px; }
+.lux-ch-search .search-bar {
+  background: var(--bg2);
+  border-color: rgba(255,255,255,.1);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+/* ── Luxury Channel Grid ── */
+.lux-ch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
+  gap: 14px;
 }
-.ch-card {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 12px 10px;
-  cursor: pointer; transition: all .18s; text-align: right;
-  display: flex; flex-direction: column; gap: 8px; dir: rtl;
+@media (min-width: 640px) {
+  .lux-ch-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
-.ch-card:hover { border-color: var(--accent); background: var(--card-hover); }
-.ch-card--active { border-color: var(--accent); background: rgba(59,130,246,.1); }
-.ch-card--offline { opacity: .55; }
-.ch-card__logo { position: relative; display: flex; align-items: center; justify-content: center;
-  width: 48px; height: 48px; background: var(--bg3); border-radius: 8px; overflow: hidden; }
-.ch-card__logo img { width: 100%; height: 100%; object-fit: contain; }
-.ch-card__logo-text { font-size: .75rem; font-weight: 700; color: var(--text2); }
-.ch-status-dot {
-  position: absolute; bottom: 2px; right: 2px;
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--text3); border: 1.5px solid var(--card-bg);
+@media (min-width: 1024px) {
+  .lux-ch-grid { grid-template-columns: repeat(auto-fill, minmax(195px, 1fr)); }
 }
-.ch-status-dot--live { background: var(--green); animation: blink 2s infinite; }
-.ch-card__info { }
-.ch-card__name { display: block; font-size: .82rem; font-weight: 600; margin-bottom: 2px; }
-.ch-card__country { font-size: .72rem; color: var(--text3); }
 
-/* LIVE BADGE in header */
+/* ── Luxury Channel Card ── */
+.lux-ch-card {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 14px;
+  width: 100%;
+  text-align: inherit;
+  display: block;
+}
+.lux-ch-card__inner {
+  position: relative;
+  background: linear-gradient(
+    150deg,
+    var(--bg2) 0%,
+    var(--bg3) 100%
+  );
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  padding: 18px 14px 14px;
+  transition: all .28s cubic-bezier(.4, 0, .2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-height: 130px;
+  overflow: hidden;
+}
+.lux-ch-card__inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 13px;
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,.04) 0%,
+    transparent 55%
+  );
+  pointer-events: none;
+}
+.lux-ch-card:hover .lux-ch-card__inner {
+  border-color: rgba(59,130,246,.5);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--bg2) 85%, var(--accent) 15%) 0%,
+    var(--bg3) 100%
+  );
+  transform: translateY(-4px);
+  box-shadow:
+    0 16px 40px rgba(0,0,0,.5),
+    0 0 0 1px rgba(59,130,246,.3),
+    0 0 24px rgba(59,130,246,.08);
+}
+.lux-ch-card--active .lux-ch-card__inner {
+  border-color: rgba(59,130,246,.7);
+  background: linear-gradient(
+    150deg,
+    rgba(59,130,246,.12) 0%,
+    rgba(37,99,235,.07) 100%
+  );
+  box-shadow:
+    0 12px 32px rgba(59,130,246,.2),
+    0 0 0 1px rgba(59,130,246,.45),
+    0 0 32px rgba(59,130,246,.1);
+  transform: translateY(-2px);
+}
+.lux-ch-card--offline .lux-ch-card__inner {
+  opacity: .42;
+  filter: grayscale(.65);
+}
+.lux-ch-card--degraded .lux-ch-card__inner {
+  border-color: rgba(245,158,11,.25);
+}
+
+/* Glow ring — top-right online indicator */
+.lux-ch-card__glow-ring {
+  position: absolute;
+  top: 10px; left: 10px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--text3);
+  border: 1.5px solid var(--bg2);
+  z-index: 2;
+}
+.lux-ch-card__glow-ring--live {
+  background: var(--green);
+  border-color: rgba(0,0,0,.4);
+  box-shadow:
+    0 0 6px var(--green),
+    0 0 14px rgba(34,197,94,.45);
+  animation: blink 2.8s ease-in-out infinite;
+}
+
+/* LIVE status badge — top-left */
+.lux-ch-card__status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  position: absolute;
+  top: 8px; right: 8px;
+  background: rgba(34,197,94,.11);
+  border: 1px solid rgba(34,197,94,.28);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: .58rem; font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--green);
+  z-index: 2;
+}
+.lux-ch-card__status-badge--degraded {
+  background: rgba(245,158,11,.1);
+  border-color: rgba(245,158,11,.3);
+  color: var(--gold);
+}
+.lux-ch-card__status-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 1.8s infinite;
+}
+
+/* Logo */
+.lux-ch-card__logo-wrap {
+  width: 52px; height: 52px;
+  background: rgba(255,255,255,.05);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  flex-shrink: 0;
+  align-self: flex-start;
+  transition: all .28s;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+.lux-ch-card:hover .lux-ch-card__logo-wrap,
+.lux-ch-card--active .lux-ch-card__logo-wrap {
+  background: rgba(255,255,255,.09);
+  border-color: rgba(255,255,255,.15);
+  box-shadow: 0 6px 16px rgba(0,0,0,.4);
+}
+.lux-ch-card__logo-wrap img {
+  width: 100%; height: 100%; object-fit: contain;
+}
+.lux-ch-card__logo-fallback {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  font-size: .92rem; font-weight: 800;
+  color: var(--text2); letter-spacing: -.02em;
+}
+
+/* Channel info */
+.lux-ch-card__info { display: flex; flex-direction: column; gap: 3px; }
+.lux-ch-card__name {
+  font-size: .83rem; font-weight: 700;
+  color: var(--text); line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color .2s;
+}
+.lux-ch-card:hover .lux-ch-card__name { color: var(--accent2); }
+.lux-ch-card--active .lux-ch-card__name { color: #93c5fd; }
+.lux-ch-card__lang {
+  font-size: .66rem; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .08em;
+}
+
+/* Embed indicator */
+.lux-ch-card__embed-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: .55;
+  align-self: flex-end;
+  margin-top: auto;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* Active shimmer overlay */
+.lux-ch-card__active-overlay {
+  position: absolute; inset: 0;
+  border-radius: 13px;
+  background: linear-gradient(
+    135deg,
+    rgba(59,130,246,.07) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+/* ── nav badge keep working ── */
 .live-badge-inline {
   background: var(--red); color: #fff;
   padding: 2px 7px; border-radius: 999px;
