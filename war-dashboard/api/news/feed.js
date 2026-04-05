@@ -389,7 +389,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('X-Correlation-Id', correlationId);
 
   try {
-    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const limit = Math.min(200, Math.max(1, Number.parseInt(req.query.limit, 10) || 60));
     const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
     const category = normalizeCategorySlug(req.query.category);
     const searchQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';

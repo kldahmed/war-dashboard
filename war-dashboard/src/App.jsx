@@ -27,10 +27,11 @@ const CATEGORIES = [
 ];
 
 const TABS = [
-  { id: 'news',  label: 'الأخبار',        icon: '📰' },
-  { id: 'live',  label: 'البث المباشر',   icon: '📡' },
-  { id: 'ops',   label: 'غرفة الأخبار',   icon: '🧭' },
-  { id: 'ai',    label: 'مساعد ذكي',      icon: '🤖' },
+  { id: 'news',       label: 'الأخبار',          icon: '📰' },
+  { id: 'editorial',  label: 'التحرير الذكي',    icon: '🧠' },
+  { id: 'live',       label: 'البث المباشر',     icon: '📡' },
+  { id: 'ops',        label: 'غرفة الأخبار',     icon: '🧭' },
+  { id: 'ai',         label: 'مساعد ذكي',        icon: '🤖' },
 ];
 
 const URGENCY_WEIGHT = { high: 3, medium: 2, low: 1 };
@@ -1042,7 +1043,7 @@ export default function App() {
   const [sitrep,        setSitrep]        = useState(null);
   const [sitrepLoading, setSitrepLoading] = useState(false);
 
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 60;
 
   /* ─── News Loader ─── */
   const loadNews = useCallback(async (cat, q, pg) => {
@@ -1182,6 +1183,12 @@ export default function App() {
     }, 5 * 60 * 1_000);
     return () => clearInterval(id);
   }, [activeTab, category, searchQ, page, loadNews]);
+
+  /* ─── Load briefing when editorial tab opens ─── */
+  useEffect(() => {
+    if (activeTab !== 'editorial') return;
+    if (!editorialBriefing && !loadingNews) loadNews('all', '', 1);
+  }, [activeTab]); // eslint-disable-line
 
   /* ─── Auto-refresh SITREP every 30 min ─── */
   useEffect(() => {
@@ -1325,7 +1332,6 @@ export default function App() {
 
             {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
 
-            {!loadingNews && page === 1 && <BriefingPanel briefing={editorialBriefing} />}
 
             {/* Hero + Spotlight */}
             {!loadingNews && newsItems.length > 0 && page === 1 && (
@@ -1362,15 +1368,6 @@ export default function App() {
               </>
             )}
 
-            {/* List for remainder */}
-            {!loadingNews && newsItems.length > 0 && (
-              <div className="list-sidebar">
-                <div className="section-label">عناوين سريعة</div>
-                {newsItems.slice(0, 12).map((item, i) => (
-                  <ListItem key={item.id || i} item={item} idx={i} />
-                ))}
-              </div>
-            )}
 
             {loadingNews && <LoadingSpinner />}
 
@@ -1405,6 +1402,239 @@ export default function App() {
               onRefresh={loadOps}
               loading={loadingOps}
             />
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            EDITORIAL TAB  ★★★★★★★ LUXURY
+        ═══════════════════════════════════════════ */}
+        {activeTab === 'editorial' && (
+          <div className="eb-arena" dir="rtl">
+
+            {/* ══ COMMAND HEADER ══ */}
+            <div className="eb-hdr">
+              <div className="eb-hdr__left">
+                <div className="eb-hdr__eyebrow">
+                  <span className="eb-hdr__pulse" />
+                  تحرير استخباراتي
+                </div>
+                <h2 className="eb-hdr__title">لوحة التحرير الذكية</h2>
+                <p className="eb-hdr__sub">ترتيب القصص حسب الزخم · التحقق · التعارض · تنوع المصادر</p>
+              </div>
+              <button className="eb-hdr__refresh" onClick={() => loadNews('all', '', 1)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                تحديث
+              </button>
+            </div>
+
+            {/* ══ HUD MOMENTUM BAR ══ */}
+            {editorialBriefing?.momentum && (
+              <div className="eb-hud-bar">
+                <div className="eb-hud-bar__inner">
+                  <div className="eb-stat eb-stat--gold">
+                    <span className="eb-stat__val">{editorialBriefing.momentum.high_priority_count ?? 0}</span>
+                    <span className="eb-stat__key">أولوية عالية</span>
+                  </div>
+                  <div className="eb-sep" />
+                  <div className="eb-stat eb-stat--green">
+                    <span className="eb-stat__val">{editorialBriefing.momentum.corroborated_count ?? 0}</span>
+                    <span className="eb-stat__key">موثق</span>
+                  </div>
+                  <div className="eb-sep" />
+                  <div className="eb-stat eb-stat--blue">
+                    <span className="eb-stat__val">{editorialBriefing.verification_radar?.partially_corroborated ?? 0}</span>
+                    <span className="eb-stat__key">توثيق جزئي</span>
+                  </div>
+                  <div className="eb-sep" />
+                  <div className="eb-stat eb-stat--red">
+                    <span className="eb-stat__val">{editorialBriefing.momentum.review_count ?? 0}</span>
+                    <span className="eb-stat__key">تحتاج مراجعة</span>
+                  </div>
+                  <div className="eb-sep" />
+                  <div className="eb-stat eb-stat--purple">
+                    <span className="eb-stat__val">{editorialBriefing.verification_radar?.single_source ?? 0}</span>
+                    <span className="eb-stat__key">مصدر واحد</span>
+                  </div>
+                </div>
+                <div className="eb-hud-bar__divider" />
+                <div className="eb-hud-bar__confidence">
+                  <span className="eb-hud-bar__conf-label">متوسط الثقة</span>
+                  <span className="eb-hud-bar__conf-val">
+                    {editorialBriefing.verification_radar?.average_confidence
+                      ? `${Math.round(editorialBriefing.verification_radar.average_confidence * 100)}%`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {loadingNews && <LoadingSpinner label="جارٍ تحليل الأخبار…" />}
+
+            {!loadingNews && !editorialBriefing && (
+              <div className="eb-empty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity=".25"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <p>لا توجد بيانات تحريرية حاليا — قم بتشغيل الاستيعاب أولاً</p>
+              </div>
+            )}
+
+            {!loadingNews && editorialBriefing && (
+              <>
+                {/* ══ LEAD STORY ══ */}
+                {editorialBriefing.lead_story && (
+                  <div className="eb-lead">
+                    <div className="eb-lead__badge">القصة القائدة</div>
+                    <h3 className="eb-lead__title">{editorialBriefing.lead_story.title}</h3>
+                    <div className="eb-lead__chips">
+                      <span className={`eb-chip eb-chip--${editorialBriefing.lead_story.contradiction_flag ? 'red' : 'green'}`}>
+                        {verificationLabel(editorialBriefing.lead_story.verification_state)}
+                      </span>
+                      <span className="eb-chip eb-chip--amber">{editorialPriorityLabel(editorialBriefing.lead_story.editorial_priority)}</span>
+                      <span className="eb-chip eb-chip--blue">{editorialDecisionLabel(editorialBriefing.lead_story.editorial_decision)}</span>
+                    </div>
+                    <div className="eb-lead__metrics">
+                      <div className="eb-metric">
+                        <span className="eb-metric__val eb-metric__val--green">{Math.round((editorialBriefing.lead_story.confidence_score || 0) * 100)}%</span>
+                        <span className="eb-metric__key">الثقة</span>
+                      </div>
+                      <div className="eb-metric">
+                        <span className="eb-metric__val eb-metric__val--blue">{Math.round((editorialBriefing.lead_story.rank_score || 0) * 100)}%</span>
+                        <span className="eb-metric__key">الترتيب</span>
+                      </div>
+                      <div className="eb-metric">
+                        <span className="eb-metric__val eb-metric__val--amber">{editorialBriefing.lead_story.corroboration_count || 0}</span>
+                        <span className="eb-metric__key">التعضيد</span>
+                      </div>
+                      <div className="eb-metric">
+                        <span className="eb-metric__val">{editorialBriefing.lead_story.source_diversity || 1}</span>
+                        <span className="eb-metric__key">تنوع المصادر</span>
+                      </div>
+                    </div>
+                    <div className="eb-lead__footer">
+                      <span className="eb-lead__source">{editorialBriefing.lead_story.source_name}</span>
+                      <span className="eb-lead__dot">·</span>
+                      <span className="eb-lead__time">{relativeTime(editorialBriefing.lead_story.published_at)}</span>
+                    </div>
+                    <div className="eb-lead__glow" />
+                  </div>
+                )}
+
+                {/* ══ SIGNAL GRID ══ */}
+                <div className="eb-grid">
+
+                  {/* Radar card */}
+                  <div className="eb-card">
+                    <div className="eb-card__icon eb-card__icon--blue">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                    </div>
+                    <div className="eb-card__eyebrow">رادار التحقق</div>
+                    <div className="eb-card__metrics">
+                      <div className="eb-mini-metric eb-mini-metric--green">
+                        <span>{editorialBriefing.verification_radar?.corroborated || 0}</span><small>موثق</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--amber">
+                        <span>{editorialBriefing.verification_radar?.partially_corroborated || 0}</span><small>جزئي</small>
+                      </div>
+                      <div className="eb-mini-metric">
+                        <span>{editorialBriefing.verification_radar?.single_source || 0}</span><small>مصدر واحد</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--blue">
+                        <span>{editorialBriefing.verification_radar?.average_confidence
+                          ? `${Math.round(editorialBriefing.verification_radar.average_confidence * 100)}%`
+                          : '—'}</span>
+                        <small>متوسط الثقة</small>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Queue card */}
+                  <div className="eb-card">
+                    <div className="eb-card__icon eb-card__icon--gold">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <div className="eb-card__eyebrow">قرار التحرير</div>
+                    <div className="eb-card__metrics">
+                      <div className="eb-mini-metric eb-mini-metric--green">
+                        <span>{editorialBriefing.editorial_queue?.publish || 0}</span><small>نشر</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--blue">
+                        <span>{editorialBriefing.editorial_queue?.update || 0}</span><small>تحديث</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--amber">
+                        <span>{editorialBriefing.editorial_queue?.merge || 0}</span><small>دمج</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--red">
+                        <span>{editorialBriefing.editorial_queue?.hold || 0}</span><small>إيقاف</small>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Momentum card */}
+                  <div className="eb-card">
+                    <div className="eb-card__icon eb-card__icon--red">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    </div>
+                    <div className="eb-card__eyebrow">زخم التحرير</div>
+                    <div className="eb-card__metrics">
+                      <div className="eb-mini-metric eb-mini-metric--gold">
+                        <span>{editorialBriefing.momentum?.high_priority_count || 0}</span><small>أولوية عالية</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--green">
+                        <span>{editorialBriefing.momentum?.corroborated_count || 0}</span><small>موثقة</small>
+                      </div>
+                      <div className="eb-mini-metric eb-mini-metric--red">
+                        <span>{editorialBriefing.momentum?.review_count || 0}</span><small>مراجعة</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ══ DISPUTED + CLUSTER ROW ══ */}
+                <div className="eb-list-row">
+
+                  {/* Disputed stories */}
+                  <div className="eb-list-card">
+                    <div className="eb-list-card__hdr">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      قصص تحتاج مراجعة
+                    </div>
+                    {editorialBriefing.disputed_stories?.length ? (
+                      editorialBriefing.disputed_stories.map(story => (
+                        <div key={story.id} className="eb-list-item">
+                          <div className="eb-list-item__body">
+                            <p className="eb-list-item__title">{story.title}</p>
+                            <span className="eb-list-item__meta">{story.source_name} · {relativeTime(story.published_at)}</span>
+                          </div>
+                          <span className="eb-chip eb-chip--red eb-chip--sm">{verificationLabel(story.verification_state)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="eb-list-empty">لا توجد قصص متنازع عليها</p>
+                    )}
+                  </div>
+
+                  {/* Cluster watch */}
+                  <div className="eb-list-card">
+                    <div className="eb-list-card__hdr">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+                      رادار التجميع
+                    </div>
+                    {editorialBriefing.cluster_watch?.length ? (
+                      editorialBriefing.cluster_watch.map(story => (
+                        <div key={story.id} className="eb-list-item">
+                          <div className="eb-list-item__body">
+                            <p className="eb-list-item__title">{story.title}</p>
+                            <span className="eb-list-item__meta">{story.corroboration_count} دعم · {story.source_diversity} مصادر</span>
+                          </div>
+                          <span className="eb-chip eb-chip--blue eb-chip--sm">{Math.round((story.rank_score || 0) * 100)}%</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="eb-list-empty">لا توجد عناقيد بارزة</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -2808,6 +3038,446 @@ img { display: block; max-width: 100%; }
   padding: 2px 7px; border-radius: 999px;
   font-size: .7rem; font-weight: 700;
   animation: blink 1.5s infinite;
+}
+
+/* ════════════════════════════════════════
+   EDITORIAL TAB  ★★★★★★★ LUXURY
+════════════════════════════════════════ */
+.eb-arena {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Command Header ── */
+.eb-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  margin-bottom: 24px;
+}
+.eb-hdr__left { display: flex; flex-direction: column; gap: 4px; }
+.eb-hdr__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #f59e0b;
+}
+.eb-hdr__pulse {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b, 0 0 24px rgba(245,158,11,.4);
+  animation: blink 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.eb-hdr__title {
+  font-size: 1.7rem;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  line-height: 1;
+  background: linear-gradient(100deg, #fff 30%, rgba(255,255,255,.5) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+[data-theme="light"] .eb-hdr__title {
+  background: linear-gradient(100deg, #1a1d2e 30%, #4a5172 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.eb-hdr__sub { font-size: .78rem; color: var(--text3); letter-spacing: .01em; }
+.eb-hdr__refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--text2);
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .22s;
+  flex-shrink: 0;
+  letter-spacing: .02em;
+}
+.eb-hdr__refresh:hover {
+  background: rgba(245,158,11,.12);
+  border-color: rgba(245,158,11,.35);
+  color: #fcd34d;
+  box-shadow: 0 0 16px rgba(245,158,11,.1);
+}
+
+/* ── HUD Momentum Bar ── */
+.eb-hud-bar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(6,8,16,.96) 0%, rgba(14,18,30,.94) 100%);
+  border: 1px solid rgba(245,158,11,.12);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 24px;
+  box-shadow:
+    0 12px 40px rgba(0,0,0,.5),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    inset 0 -1px 0 rgba(255,255,255,.02);
+  position: relative;
+}
+.eb-hud-bar::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(245,158,11,.03) 0%, transparent 100%);
+  pointer-events: none;
+}
+.eb-hud-bar__inner {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+}
+.eb-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 20px 22px;
+  flex: 1;
+  transition: background .2s;
+}
+.eb-stat:hover { background: rgba(255,255,255,.02); }
+.eb-stat__val {
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,.5);
+}
+.eb-stat--gold  .eb-stat__val { color: #fcd34d; text-shadow: 0 0 24px rgba(245,158,11,.5), 0 0 48px rgba(245,158,11,.2); }
+.eb-stat--green .eb-stat__val { color: #4ade80; text-shadow: 0 0 24px rgba(34,197,94,.5),  0 0 48px rgba(34,197,94,.2); }
+.eb-stat--blue  .eb-stat__val { color: #93c5fd; text-shadow: 0 0 24px rgba(147,197,253,.45), 0 0 48px rgba(59,130,246,.2); }
+.eb-stat--red   .eb-stat__val { color: #fca5a5; text-shadow: 0 0 24px rgba(239,68,68,.45); }
+.eb-stat--purple .eb-stat__val { color: #c4b5fd; text-shadow: 0 0 24px rgba(167,139,250,.4); }
+.eb-stat__key {
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.2);
+}
+.eb-sep {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.07) 30%, rgba(255,255,255,.07) 70%, transparent);
+  flex-shrink: 0;
+}
+.eb-hud-bar__divider { width: 1px; background: rgba(255,255,255,.06); flex-shrink: 0; }
+.eb-hud-bar__confidence {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 20px 28px;
+  flex-shrink: 0;
+}
+.eb-hud-bar__conf-label {
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.2);
+}
+.eb-hud-bar__conf-val {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  color: #93c5fd;
+  text-shadow: 0 0 20px rgba(147,197,253,.4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Lead Story ── */
+.eb-lead {
+  position: relative;
+  background: linear-gradient(135deg, rgba(20,24,40,.97) 0%, rgba(10,12,22,.98) 100%);
+  border: 1px solid rgba(245,158,11,.18);
+  border-radius: 20px;
+  padding: 32px 36px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow:
+    0 24px 64px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 0 0 1px rgba(245,158,11,.06);
+}
+.eb-lead::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 280px; height: 280px;
+  background: radial-gradient(ellipse, rgba(245,158,11,.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+.eb-lead__glow {
+  position: absolute;
+  bottom: -60px; left: 50%;
+  transform: translateX(-50%);
+  width: 500px; height: 140px;
+  background: radial-gradient(ellipse at center, rgba(245,158,11,.04) 0%, transparent 70%);
+  pointer-events: none;
+}
+.eb-lead__badge {
+  display: inline-block;
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  margin-bottom: 14px;
+  background: rgba(245,158,11,.07);
+}
+.eb-lead__title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.42;
+  margin: 0 0 18px;
+  color: var(--text);
+  letter-spacing: -.02em;
+}
+.eb-lead__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.eb-lead__metrics {
+  display: flex;
+  gap: 0;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 18px;
+  background: rgba(0,0,0,.2);
+}
+.eb-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 16px 24px;
+  flex: 1;
+  border-left: 1px solid rgba(255,255,255,.06);
+}
+.eb-metric:last-child { border-left: none; }
+.eb-metric__val {
+  font-size: 1.55rem;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,.5);
+}
+.eb-metric__val--green  { color: #4ade80; text-shadow: 0 0 20px rgba(34,197,94,.5); }
+.eb-metric__val--blue   { color: #93c5fd; text-shadow: 0 0 20px rgba(147,197,253,.45); }
+.eb-metric__val--amber  { color: #fcd34d; text-shadow: 0 0 20px rgba(245,158,11,.45); }
+.eb-metric__key {
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.22);
+}
+.eb-lead__footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .78rem;
+  color: var(--text3);
+}
+.eb-lead__source { font-weight: 600; color: var(--text2); }
+.eb-lead__dot { color: var(--text3); }
+
+/* ── Signal Grid (3 cols) ── */
+.eb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 760px) { .eb-grid { grid-template-columns: 1fr; } }
+@media (min-width: 760px) and (max-width: 1024px) { .eb-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.eb-card {
+  background: linear-gradient(160deg, rgba(18,22,36,.97) 0%, rgba(10,13,22,.98) 100%);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  padding: 22px 22px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .24s, box-shadow .24s, transform .22s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 8px 30px rgba(0,0,0,.35);
+}
+.eb-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255,255,255,.14);
+  box-shadow: 0 16px 48px rgba(0,0,0,.48);
+}
+.eb-card__icon {
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.eb-card__icon--blue   { background: rgba(59,130,246,.1);  border-color: rgba(59,130,246,.2);  color: #93c5fd; }
+.eb-card__icon--gold   { background: rgba(245,158,11,.1);  border-color: rgba(245,158,11,.2);  color: #fcd34d; }
+.eb-card__icon--red    { background: rgba(239,68,68,.1);   border-color: rgba(239,68,68,.22);  color: #fca5a5; }
+.eb-card__eyebrow {
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.28);
+  margin-bottom: 16px;
+}
+.eb-card__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.eb-mini-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.05);
+}
+.eb-mini-metric span {
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,.45);
+}
+.eb-mini-metric small {
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.2);
+}
+.eb-mini-metric--green span { color: #4ade80; text-shadow: 0 0 16px rgba(34,197,94,.4); }
+.eb-mini-metric--amber span { color: #fcd34d; text-shadow: 0 0 16px rgba(245,158,11,.4); }
+.eb-mini-metric--gold  span { color: #fbbf24; text-shadow: 0 0 16px rgba(251,191,36,.4); }
+.eb-mini-metric--blue  span { color: #93c5fd; text-shadow: 0 0 16px rgba(147,197,253,.4); }
+.eb-mini-metric--red   span { color: #fca5a5; text-shadow: 0 0 16px rgba(239,68,68,.4); }
+
+/* ── List Row ── */
+.eb-list-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+@media (max-width: 760px) { .eb-list-row { grid-template-columns: 1fr; } }
+
+.eb-list-card {
+  background: linear-gradient(160deg, rgba(14,18,30,.97) 0%, rgba(8,10,18,.98) 100%);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0,0,0,.35);
+}
+.eb-list-card__hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.3);
+}
+.eb-list-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  transition: background .18s;
+}
+.eb-list-item:last-child { border-bottom: none; }
+.eb-list-item:hover { background: rgba(255,255,255,.025); }
+.eb-list-item__body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.eb-list-item__title {
+  font-size: .84rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.eb-list-item__meta {
+  font-size: .72rem;
+  color: var(--text3);
+}
+.eb-list-empty {
+  padding: 24px 20px;
+  font-size: .82rem;
+  color: var(--text3);
+  margin: 0;
+}
+
+/* ── Chips (reusable) ── */
+.eb-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: .03em;
+}
+.eb-chip--green  { background: rgba(34,197,94,.12);   color: #4ade80;  border: 1px solid rgba(34,197,94,.25); }
+.eb-chip--red    { background: rgba(239,68,68,.12);   color: #fca5a5;  border: 1px solid rgba(239,68,68,.25); }
+.eb-chip--amber  { background: rgba(245,158,11,.12);  color: #fcd34d;  border: 1px solid rgba(245,158,11,.25); }
+.eb-chip--blue   { background: rgba(59,130,246,.12);  color: #93c5fd;  border: 1px solid rgba(59,130,246,.25); }
+.eb-chip--sm { font-size: .67rem; padding: 3px 9px; flex-shrink: 0; }
+
+/* ── Empty state ── */
+.eb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 80px 20px;
+  color: var(--text3);
+  font-size: .88rem;
 }
 
 /* ════════════════════════════════
