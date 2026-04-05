@@ -15,6 +15,7 @@ const ALLOWED_RSS_URLS = new Set([
   'https://podcasts.files.bbci.co.uk/p02pc9qc.rss',
   'https://podcasts.files.bbci.co.uk/p086jpqy.rss',
   'https://feed.podbean.com/arabnews/feed.xml',
+  'https://media.podeo.co/rss/MTU2NzI',
 ]);
 
 const PODCAST_SOURCES = [
@@ -61,12 +62,12 @@ const PODCAST_SOURCES = [
   {
     id: 'abu-talal-external',
     name: 'أبو طلال الحمراني',
-    description: 'محلل سياسي وعسكري — تحليلات في الشؤون الإقليمية والأمنية. المحتوى متاح عبر يوتيوب.',
+    description: 'سوالف طريق — حلقات صوتية قابلة للتشغيل مباشرة من داخل الموقع عبر RSS موثوق.',
     language: 'ar',
     category: 'analysis',
-    rss: null,
-    external_url: 'https://www.youtube.com/results?search_query=%D8%A3%D8%A8%D9%88+%D8%B7%D9%84%D8%A7%D9%84+%D8%A7%D9%84%D8%AD%D9%85%D8%B1%D8%A7%D9%86%D9%8A',
-    type: 'external',
+    rss: 'https://media.podeo.co/rss/MTU2NzI',
+    external_url: 'https://media.podeo.co/rss/MTU2NzI',
+    type: 'rss',
     logo: null,
   },
 ];

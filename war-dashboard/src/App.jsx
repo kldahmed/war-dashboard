@@ -2706,6 +2706,7 @@ export default function App() {
         ═══════════════════════════════════════════ */}
         {activeTab === 'podcast' && (() => {
           const selectedSource = podcastSources.find(s => s.id === selectedPodcastId);
+          const featuredPodcastSource = podcastSources.find((s) => s.id === 'abu-talal-external') || null;
           const isExternal = selectedSource?.type === 'external';
           return (
             <div className="pod-arena" dir="rtl">
@@ -2721,6 +2722,37 @@ export default function App() {
                   <p className="pod-header__sub">تحليلات وأخبار وتقارير صوتية من أبرز المصادر العربية والدولية</p>
                 </div>
               </div>
+
+              {featuredPodcastSource && (
+                <section className={`pod-feature-card${selectedPodcastId === featuredPodcastSource.id ? ' pod-feature-card--active' : ''}`}>
+                  <div className="pod-feature-card__signal">ملف صوتي مميز</div>
+                  <div className="pod-feature-card__grid">
+                    <div className="pod-feature-card__body">
+                      <span className="pod-feature-card__eyebrow">أبو طلال الحمراني</span>
+                      <h3 className="pod-feature-card__title">سوالف طريق متاح الآن من داخل الموقع</h3>
+                      <p className="pod-feature-card__desc">
+                        تم ربط المصدر عبر RSS صوتي فعلي، ما يعني إمكانية تصفح الحلقات وتشغيلها داخل مشغل البودكاست نفسه بدون الخروج من الصفحة.
+                      </p>
+                      <div className="pod-feature-card__meta">
+                        <span>تحليل</span>
+                        <span>•</span>
+                        <span>حلقات صوتية مباشرة</span>
+                        <span>•</span>
+                        <span>تشغيل داخلي</span>
+                      </div>
+                    </div>
+                    <div className="pod-feature-card__actions">
+                      <button
+                        className="pod-feature-card__cta"
+                        onClick={() => setSelectedPodcastId(featuredPodcastSource.id)}
+                      >
+                        {selectedPodcastId === featuredPodcastSource.id ? 'أنت داخل المصدر الآن' : 'افتح حلقات أبو طلال'}
+                      </button>
+                      <span className="pod-feature-card__note">يتم تشغيل الحلقات عبر مشغل الموقع نفسه أسفل الصفحة.</span>
+                    </div>
+                  </div>
+                </section>
+              )}
 
               <div className="pod-layout">
 
@@ -6089,6 +6121,105 @@ img { display: block; max-width: 100%; }
 }
 .pod-feed-meta__desc {
   font-size: .8rem; color: rgba(255,255,255,.45); line-height: 1.5;
+}
+
+/* Featured Abu Talal card */
+.pod-feature-card {
+  margin-bottom: 22px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(245,158,11,.18);
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.16), transparent 34%),
+    linear-gradient(135deg, rgba(30,20,8,.94), rgba(20,12,8,.9));
+  box-shadow: 0 18px 40px rgba(0,0,0,.28);
+}
+.pod-feature-card--active {
+  border-color: rgba(245,158,11,.4);
+  box-shadow: 0 20px 50px rgba(0,0,0,.35), 0 0 0 1px rgba(245,158,11,.14);
+}
+.pod-feature-card__signal {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  background: rgba(245,158,11,.14);
+  color: #fcd34d;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.pod-feature-card__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+}
+.pod-feature-card__eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(252,211,77,.82);
+  font-size: .76rem;
+  font-weight: 800;
+}
+.pod-feature-card__title {
+  color: #fff7ed;
+  font-size: 1.28rem;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+.pod-feature-card__desc {
+  color: rgba(255,244,214,.74);
+  font-size: .88rem;
+  line-height: 1.7;
+  max-width: 760px;
+}
+.pod-feature-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  color: rgba(255,237,213,.5);
+  font-size: .74rem;
+}
+.pod-feature-card__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.pod-feature-card__cta {
+  padding: 11px 18px;
+  border: 1px solid rgba(245,158,11,.34);
+  border-radius: 999px;
+  background: rgba(245,158,11,.16);
+  color: #fef3c7;
+  font-size: .84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .18s, background .18s, border-color .18s;
+}
+.pod-feature-card__cta:hover {
+  transform: translateY(-1px);
+  background: rgba(245,158,11,.26);
+  border-color: rgba(245,158,11,.5);
+}
+.pod-feature-card__note {
+  color: rgba(255,237,213,.42);
+  font-size: .72rem;
+}
+@media (max-width: 760px) {
+  .pod-feature-card__grid {
+    grid-template-columns: 1fr;
+  }
+  .pod-feature-card__actions {
+    align-items: stretch;
+  }
+  .pod-feature-card__cta {
+    width: 100%;
+  }
 }
 
 /* Episode list */
