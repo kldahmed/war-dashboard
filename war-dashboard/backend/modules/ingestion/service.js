@@ -226,9 +226,13 @@ async function upsertRawItem(feedId, jobId, item) {
   };
 }
 
-async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'manual' } = {}) {
+async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'manual', onJobCreated = null } = {}) {
   await syncSourceRegistry();
   const job = await createJob(correlationId, { triggeredBy });
+
+  if (typeof onJobCreated === 'function') {
+    onJobCreated(job.id);
+  }
   const parser = buildParser(env.rssRequestTimeoutMs);
   const feeds = await listActiveRssFeeds();
   const registryStats = getSourceRegistryStats();

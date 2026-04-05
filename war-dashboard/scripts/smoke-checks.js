@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config({ path: '.env.local' });
+
 const assert = require('node:assert/strict');
 const { validateSourcePayload, validateFeedPayload } = require('../backend/lib/validation');
 const { normalizeUnicode } = require('../backend/modules/normalization/service');

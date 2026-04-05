@@ -7,11 +7,22 @@ const { asyncHandler } = require('../../lib/async-handler');
 const router = express.Router();
 
 router.post('/ingestion/jobs/run', asyncHandler(async (req, res) => {
-  const summary = await runRssIngestion({
+  let responded = false;
+
+  const ingestionPromise = runRssIngestion({
     correlationId: req.correlationId,
     triggeredBy: 'api',
+    onJobCreated: (jobId) => {
+      responded = true;
+      res.status(202).json({ summary: { jobId } });
+    },
   });
-  res.status(202).json({ summary });
+
+  ingestionPromise.catch((err) => {
+    if (!responded) {
+      res.status(500).json({ error: 'ingestion_start_failed', detail: err.message });
+    }
+  });
 }));
 
 router.get('/ingestion/jobs/:id', asyncHandler(async (req, res) => {
