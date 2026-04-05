@@ -50,14 +50,6 @@ const ALERT_THRESHOLDS = {
   failing_sources_warning:  2,
 };
 
-const PLACEHOLDER_IMGS = [
-  'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=60',
-  'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&q=60',
-  'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&q=60',
-  'https://images.unsplash.com/photo-1526628953301-3cd40f68f9e3?w=800&q=60',
-  'https://images.unsplash.com/photo-1611605698335-8b1569810432?w=800&q=60',
-];
-
 const CATEGORY_COORDS = {
   war:        [33.5, 43.7],
   iran:       [32.4, 53.7],
@@ -111,8 +103,25 @@ function stripHtml(str) {
   return str ? str.replace(/<[^>]*>/g, '') : '';
 }
 
-function getPlaceholderImg(idx) {
-  return PLACEHOLDER_IMGS[idx % PLACEHOLDER_IMGS.length];
+function handleCardTilt(event, maxTiltX = 7, maxTiltY = 9) {
+  const el = event.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const px = (event.clientX - rect.left) / rect.width;
+  const py = (event.clientY - rect.top) / rect.height;
+  const tiltY = (px - 0.5) * 2 * maxTiltY;
+  const tiltX = (0.5 - py) * 2 * maxTiltX;
+  el.style.setProperty('--tilt-x', `${tiltX.toFixed(2)}deg`);
+  el.style.setProperty('--tilt-y', `${tiltY.toFixed(2)}deg`);
+  el.style.setProperty('--glow-x', `${(px * 100).toFixed(1)}%`);
+  el.style.setProperty('--glow-y', `${(py * 100).toFixed(1)}%`);
+}
+
+function resetCardTilt(event) {
+  const el = event.currentTarget;
+  el.style.setProperty('--tilt-x', '0deg');
+  el.style.setProperty('--tilt-y', '0deg');
+  el.style.setProperty('--glow-x', '50%');
+  el.style.setProperty('--glow-y', '50%');
 }
 
 function pct(value) {
@@ -449,18 +458,21 @@ function BriefingPanel({ briefing }) {
 ───────────────────────────────────────────────── */
 function HeroCard({ item, idx }) {
   if (!item) return null;
-  const imgUrl = item.image_url || getPlaceholderImg(idx);
   return (
-    <article className="hero-card" dir="rtl">
-      <a href={item.link || '#'} target="_blank" rel="noopener noreferrer" className="hero-card__img-wrap">
-        <img src={imgUrl} alt={item.title} className="hero-card__img" loading="eager"
-          onError={e => { e.target.src = getPlaceholderImg(idx + 1); }} />
-        <div className="hero-card__overlay" />
+    <article
+      className="hero-card"
+      dir="rtl"
+      onMouseMove={(e) => handleCardTilt(e, 8, 10)}
+      onMouseLeave={resetCardTilt}
+    >
+      <div className="hero-card__viz" aria-hidden="true">
+        <div className="hero-card__gridline" />
+        <div className="hero-card__orb" />
         <div className="hero-card__meta">
           <CategoryBadge category={item.category} />
           {item.urgency === 'high' && <span className="badge badge--breaking">⚡ عاجل</span>}
         </div>
-      </a>
+      </div>
       <div className="hero-card__body">
         <h2 className="hero-card__title">
           <a href={item.link || '#'} target="_blank" rel="noopener noreferrer">{item.title}</a>
@@ -481,18 +493,20 @@ function HeroCard({ item, idx }) {
 
 function NewsCard({ item, idx, size = 'md' }) {
   if (!item) return null;
-  const imgUrl = item.image_url || getPlaceholderImg(idx);
   return (
-    <article className={`news-card news-card--${size}`} dir="rtl">
-      <a href={item.link || '#'} target="_blank" rel="noopener noreferrer" className="news-card__img-wrap">
-        <img src={imgUrl} alt={item.title} className="news-card__img" loading="lazy"
-          onError={e => { e.target.src = getPlaceholderImg(idx + 2); }} />
-        <div className="news-card__overlay" />
+    <article
+      className={`news-card news-card--${size}`}
+      dir="rtl"
+      onMouseMove={(e) => handleCardTilt(e, 6, 8)}
+      onMouseLeave={resetCardTilt}
+    >
+      <div className="news-card__viz" aria-hidden="true">
+        <div className="news-card__beam" />
         <div className="news-card__badges">
           <UrgencyDot urgency={item.urgency} />
           <CategoryBadge category={item.category} />
         </div>
-      </a>
+      </div>
       <div className="news-card__body">
         <h3 className="news-card__title">
           <a href={item.link || '#'} target="_blank" rel="noopener noreferrer">{item.title}</a>
@@ -518,6 +532,8 @@ function ListItem({ item, idx }) {
       rel="noopener noreferrer"
       className="list-item"
       dir="rtl"
+      onMouseMove={(e) => handleCardTilt(e, 4, 5)}
+      onMouseLeave={resetCardTilt}
     >
       <div className="list-item__indicator" style={{ background: categoryColor(item.category) }} />
       <div className="list-item__body">
@@ -2285,22 +2301,65 @@ img { display: block; max-width: 100%; }
 
 /* ── HERO CARD ── */
 .hero-card {
-  border-radius: var(--radius);
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --glow-x: 50%;
+  --glow-y: 50%;
+  border-radius: 18px;
   overflow: hidden;
-  background: var(--card-bg);
-  box-shadow: var(--shadow);
-  transition: transform .2s;
+  background: linear-gradient(155deg, rgba(18,22,38,.97) 0%, rgba(9,12,22,.98) 100%);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 22px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+  transform-style: preserve-3d;
+  perspective: 1200px;
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transition: transform .28s cubic-bezier(.2,.9,.2,1), box-shadow .24s, border-color .22s;
 }
-.hero-card:hover { transform: translateY(-2px); }
-.hero-card__img-wrap {
-  position: relative; display: block;
-  aspect-ratio: 16/9; overflow: hidden;
+.hero-card:hover {
+  transform: translateY(-4px) rotateX(calc(var(--tilt-x) + 1deg)) rotateY(calc(var(--tilt-y) - 1deg));
+  border-color: rgba(59,130,246,.28);
+  box-shadow: 0 30px 72px rgba(0,0,0,.55), 0 0 0 1px rgba(59,130,246,.16), inset 0 1px 0 rgba(255,255,255,.07);
 }
-.hero-card__img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s; }
-.hero-card:hover .hero-card__img { transform: scale(1.03); }
-.hero-card__overlay {
-  position: absolute; inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,.7) 0%, transparent 60%);
+.hero-card__viz {
+  position: relative;
+  aspect-ratio: 16/7;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(59,130,246,.2) 0%, rgba(59,130,246,0) 48%),
+    radial-gradient(circle at 20% 82%, rgba(245,158,11,.16) 0%, rgba(245,158,11,0) 52%),
+    linear-gradient(145deg, rgba(14,18,32,.95) 0%, rgba(7,10,18,.97) 100%);
+}
+.hero-card__gridline {
+  position: absolute;
+  inset: -30% -20%;
+  background-image:
+    linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(900px) rotateX(74deg) translateY(18px);
+  opacity: .24;
+  animation: holo-drift 14s linear infinite;
+}
+.hero-card__orb {
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  left: 12%;
+  top: 18%;
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.35), rgba(59,130,246,.14) 34%, rgba(59,130,246,0) 72%);
+  filter: blur(1px);
+  box-shadow: 0 0 32px rgba(59,130,246,.24);
+  animation: orb-float 6.5s ease-in-out infinite;
+}
+.hero-card__viz::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(360px 220px at var(--glow-x) var(--glow-y), rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 70%);
+  opacity: .55;
+  transition: opacity .2s;
 }
 .hero-card__meta {
   position: absolute; top: 12px; right: 12px;
@@ -2314,25 +2373,50 @@ img { display: block; max-width: 100%; }
 
 /* ── NEWS CARD ── */
 .news-card {
-  background: var(--card-bg);
-  border-radius: var(--radius);
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --glow-x: 50%;
+  --glow-y: 50%;
+  background: linear-gradient(155deg, rgba(17,21,36,.96) 0%, rgba(9,12,22,.98) 100%);
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  transition: transform .18s, box-shadow .18s;
+  border: 1px solid rgba(255,255,255,.07);
+  box-shadow: 0 14px 34px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);
+  transition: transform .24s cubic-bezier(.2,.9,.2,1), box-shadow .24s, border-color .2s;
   display: flex; flex-direction: column;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
 }
-.news-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-.news-card__img-wrap {
-  position: relative; display: block;
+.news-card:hover {
+  transform: translateY(-3px) rotateX(calc(var(--tilt-x) + .8deg)) rotateY(calc(var(--tilt-y) - .8deg));
+  border-color: rgba(245,158,11,.24);
+  box-shadow: 0 20px 46px rgba(0,0,0,.45), 0 0 0 1px rgba(245,158,11,.1), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.news-card__viz {
+  position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(circle at 80% 15%, rgba(59,130,246,.18) 0%, rgba(59,130,246,0) 46%),
+    radial-gradient(circle at 16% 84%, rgba(245,158,11,.14) 0%, rgba(245,158,11,0) 50%),
+    linear-gradient(150deg, rgba(13,16,29,.95) 0%, rgba(8,11,20,.97) 100%);
 }
-.news-card--sm .news-card__img-wrap { aspect-ratio: 3/2; }
-.news-card--md .news-card__img-wrap { aspect-ratio: 16/10; }
-.news-card__img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s; }
-.news-card:hover .news-card__img { transform: scale(1.04); }
-.news-card__overlay {
-  position: absolute; inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,.5) 0%, transparent 50%);
+.news-card--sm .news-card__viz { aspect-ratio: 3/1; }
+.news-card--md .news-card__viz { aspect-ratio: 16/6; }
+.news-card__beam {
+  position: absolute;
+  inset: auto -10% -42% -10%;
+  height: 120%;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,.1) 0%, rgba(255,255,255,0) 60%);
+  transform: perspective(900px) rotateX(72deg);
+  opacity: .35;
+}
+.news-card__viz::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(260px 160px at var(--glow-x) var(--glow-y), rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 72%);
+  opacity: .5;
 }
 .news-card__badges { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; }
 .news-card__body { padding: 12px 14px 14px; flex: 1; display: flex; flex-direction: column; }
@@ -2342,15 +2426,37 @@ img { display: block; max-width: 100%; }
 .news-card__summary { font-size: .82rem; color: var(--text2); line-height: 1.55; margin-bottom: 8px; }
 .news-card__footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; }
 
+@keyframes holo-drift {
+  0% { transform: perspective(900px) rotateX(74deg) translateY(18px) translateX(0); }
+  100% { transform: perspective(900px) rotateX(74deg) translateY(18px) translateX(46px); }
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translate3d(0,0,0); }
+  50% { transform: translate3d(0,-8px,0); }
+}
+
 /* ── LIST ITEM ── */
 .list-item {
+  --tilt-x: 0deg; --tilt-y: 0deg; --glow-x: 50%; --glow-y: 50%;
   display: flex; align-items: flex-start; gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  transition: background .15s;
+  position: relative; overflow: hidden;
+  transform-style: preserve-3d;
+  transform: perspective(600px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transition: transform .08s ease-out, background .15s;
+  will-change: transform;
 }
 .list-item:hover { background: var(--card-hover); }
+.list-item::after {
+  content: '';
+  position: absolute; inset: 0; border-radius: var(--radius-sm); pointer-events: none;
+  background: radial-gradient(circle 60px at var(--glow-x) var(--glow-y), rgba(255,200,80,.12) 0%, transparent 70%);
+  opacity: 0; transition: opacity .15s;
+}
+.list-item:hover::after { opacity: 1; }
 .list-item__indicator { width: 3px; height: 36px; border-radius: 2px; flex-shrink: 0; margin-top: 2px; }
 .list-item__body { flex: 1; }
 .list-item__title { font-size: .88rem; line-height: 1.45; font-weight: 500; margin-bottom: 3px; }
