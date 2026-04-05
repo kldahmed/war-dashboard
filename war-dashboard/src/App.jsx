@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import HTMLFlipBook from 'react-pageflip';
 
 /* ─────────────────────────────────────────────────
    CONSTANTS
@@ -522,6 +523,72 @@ function NewsCard({ item, idx, size = 'md' }) {
     </article>
   );
 }
+
+/* ═══════════════════════════════════════════════════════
+   NEWSPAPER PAGE  — forwardRef for react-pageflip
+═══════════════════════════════════════════════════════ */
+const NP_DATE_STR = new Intl.DateTimeFormat('ar', {
+  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+}).format(new Date());
+
+const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, totalPages }, ref) {
+  const featured  = items?.[0];
+  const secondary = items?.slice(1, 3) ?? [];
+  const briefs    = items?.slice(3) ?? [];
+  return (
+    <div className="np-page" ref={ref}>
+      {pageNum === 1 ? (
+        <div className="np-masthead">
+          <div className="np-masthead__eyebrow">مرصد الأحداث العالمية</div>
+          <h1 className="np-masthead__title">الإخبار</h1>
+          <div className="np-masthead__subline">
+            <span>{NP_DATE_STR}</span>
+            <span>إصدار رقمي</span>
+          </div>
+          <div className="np-masthead__rule" />
+        </div>
+      ) : (
+        <div className="np-page-hdr">
+          <span className="np-page-hdr__name">مرصد الإخبار</span>
+          <span className="np-page-hdr__num">صفحة {pageNum}</span>
+        </div>
+      )}
+      {featured && (
+        <div className="np-lead" onClick={() => featured.link && window.open(featured.link, '_blank')}>
+          <div className="np-lead__kicker">{featured.category || 'عاجل'}</div>
+          <h2 className="np-lead__headline">{featured.title}</h2>
+          <div className="np-lead__byline">
+            <span>{featured.source?.name}</span>
+            <span>{relativeTime(featured.time || featured.publishedAt || featured.published_at)}</span>
+          </div>
+          {featured.summary && <p className="np-lead__excerpt">{String(featured.summary).slice(0, 200)}</p>}
+        </div>
+      )}
+      <div className="np-rule" />
+      <div className="np-secondary-row">
+        {secondary.map((item, i) => (
+          <div key={item.id ?? i} className="np-secondary" onClick={() => item.link && window.open(item.link, '_blank')}>
+            <div className="np-secondary__kicker">{item.category || 'أخبار'}</div>
+            <h3 className="np-secondary__headline">{item.title}</h3>
+            <span className="np-secondary__meta">{item.source?.name} · {relativeTime(item.time || item.publishedAt || item.published_at)}</span>
+          </div>
+        ))}
+      </div>
+      {briefs.length > 0 && <div className="np-rule" />}
+      <div className="np-briefs">
+        {briefs.map((item, i) => (
+          <div key={item.id ?? i} className="np-brief" onClick={() => item.link && window.open(item.link, '_blank')}>
+            <span className="np-brief__headline">{item.title}</span>
+            <span className="np-brief__meta"> — {item.source?.name}</span>
+          </div>
+        ))}
+      </div>
+      <div className="np-page-footer">
+        صفحة {pageNum} / {totalPages}
+      </div>
+    </div>
+  );
+});
 
 function ListItem({ item, idx }) {
   if (!item) return null;
@@ -1224,6 +1291,10 @@ export default function App() {
     loadNews(category, searchQ, 1);
   }, [category]); // eslint-disable-line
 
+  /* ─── Newspaper flipbook ─── */
+  const flipBookRef = useRef(null);
+  const [npCurrentPage, setNpCurrentPage] = useState(0);
+
   /* ─── Search (debounced) ─── */
   const searchTimer = useRef(null);
   useEffect(() => {
@@ -1330,6 +1401,24 @@ export default function App() {
   const spotlightItems = newsItems.slice(1, 4);
   const gridItems = newsItems.slice(4);
 
+  /* ─── Newspaper pages ─── */
+  const NP_PER_PAGE = 6;
+  const npPages = useMemo(() => {
+    if (!newsItems.length) return [];
+    const out = [];
+    for (let i = 0; i < newsItems.length; i += NP_PER_PAGE) {
+      out.push(newsItems.slice(i, i + NP_PER_PAGE));
+    }
+    return out;
+  }, [newsItems]);
+
+  const handleNpFlip = useCallback((e) => setNpCurrentPage(e.data), []);
+  const npGoNext = useCallback(() => flipBookRef.current?.pageFlip()?.flipNext(), []);
+  const npGoPrev = useCallback(() => flipBookRef.current?.pageFlip()?.flipPrev(), []);
+
+  // Reset to page 0 when filters change
+  useEffect(() => { setNpCurrentPage(0); }, [category, searchQ]);
+
   /* ── RENDER ── */
   return (
     <div className="app" dir="rtl">
@@ -1413,39 +1502,59 @@ export default function App() {
             {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
 
 
-            {/* Hero + Spotlight */}
-            {!loadingNews && newsItems.length > 0 && page === 1 && (
-              <div className="editorial-grid">
-                {/* Hero */}
-                <div className="editorial-grid__hero">
-                  <HeroCard item={heroItem} idx={0} />
+            {/* ── NEWSPAPER VIEW ── */}
+            {!loadingNews && newsItems.length > 0 && (
+              <div className="np-arena">
+                {/* Nav bar */}
+                <div className="np-nav-bar">
+                  <button
+                    className="np-nav__btn"
+                    disabled={npCurrentPage === 0}
+                    onClick={npGoPrev}
+                  >‹ رجوع</button>
+                  <span className="np-nav__info">
+                    <span className="np-nav__label">صفحة</span>
+                    <span className="np-nav__num">{Math.ceil((npCurrentPage + 1) / 2)}</span>
+                    <span className="np-nav__label">من</span>
+                    <span className="np-nav__num">{Math.ceil(npPages.length / 2)}</span>
+                    <span className="np-nav__sep"> · </span>
+                    <span className="np-nav__count">{newsItems.length} خبر</span>
+                  </span>
+                  <button
+                    className="np-nav__btn"
+                    disabled={npCurrentPage >= npPages.length - 1}
+                    onClick={npGoNext}
+                  >متابعة ›</button>
                 </div>
-                {/* Spotlight column */}
-                <div className="editorial-grid__spotlight">
-                  {spotlightItems.map((item, i) => (
-                    <NewsCard key={item.id || i} item={item} idx={i + 1} size="sm" />
-                  ))}
+                {/* Flip book */}
+                <div className="np-book-wrap">
+                  <HTMLFlipBook
+                    key={`${category}-${searchQ}`}
+                    ref={flipBookRef}
+                    width={420}
+                    height={600}
+                    size="fixed"
+                    drawShadow={true}
+                    flippingTime={700}
+                    usePortrait={false}
+                    startPage={0}
+                    showCover={false}
+                    mobileScrollSupport={false}
+                    maxShadowOpacity={0.55}
+                    className="np-flipbook"
+                    onFlip={handleNpFlip}
+                  >
+                    {npPages.map((pageItems, i) => (
+                      <NewspaperPage
+                        key={i}
+                        items={pageItems}
+                        pageNum={i + 1}
+                        totalPages={npPages.length}
+                      />
+                    ))}
+                  </HTMLFlipBook>
                 </div>
               </div>
-            )}
-
-            {/* Grid */}
-            {!loadingNews && gridItems.length > 0 && (
-              <>
-                <div className="section-label" dir="rtl">
-                  {searchQ
-                    ? `نتائج البحث عن "${searchQ}" (${totalCount})`
-                    : category !== 'all'
-                    ? `${CATEGORIES.find(c => c.id === category)?.label} (${totalCount})`
-                    : `أحدث الأخبار (${totalCount})`
-                  }
-                </div>
-                <div className="news-grid">
-                  {gridItems.map((item, i) => (
-                    <NewsCard key={item.id || i} item={item} idx={i + 4} size="md" />
-                  ))}
-                </div>
-              </>
             )}
 
 
@@ -4034,6 +4143,221 @@ img { display: block; max-width: 100%; }
   .news-view .news-grid { grid-column: 1; }
   .news-view .load-more-wrap { grid-column: 1; }
   .news-view .empty-state { grid-column: 1; }
+}
+
+/* ════════════════════════════════════════════
+   NEWSPAPER BOOK  —  LUXURY DARK EDITION
+════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&display=swap');
+
+.np-arena {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 8px 48px;
+  gap: 18px;
+}
+
+/* ── Navigation bar ── */
+.np-nav-bar {
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(11,13,21,0.92);
+  border: 1px solid rgba(212,175,55,0.28);
+  border-radius: 8px;
+  padding: 8px 22px;
+  backdrop-filter: blur(12px);
+  user-select: none;
+}
+.np-nav__btn {
+  background: transparent;
+  border: 1px solid rgba(212,175,55,0.32);
+  color: var(--gold);
+  padding: 5px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .85rem;
+  font-family: inherit;
+  transition: all .18s;
+}
+.np-nav__btn:hover:not(:disabled) {
+  background: rgba(212,175,55,0.1);
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(212,175,55,0.22);
+}
+.np-nav__btn:disabled { opacity: .3; cursor: not-allowed; }
+.np-nav__info { display: flex; align-items: center; gap: 5px; font-size: .8rem; }
+.np-nav__label { color: var(--text3); }
+.np-nav__num   { color: var(--gold); font-weight: 700; }
+.np-nav__sep   { color: var(--text3); }
+.np-nav__count { color: var(--text2); }
+
+/* ── Book wrapper ── */
+.np-book-wrap {
+  position: relative;
+  filter:
+    drop-shadow(0 24px 60px rgba(0,0,0,.85))
+    drop-shadow(0 4px 14px rgba(0,0,0,.55));
+}
+.np-flipbook { border-radius: 1px; }
+
+/* ── Individual newspaper page ── */
+.np-page {
+  background: #0b0d15;
+  background-image:
+    radial-gradient(ellipse at 15% 40%, rgba(212,175,55,.018) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 70%, rgba(80,55,15,.025) 0%, transparent 50%);
+  border: 1px solid rgba(212,175,55,.1);
+  box-sizing: border-box;
+  padding: 18px 20px 12px;
+  overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  cursor: pointer;
+}
+/* Spine shadow — left pages */
+.np-page:nth-child(odd)::before {
+  content: '';
+  position: absolute; top: 0; right: 0; bottom: 0; width: 14px;
+  background: linear-gradient(to left, rgba(0,0,0,.3), transparent);
+  pointer-events: none; z-index: 1;
+}
+/* Spine shadow — right pages */
+.np-page:nth-child(even)::before {
+  content: '';
+  position: absolute; top: 0; left: 0; bottom: 0; width: 14px;
+  background: linear-gradient(to right, rgba(0,0,0,.3), transparent);
+  pointer-events: none; z-index: 1;
+}
+
+/* ── Masthead (page 1) ── */
+.np-masthead {
+  text-align: center;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.np-masthead__eyebrow {
+  font-size: .56rem; letter-spacing: 5px; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 5px; font-weight: 700;
+}
+.np-masthead__title {
+  font-family: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+  font-size: 2.5rem; font-weight: 900; color: #f0e6c8;
+  letter-spacing: 3px; margin: 0; line-height: 1;
+  text-shadow: 0 0 50px rgba(212,175,55,.18);
+}
+.np-masthead__subline {
+  display: flex; justify-content: space-between;
+  font-size: .6rem; color: var(--text3);
+  margin-top: 6px; letter-spacing: .8px;
+}
+.np-masthead__rule {
+  margin: 9px 0 0; height: 1px; border: none;
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,.55), var(--gold), rgba(212,175,55,.55), transparent);
+  position: relative;
+}
+.np-masthead__rule::after {
+  content: ''; display: block; margin-top: 3px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,.25), transparent);
+}
+
+/* ── Non-cover page header ── */
+.np-page-hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(212,175,55,.22);
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.np-page-hdr__name {
+  font-size: .58rem; letter-spacing: 4px; text-transform: uppercase; color: var(--gold);
+}
+.np-page-hdr__num { font-size: .58rem; color: var(--text3); letter-spacing: 1px; }
+
+/* ── Lead story ── */
+.np-lead { padding-bottom: 9px; cursor: pointer; flex-shrink: 0; }
+.np-lead:hover .np-lead__headline { color: var(--gold); }
+.np-lead__kicker {
+  font-size: .55rem; letter-spacing: 3.5px; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 5px; font-weight: 700;
+}
+.np-lead__headline {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.15rem; font-weight: 800; color: #f0e6c8;
+  line-height: 1.35; margin: 0 0 6px; transition: color .2s;
+}
+.np-lead__byline {
+  display: flex; gap: 10px;
+  font-size: .6rem; color: var(--text3); margin-bottom: 6px; letter-spacing: .3px;
+}
+.np-lead__excerpt {
+  font-size: .68rem; line-height: 1.6; color: #9a9280;
+  column-count: 2; column-gap: 12px;
+  column-rule: 1px solid rgba(212,175,55,.12);
+}
+
+/* ── Horizontal rule ── */
+.np-rule {
+  height: 1px; flex-shrink: 0; margin: 7px 0;
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,.32), transparent);
+}
+
+/* ── Secondary stories — 2 columns ── */
+.np-secondary-row {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0; flex-shrink: 0;
+  border: 1px solid rgba(212,175,55,.1);
+}
+.np-secondary {
+  padding: 8px 10px; cursor: pointer; transition: background .15s;
+  border-right: 1px solid rgba(212,175,55,.1);
+}
+.np-secondary:last-child { border-right: none; }
+.np-secondary:hover { background: rgba(212,175,55,.05); }
+.np-secondary__kicker {
+  font-size: .52rem; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 3px; font-weight: 700;
+}
+.np-secondary__headline {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: .78rem; font-weight: 700; color: #cec4a4;
+  line-height: 1.35; margin: 0 0 4px;
+}
+.np-secondary__meta { font-size: .56rem; color: var(--text3); display: block; }
+
+/* ── Brief items ── */
+.np-briefs {
+  display: flex; flex-direction: column; gap: 0;
+  flex: 1; overflow: hidden;
+}
+.np-brief {
+  font-size: .67rem; line-height: 1.42;
+  padding: 5px 4px;
+  border-bottom: 1px dotted rgba(255,255,255,.07);
+  cursor: pointer; transition: background .12s;
+}
+.np-brief:hover { background: rgba(212,175,55,.04); }
+.np-brief:hover .np-brief__headline { color: var(--gold); }
+.np-brief__headline { color: #b0a890; transition: color .15s; }
+.np-brief__meta { color: var(--text3); font-size: .58rem; }
+
+/* ── Page footer ── */
+.np-page-footer {
+  margin-top: auto; padding-top: 7px;
+  border-top: 1px solid rgba(212,175,55,.16);
+  text-align: center;
+  font-size: .56rem; color: var(--text3); letter-spacing: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Responsive: scale on smaller viewports ── */
+@media (max-width: 920px) {
+  .np-book-wrap { transform: scale(0.78); transform-origin: top center; margin-bottom: -130px; }
+}
+@media (max-width: 600px) {
+  .np-book-wrap { transform: scale(0.52); transform-origin: top center; margin-bottom: -290px; }
+  .np-nav-bar { flex-wrap: wrap; justify-content: center; }
 }
 `;
 
