@@ -1986,37 +1986,48 @@ export default function App() {
     }
   }, []);
 
-  /* ─── Weather & Markets Loader ─── */
-  const loadSignalPanels = useCallback(async () => {
-    const readPanel = async (url) => {
+  /* ─── Weather & Markets — SSE real-time stream ─── */
+  // EventSource connects when ops tab is active and disconnects when leaving.
+  // On connect the server immediately emits current snapshots; thereafter every
+  // refresh cycle (weather 60s, markets 60s/1h) pushes a new event automatically.
+  useEffect(() => {
+    if (activeTab !== 'ops') return;
+
+    const es = new EventSource('/api/signals/stream');
+    setSignalsLoading(true);
+
+    es.addEventListener('weather', (e) => {
       try {
-        const res = await fetch(url);
-        if (res.status === 404 || res.status === 405 || res.status === 501) {
-          return { available: false, data: null, error: null };
-        }
-        if (!res.ok) {
-          return { available: true, data: null, error: `HTTP ${res.status}` };
-        }
-        return { available: true, data: await res.json(), error: null };
-      } catch (err) {
-        return { available: true, data: null, error: err.message || 'network_error' };
-      }
+        const { available, data, reason } = JSON.parse(e.data);
+        setWeatherHubAvailable(available !== false);
+        setWeatherHub(data || null);
+        setWeatherHubError(available !== false ? null : (reason || 'unavailable'));
+      } catch { /* malformed event — ignore */ }
+      setSignalsLoading(false);
+    });
+
+    es.addEventListener('markets', (e) => {
+      try {
+        const { available, data, reason } = JSON.parse(e.data);
+        setMarketsHubAvailable(available !== false);
+        setMarketsHub(data || null);
+        setMarketsHubError(available !== false ? null : (reason || 'unavailable'));
+      } catch { /* malformed event — ignore */ }
+    });
+
+    es.onerror = () => {
+      // Browser auto-reconnects; keep data already in state
     };
 
-    setSignalsLoading(true);
-    const [weatherResult, marketsResult] = await Promise.all([
-      readPanel('/api/weather/uae'),
-      readPanel('/api/markets/uae'),
-    ]);
+    return () => es.close();
+  }, [activeTab]);
 
-    setWeatherHubAvailable(weatherResult.available);
-    setWeatherHub(weatherResult.data);
-    setWeatherHubError(weatherResult.error);
-
-    setMarketsHubAvailable(marketsResult.available);
-    setMarketsHub(marketsResult.data);
-    setMarketsHubError(marketsResult.error);
-    setSignalsLoading(false);
+  // Fallback HTTP fetch — used by the manual ↺ button in each panel
+  const loadSignalPanels = useCallback(async () => {
+    // Trigger an immediate out-of-schedule server refresh; SSE will push new data
+    try {
+      await fetch('/api/signals/refresh', { method: 'POST' });
+    } catch { /* ignore — SSE still delivers when data is ready */ }
   }, []);
 
   const refreshOpsView = useCallback(() => {
@@ -2045,10 +2056,6 @@ export default function App() {
   useEffect(() => { loadLive({ silent: false }); }, [loadLive]);
   useEffect(() => { loadOps(); }, [loadOps]);
   useEffect(() => { loadSitrep(); }, [loadSitrep]);
-  useEffect(() => {
-    if (activeTab !== 'ops') return;
-    if (weatherHubAvailable === null && marketsHubAvailable === null) loadSignalPanels();
-  }, [activeTab, weatherHubAvailable, marketsHubAvailable, loadSignalPanels]);
   useEffect(() => {
     if (selectedWeatherLocationId) return;
     const firstLocationId = weatherHub?.locations?.[0]?.id;

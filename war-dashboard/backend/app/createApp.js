@@ -13,6 +13,7 @@ const intelligenceRoutes = require('../modules/intelligence/routes');
 const podcastsRoutes = require('../modules/podcasts/routes');
 const weatherRoutes  = require('../modules/weather/routes');
 const marketsRoutes  = require('../modules/markets/routes');
+const signalsRoutes  = require('../modules/signals/routes');
 const legacyClaudeHandler = require('../../api/claude');
 
 function createApp() {
@@ -49,6 +50,7 @@ function createApp() {
   app.use('/api', podcastsRoutes);
   app.use('/api', weatherRoutes);
   app.use('/api', marketsRoutes);
+  app.use('/api', signalsRoutes);
 
   app.use((err, req, res, _next) => {
     logger.error('http_error', {
