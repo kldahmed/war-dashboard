@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
+import Hls from 'hls.js';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HTMLFlipBook from 'react-pageflip';
 
@@ -777,6 +778,28 @@ function CinematicPlayer({ stream, onClose, switching }) {
   const status  = getChStatus(s);
   const isLive  = status.cls === 'online';
   const [imgErr, setImgErr] = React.useState(false);
+  const videoRef = React.useRef(null);
+  const hlsRef   = React.useRef(null);
+  const isHls    = typeof embedUrl === 'string' && embedUrl.includes('.m3u8');
+
+  React.useEffect(() => {
+    if (!isHls || !videoRef.current) return;
+    const video = videoRef.current;
+    // Destroy previous instance
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    if (Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+      hlsRef.current = hls;
+      hls.loadSource(embedUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS (Safari)
+      video.src = embedUrl;
+      video.play().catch(() => {});
+    }
+    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
+  }, [embedUrl, isHls]);
 
   return (
     <div className={`cp${switching ? ' cp--switching' : ''}`} dir="rtl" role="region" aria-label={`مشاهدة ${name}`}>
@@ -825,7 +848,17 @@ function CinematicPlayer({ stream, onClose, switching }) {
 
       {/* ── Main screen ── */}
       <div className="cp__screen">
-        {embedUrl ? (
+        {embedUrl && isHls ? (
+          <video
+            ref={videoRef}
+            className="cp__iframe"
+            controls
+            autoPlay
+            playsInline
+            muted
+            style={{ background: '#000', width: '100%', height: '100%' }}
+          />
+        ) : embedUrl ? (
           <iframe
             src={embedUrl}
             title={name}
