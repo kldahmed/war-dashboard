@@ -1986,49 +1986,79 @@ export default function App() {
     }
   }, []);
 
-  /* ─── Weather & Markets — SSE real-time stream ─── */
-  // EventSource connects when ops tab is active and disconnects when leaving.
-  // On connect the server immediately emits current snapshots; thereafter every
-  // refresh cycle (weather 60s, markets 60s/1h) pushes a new event automatically.
+  /* ─── Weather & Markets — instant HTTP fetch + SSE live push ─── */
+  // Step 1: loadSignalPanels() fires two parallel HTTP GETs → data appears in < 500ms.
+  // Step 2: EventSource pushes new snapshots every time the server's polling cycle runs.
+  // Step 3: setInterval re-fetches every 60s as a reliable backup.
+  const loadSignalPanels = useCallback(async () => {
+    const readSlot = async (url) => {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (res.status === 404 || res.status === 501 || res.status === 503) {
+          return { available: res.status === 503, data: null, error: res.status === 503 ? 'not_ready' : null };
+        }
+        if (!res.ok) return { available: true, data: null, error: `HTTP ${res.status}` };
+        return { available: true, data: await res.json(), error: null };
+      } catch (e) {
+        return { available: true, data: null, error: e.message || 'network_error' };
+      }
+    };
+
+    setSignalsLoading(true);
+    const [w, m] = await Promise.all([
+      readSlot('/api/weather/uae'),
+      readSlot('/api/markets/uae'),
+    ]);
+    setWeatherHubAvailable(w.available);
+    setWeatherHub(w.data);
+    setWeatherHubError(w.error);
+    setMarketsHubAvailable(m.available);
+    setMarketsHub(m.data);
+    setMarketsHubError(m.error);
+    setSignalsLoading(false);
+  }, []);
+
   useEffect(() => {
     if (activeTab !== 'ops') return;
 
-    const es = new EventSource('/api/signals/stream');
-    setSignalsLoading(true);
+    // Immediate fetch — data renders as soon as the server responds
+    loadSignalPanels();
 
-    es.addEventListener('weather', (e) => {
-      try {
-        const { available, data, reason } = JSON.parse(e.data);
-        setWeatherHubAvailable(available !== false);
-        setWeatherHub(data || null);
-        setWeatherHubError(available !== false ? null : (reason || 'unavailable'));
-      } catch { /* malformed event — ignore */ }
-      setSignalsLoading(false);
-    });
-
-    es.addEventListener('markets', (e) => {
-      try {
-        const { available, data, reason } = JSON.parse(e.data);
-        setMarketsHubAvailable(available !== false);
-        setMarketsHub(data || null);
-        setMarketsHubError(available !== false ? null : (reason || 'unavailable'));
-      } catch { /* malformed event — ignore */ }
-    });
-
-    es.onerror = () => {
-      // Browser auto-reconnects; keep data already in state
-    };
-
-    return () => es.close();
-  }, [activeTab]);
-
-  // Fallback HTTP fetch — used by the manual ↺ button in each panel
-  const loadSignalPanels = useCallback(async () => {
-    // Trigger an immediate out-of-schedule server refresh; SSE will push new data
+    // SSE stream for zero-latency push updates (best-effort, doesn't block UI)
+    let es;
     try {
-      await fetch('/api/signals/refresh', { method: 'POST' });
-    } catch { /* ignore — SSE still delivers when data is ready */ }
-  }, []);
+      es = new EventSource('/api/signals/stream');
+      es.addEventListener('weather', (e) => {
+        try {
+          const { available, data } = JSON.parse(e.data);
+          if (available !== false && data) {
+            setWeatherHubAvailable(true);
+            setWeatherHub(data);
+            setWeatherHubError(null);
+          }
+        } catch { /* malformed — ignore */ }
+      });
+      es.addEventListener('markets', (e) => {
+        try {
+          const { available, data } = JSON.parse(e.data);
+          if (available !== false && data) {
+            setMarketsHubAvailable(true);
+            setMarketsHub(data);
+            setMarketsHubError(null);
+          }
+        } catch { /* malformed — ignore */ }
+      });
+      es.onerror = () => { /* browser auto-reconnects; HTTP polling covers any gap */ };
+    } catch { /* EventSource not available — HTTP polling handles everything */ }
+
+    // HTTP polling every 60s — works on all environments including Vercel
+    const poll = setInterval(loadSignalPanels, 60_000);
+
+    return () => {
+      clearInterval(poll);
+      try { if (es) es.close(); } catch { }
+    };
+  }, [activeTab, loadSignalPanels]);
 
   const refreshOpsView = useCallback(() => {
     loadOps();
