@@ -523,135 +523,177 @@ function ListItem({ item, idx }) {
 }
 
 /* ─────────────────────────────────────────────────
-   LIVE CHANNEL COMPONENTS  ★ LUXURY REBUILD ★
+   LIVE CHANNEL COMPONENTS  ★★★★★★★ LUXURY REBUILD
 ───────────────────────────────────────────────── */
+
+/* Status colour palette per uptime state */
+const CH_STATUS = {
+  up:       { label: 'مباشر',  cls: 'online',    dot: '#22c55e', shadow: 'rgba(34,197,94,.55)' },
+  degraded: { label: 'جزئي',   cls: 'degraded',  dot: '#f59e0b', shadow: 'rgba(245,158,11,.5)' },
+  down:     { label: 'متوقف',  cls: 'offline',   dot: '#ef4444', shadow: 'rgba(239,68,68,.45)' },
+  unknown:  { label: '—',      cls: 'offline',   dot: '#555e78', shadow: 'none' },
+};
+
+function getChStatus(s) {
+  if (s.uptime_status === 'up' || s.status === 'active') return CH_STATUS.up;
+  if (s.uptime_status === 'degraded') return CH_STATUS.degraded;
+  if (s.uptime_status === 'down') return CH_STATUS.down;
+  return CH_STATUS.unknown;
+}
+
 function LuxChannelCard({ stream, onSelect, isActive }) {
   if (!stream) return null;
-  const s = stream.stream || stream;
+  const s    = stream.stream || stream;
   const name = stream.source?.name || s.name || s.registry_id || '';
   const lang = stream.source?.language || s.language || '';
-  const isOnline = s.uptime_status === 'up' || s.uptime_status === 'degraded' || s.status === 'active';
-  const isDegraded = s.uptime_status === 'degraded';
+  const status   = getChStatus(s);
+  const isOnline = status.cls === 'online' || status.cls === 'degraded';
   const hasEmbed = !!(s.embed_url || s.embedUrl);
+  const [imgErr, setImgErr] = React.useState(false);
 
   return (
     <button
-      className={`lux-ch-card${isActive ? ' lux-ch-card--active' : ''}${!isOnline ? ' lux-ch-card--offline' : ''}${isDegraded ? ' lux-ch-card--degraded' : ''}`}
+      className={`lxc${isActive ? ' lxc--active' : ''} lxc--${status.cls}`}
       onClick={() => onSelect(stream)}
       title={name}
+      aria-pressed={isActive}
     >
-      <div className="lux-ch-card__inner">
-        {/* Glow ring — top-right corner status */}
-        <div className={`lux-ch-card__glow-ring${isOnline ? ' lux-ch-card__glow-ring--live' : ''}`} />
+      {/* ── Ambient glow layer (active/hover) ── */}
+      <span className="lxc__glow" aria-hidden="true" />
 
-        {/* LIVE / degraded badge */}
-        {isOnline && (
-          <div className={`lux-ch-card__status-badge${isDegraded ? ' lux-ch-card__status-badge--degraded' : ''}`}>
-            <span className="lux-ch-card__status-dot" />
-            {isDegraded ? 'جزئي' : 'بث'}
-          </div>
+      {/* ── Top row: status pill + embed icon ── */}
+      <div className="lxc__top">
+        <span
+          className="lxc__status-pill"
+          style={{
+            '--dot-color': status.dot,
+            '--dot-shadow': status.shadow,
+          }}
+        >
+          <span className={`lxc__status-dot${isOnline ? ' lxc__status-dot--live' : ''}`} />
+          {status.label}
+        </span>
+        {hasEmbed && isOnline && (
+          <span className="lxc__embed-icon" title="يدعم التشغيل المدمج">▶</span>
         )}
-
-        {/* Logo */}
-        <div className="lux-ch-card__logo-wrap">
-          {s.logo_url
-            ? <img src={s.logo_url} alt={name} loading="lazy"
-                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
-            : null
-          }
-          <span className="lux-ch-card__logo-fallback" style={s.logo_url ? { display: 'none' } : {}}>
-            {name.slice(0, 2)}
-          </span>
-        </div>
-
-        {/* Info */}
-        <div className="lux-ch-card__info">
-          <span className="lux-ch-card__name">{name}</span>
-          {lang && <span className="lux-ch-card__lang">{lang}</span>}
-        </div>
-
-        {/* Embed indicator dot */}
-        {hasEmbed && isOnline && <div className="lux-ch-card__embed-dot" title="يدعم التشغيل المدمج" />}
-
-        {/* Active state shimmer */}
-        {isActive && <div className="lux-ch-card__active-overlay" />}
       </div>
+
+      {/* ── Logo ── */}
+      <div className="lxc__logo">
+        {s.logo_url && !imgErr
+          ? <img src={s.logo_url} alt={name} loading="lazy" onError={() => setImgErr(true)} />
+          : <span className="lxc__logo-initials">{name.slice(0, 2)}</span>
+        }
+        {isOnline && <span className="lxc__logo-ring" />}
+      </div>
+
+      {/* ── Name + lang ── */}
+      <div className="lxc__info">
+        <span className="lxc__name">{name}</span>
+        {lang && <span className="lxc__lang">{lang.toUpperCase()}</span>}
+      </div>
+
+      {/* ── Slot line bottom (decorative) ── */}
+      <span className="lxc__slot-line" aria-hidden="true" />
     </button>
   );
 }
 
 function CinematicPlayer({ stream, onClose }) {
   if (!stream) return null;
-  const s = stream.stream || stream;
-  const name = stream.source?.name || s.name || s.registry_id || '';
-  const lang = stream.source?.language || s.language || '';
+  const s       = stream.stream || stream;
+  const name    = stream.source?.name || s.name || s.registry_id || '';
+  const lang    = stream.source?.language || s.language || '';
   const embedUrl = s.embed_url || s.embedUrl;
   const watchUrl = s.external_watch_url || s.official_page_url;
-  const isLive = s.uptime_status === 'up' || s.status === 'active';
+  const status  = getChStatus(s);
+  const isLive  = status.cls === 'online';
+  const [imgErr, setImgErr] = React.useState(false);
 
   return (
-    <div className="cinematic-player" dir="rtl">
-      {/* ── Header ── */}
-      <div className="cinematic-player__header">
-        <div className="cinematic-player__brand">
-          <div className="cinematic-player__logo-wrap">
-            {s.logo_url
-              ? <img src={s.logo_url} alt={name} className="cinematic-player__logo"
-                  onError={e => { e.target.style.display = 'none'; }} />
-              : <span className="cinematic-player__logo-text">{name.slice(0, 2)}</span>
+    <div className="cp" dir="rtl" role="region" aria-label={`مشاهدة ${name}`}>
+
+      {/* ── Ambient background beam ── */}
+      <div className="cp__beam" aria-hidden="true" />
+
+      {/* ── Top chrome bar ── */}
+      <div className="cp__bar">
+        <div className="cp__identity">
+          <div className="cp__logo-frame">
+            {s.logo_url && !imgErr
+              ? <img src={s.logo_url} alt={name} onError={() => setImgErr(true)} />
+              : <span>{name.slice(0, 2)}</span>
             }
           </div>
-          <div>
-            <div className="cinematic-player__channel-name">{name}</div>
-            {lang && <div className="cinematic-player__channel-meta">{lang}</div>}
+          <div className="cp__meta">
+            <span className="cp__channel-name">{name}</span>
+            <span className="cp__channel-sub">{lang ? lang.toUpperCase() : '—'}</span>
           </div>
           {isLive && (
-            <div className="cinematic-player__live-badge">
-              <span className="cinematic-player__live-dot" />
-              مباشر
+            <div className="cp__live-pill">
+              <span className="cp__live-dot" />
+              ON AIR
             </div>
           )}
         </div>
-        <div className="cinematic-player__controls">
+
+        <div className="cp__actions">
           {(embedUrl || watchUrl) && (
-            <a href={embedUrl || watchUrl} target="_blank" rel="noopener noreferrer"
-               className="cinematic-player__btn cinematic-player__btn--ghost">
-              ↗ خارجي
+            <a
+              href={embedUrl || watchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cp__action-btn cp__action-btn--ghost"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              فتح خارجي
             </a>
           )}
-          <button className="cinematic-player__btn cinematic-player__btn--close" onClick={onClose}>✕</button>
+          <button className="cp__action-btn cp__action-btn--close" onClick={onClose} aria-label="إغلاق">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>
 
-      {/* ── Screen ── */}
-      <div className="cinematic-player__screen">
+      {/* ── Main screen ── */}
+      <div className="cp__screen">
         {embedUrl ? (
           <iframe
             src={embedUrl}
             title={name}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
-            className="cinematic-player__iframe"
+            className="cp__iframe"
             sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
           />
         ) : (
-          <div className="cinematic-player__no-embed">
-            <div className="cinematic-player__no-embed-icon">📡</div>
-            <h3 className="cinematic-player__no-embed-title">لا يتوفر بث مدمج</h3>
-            <p className="cinematic-player__no-embed-sub">شاهد هذه القناة عبر الموقع الرسمي</p>
+          <div className="cp__no-embed">
+            <div className="cp__no-embed-ring">
+              <svg className="cp__no-embed-svg" viewBox="0 0 80 80" fill="none">
+                <circle cx="40" cy="40" r="36" stroke="rgba(255,255,255,.08)" strokeWidth="1.5"/>
+                <circle cx="40" cy="40" r="24" stroke="rgba(255,255,255,.05)" strokeWidth="1"/>
+                <text x="50%" y="54%" textAnchor="middle" dominantBaseline="middle"
+                  fontSize="22" fill="rgba(255,255,255,.2)">📡</text>
+              </svg>
+            </div>
+            <h3 className="cp__no-embed-title">لا يتوفر بث مدمج</h3>
+            <p className="cp__no-embed-sub">يمكنك مشاهدة هذه القناة عبر موقعها الرسمي</p>
             {watchUrl && (
-              <a href={watchUrl} target="_blank" rel="noopener noreferrer"
-                 className="cinematic-player__watch-btn">
-                مشاهدة على الموقع الرسمي ↗
+              <a href={watchUrl} target="_blank" rel="noopener noreferrer" className="cp__watch-cta">
+                مشاهدة الآن
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               </a>
             )}
           </div>
         )}
-        <div className="cinematic-player__scanlines" />
+        {/* CRT scanlines texture */}
+        <div className="cp__scanlines" aria-hidden="true" />
+        {/* Bottom gradient vignette */}
+        <div className="cp__vignette" aria-hidden="true" />
       </div>
 
       {s.description && (
-        <p className="cinematic-player__desc">{s.description}</p>
+        <div className="cp__footer">{s.description}</div>
       )}
     </div>
   );
@@ -1366,81 +1408,86 @@ export default function App() {
           </div>
         )}
 
-        {/* ═══════════════════════════════
-            LIVE TAB  ★ LUXURY
-        ═══════════════════════════════ */}
+        {/* ═══════════════════════════════════════════
+            LIVE TAB  ★★★★★★★ LUXURY REBUILD
+        ═══════════════════════════════════════════ */}
         {activeTab === 'live' && (
-          <div className="live-view" dir="rtl">
+          <div className="live-arena" dir="rtl">
 
-            {/* ── Section Header ── */}
-            <div className="live-view__header">
-              <div>
-                <h2 className="live-view__title">
-                  <span className="live-view__pulse-icon">●</span>
-                  قنوات البث المباشر
-                </h2>
-                <p className="live-view__subtitle">
+            {/* ══ COMMAND HEADER ══ */}
+            <div className="live-hdr">
+              <div className="live-hdr__left">
+                <div className="live-hdr__eyebrow">
+                  <span className="live-hdr__pulse" />
+                  بث مباشر
+                </div>
+                <h2 className="live-hdr__title">مركز قنوات الأخبار</h2>
+                <p className="live-hdr__sub">
                   {liveSummary
-                    ? `${liveSummary.active_streams ?? streams.length} قناة نشطة من أصل ${liveSummary.total_streams ?? streams.length}`
-                    : 'تغطية إخبارية مباشرة على مدار الساعة'
-                  }
+                    ? `${liveSummary.active_streams ?? streams.length} قناة نشطة · ${liveSummary.total_streams ?? streams.length} إجمالاً`
+                    : 'تغطية استخباراتية على مدار الساعة'}
                 </p>
               </div>
-              <button className="live-view__refresh-btn" onClick={loadLive} title="تحديث القنوات">
-                ↻ تحديث
+              <button className="live-hdr__refresh" onClick={loadLive}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                تحديث
               </button>
             </div>
 
-            {/* ── HUD Stats Bar ── */}
+            {/* ══ HUD COMMAND STRIP ══ */}
             {liveSummary && (
-              <div className="live-hud">
-                <div className="live-hud__stat">
-                  <span className="live-hud__stat-value live-hud__stat-value--green">
-                    {liveSummary.playable_streams ?? liveSummary.active_streams ?? '?'}
-                  </span>
-                  <span className="live-hud__stat-label">قابل للتشغيل</span>
-                </div>
-                <div className="live-hud__stat">
-                  <span className="live-hud__stat-value live-hud__stat-value--blue">
-                    {liveSummary.active_streams ?? '?'}
-                  </span>
-                  <span className="live-hud__stat-label">نشط الآن</span>
-                </div>
-                {(liveSummary.down_streams ?? 0) > 0 && (
-                  <div className="live-hud__stat">
-                    <span className="live-hud__stat-value live-hud__stat-value--red">
-                      {liveSummary.down_streams}
-                    </span>
-                    <span className="live-hud__stat-label">متوقف</span>
+              <div className="live-hud-bar">
+                <div className="live-hud-bar__inner">
+                  <div className="lhb-stat lhb-stat--green">
+                    <span className="lhb-stat__val">{liveSummary.playable_streams ?? liveSummary.active_streams ?? '?'}</span>
+                    <span className="lhb-stat__key">قابل للبث</span>
                   </div>
-                )}
-                <div className="live-hud__stat">
-                  <span className="live-hud__stat-value live-hud__stat-value--gold">
-                    {liveSummary.total_streams ?? streams.length}
-                  </span>
-                  <span className="live-hud__stat-label">الإجمالي</span>
+                  <div className="lhb-sep" />
+                  <div className="lhb-stat lhb-stat--blue">
+                    <span className="lhb-stat__val">{liveSummary.active_streams ?? '?'}</span>
+                    <span className="lhb-stat__key">نشط الآن</span>
+                  </div>
+                  {(liveSummary.down_streams ?? 0) > 0 && (
+                    <>
+                      <div className="lhb-sep" />
+                      <div className="lhb-stat lhb-stat--red">
+                        <span className="lhb-stat__val">{liveSummary.down_streams}</span>
+                        <span className="lhb-stat__key">متوقف</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="lhb-sep" />
+                  <div className="lhb-stat lhb-stat--gold">
+                    <span className="lhb-stat__val">{liveSummary.total_streams ?? streams.length}</span>
+                    <span className="lhb-stat__key">الإجمالي</span>
+                  </div>
+                </div>
+                <div className="live-hud-bar__divider" />
+                <div className="live-hud-bar__status-row">
+                  <span className="live-hud-bar__status-dot live-hud-bar__status-dot--green" />
+                  <span className="live-hud-bar__status-text">نظام المراقبة: نشط</span>
                 </div>
               </div>
             )}
 
             {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
 
-            {/* ── Featured Live Strip ── */}
+            {/* ══ FEATURED ON-AIR MARQUEE ══ */}
             {!loadingLive && featuredLiveStreams.length > 0 && (
-              <div className="live-featured-strip" dir="rtl">
-                <span className="live-featured-strip__label">القنوات المميزة الآن</span>
-                <div className="live-featured-strip__chips">
-                  {featuredLiveStreams.map((st, i) => {
-                    const s = st.stream || st;
-                    const name = st.source?.name || s.name || s.registry_id || `قناة ${i + 1}`;
+              <div className="live-marquee-wrap">
+                <span className="live-marquee-wrap__label">على الهواء الآن</span>
+                <div className="live-marquee">
+                  {[...featuredLiveStreams, ...featuredLiveStreams].map((st, i) => {
+                    const sv = st.stream || st;
+                    const nm = st.source?.name || sv.name || sv.registry_id || `قناة ${i + 1}`;
                     return (
                       <button
-                        key={s.id || st.id || i}
-                        className="live-featured-strip__chip"
+                        key={`${sv.id ?? i}-${i}`}
+                        className="live-marquee__chip"
                         onClick={() => setSelectedStream(st)}
                       >
-                        <span className="live-featured-strip__chip-dot" />
-                        {name}
+                        <span className="live-marquee__chip-dot" />
+                        {nm}
                       </button>
                     );
                   })}
@@ -1448,7 +1495,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ── Cinematic Player ── */}
+            {/* ══ CINEMATIC PLAYER ══ */}
             {selectedStream && (
               <CinematicPlayer
                 stream={selectedStream}
@@ -1456,16 +1503,29 @@ export default function App() {
               />
             )}
 
-            {/* ── Channel Search ── */}
-            <div className="lux-ch-search" dir="rtl">
-              <SearchBar value={channelSearch} onChange={setChannelSearch} />
+            {/* ══ CHANNEL COMMAND SEARCH ══ */}
+            <div className="live-search-bar" dir="rtl">
+              <svg className="live-search-bar__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                type="search"
+                className="live-search-bar__input"
+                placeholder="ابحث في القنوات…"
+                value={channelSearch}
+                onChange={e => setChannelSearch(e.target.value)}
+                dir="rtl"
+              />
+              {channelSearch && (
+                <button className="live-search-bar__clear" onClick={() => setChannelSearch('')} aria-label="مسح">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
             </div>
 
-            {/* ── Luxury Channel Grid ── */}
+            {/* ══ CHANNELS GRID ══ */}
             {loadingLive
-              ? <LoadingSpinner label="تحميل القنوات…" />
+              ? <LoadingSpinner label="جارٍ تحميل القنوات…" />
               : (
-                <div className="lux-ch-grid">
+                <div className="live-ch-grid">
                   {filteredStreams.map((st, i) => (
                     <LuxChannelCard
                       key={st.stream?.id || st.id || i}
@@ -1475,8 +1535,8 @@ export default function App() {
                     />
                   ))}
                   {filteredStreams.length === 0 && (
-                    <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-                      <span className="empty-state__icon">📡</span>
+                    <div className="live-empty">
+                      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity=".3"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
                       <p>لا توجد قنوات مطابقة</p>
                     </div>
                   )}
@@ -2042,558 +2102,707 @@ img { display: block; max-width: 100%; }
 }
 .empty-state__icon { font-size: 3rem; }
 
-/* ════════════════════════════════════════════════
-   LIVE VIEW  ★ LUXURY REBUILD
-════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════
+   LIVE ARENA — 7-STAR LUXURY REBUILD
+════════════════════════════════════════════════════════ */
 
-/* ── Section header ── */
-.live-view__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
-}
-.live-view__title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 1.5rem;
-  font-weight: 900;
-  letter-spacing: -.03em;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.live-view__pulse-icon {
-  color: var(--red);
-  font-size: .7em;
-  animation: blink 1.2s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px var(--red));
-}
-.live-view__subtitle {
-  font-size: .8rem;
-  color: var(--text3);
-  margin-right: 24px;
-  letter-spacing: .01em;
-}
-.live-view__refresh-btn {
-  background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px;
-  color: var(--text2);
-  padding: 7px 14px;
-  font-size: .8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all .18s;
-  flex-shrink: 0;
-}
-.live-view__refresh-btn:hover {
-  background: rgba(59,130,246,.15);
-  border-color: rgba(59,130,246,.4);
-  color: var(--accent2);
-}
-
-/* ── Featured live channels strip ── */
-.live-featured-strip {
+/* ── Arena wrapper ── */
+.live-arena {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  background: linear-gradient(90deg, rgba(14,18,28,.9) 0%, rgba(20,23,32,.8) 100%);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 12px;
+  gap: 0;
 }
-.live-featured-strip__label {
-  font-size: .72rem;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--text3);
-  font-weight: 700;
-}
-.live-featured-strip__chips {
+
+/* ── Command Header ── */
+.live-hdr {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  margin-bottom: 24px;
 }
-.live-featured-strip__chip {
+.live-hdr__left { display: flex; flex-direction: column; gap: 4px; }
+.live-hdr__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+.live-hdr__pulse {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 10px var(--red), 0 0 24px rgba(239,68,68,.4);
+  animation: blink 1.1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.live-hdr__title {
+  font-size: 1.7rem;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  line-height: 1;
+  color: var(--text);
+  background: linear-gradient(100deg, #fff 30%, rgba(255,255,255,.55) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+[data-theme="light"] .live-hdr__title {
+  background: linear-gradient(100deg, #1a1d2e 30%, #4a5172 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.live-hdr__sub {
+  font-size: .78rem;
+  color: var(--text3);
+  letter-spacing: .01em;
+}
+.live-hdr__refresh {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.12);
+  padding: 9px 18px;
+  border-radius: 10px;
   background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
   color: var(--text2);
-  font-size: .74rem;
+  font-size: .78rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all .2s ease;
+  transition: all .22s;
+  flex-shrink: 0;
+  letter-spacing: .02em;
 }
-.live-featured-strip__chip:hover {
-  border-color: rgba(59,130,246,.55);
-  color: #bfdbfe;
-  background: rgba(59,130,246,.16);
-}
-.live-featured-strip__chip-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px rgba(34,197,94,.6);
+.live-hdr__refresh:hover {
+  background: rgba(59,130,246,.12);
+  border-color: rgba(59,130,246,.38);
+  color: #93c5fd;
+  box-shadow: 0 0 16px rgba(59,130,246,.1);
 }
 
-/* ── HUD Stats Bar ── */
-.live-hud {
+/* ── HUD Command Strip ── */
+.live-hud-bar {
   display: flex;
   align-items: stretch;
-  background: linear-gradient(135deg,
-    rgba(0,0,0,.55) 0%,
-    var(--bg2) 100%
-  );
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 14px;
+  justify-content: space-between;
+  background:
+    linear-gradient(135deg, rgba(6,8,16,.96) 0%, rgba(14,18,30,.94) 100%);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 16px;
   overflow: hidden;
   margin-bottom: 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow:
+    0 12px 40px rgba(0,0,0,.5),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    inset 0 -1px 0 rgba(255,255,255,.02);
   position: relative;
 }
-.live-hud::before {
+.live-hud-bar::before {
   content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(59,130,246,.03) 50%,
-    transparent 100%
-  );
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(59,130,246,.04) 0%, transparent 100%);
   pointer-events: none;
 }
-.live-hud__stat {
+.live-hud-bar__inner {
+  display: flex;
+  align-items: stretch;
   flex: 1;
+}
+.lhb-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 18px 12px;
-  position: relative;
+  gap: 5px;
+  padding: 20px 28px;
+  flex: 1;
   transition: background .2s;
+  cursor: default;
 }
-.live-hud__stat:hover { background: rgba(255,255,255,.03); }
-.live-hud__stat + .live-hud__stat::before {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 15%;
-  height: 70%;
-  width: 1px;
-  background: rgba(255,255,255,.07);
-}
-.live-hud__stat-value {
-  font-size: 1.75rem;
+.lhb-stat:hover { background: rgba(255,255,255,.02); }
+.lhb-stat__val {
+  font-size: 2rem;
   font-weight: 900;
   line-height: 1;
-  letter-spacing: -.04em;
+  letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
 }
-.live-hud__stat-value--green { color: var(--green); text-shadow: 0 0 20px rgba(34,197,94,.4); }
-.live-hud__stat-value--blue  { color: var(--accent2); text-shadow: 0 0 20px rgba(96,165,250,.4); }
-.live-hud__stat-value--red   { color: #f87171; text-shadow: 0 0 20px rgba(239,68,68,.4); }
-.live-hud__stat-value--gold  { color: var(--gold); text-shadow: 0 0 20px rgba(245,158,11,.4); }
-.live-hud__stat-label {
-  font-size: .65rem;
-  font-weight: 700;
-  letter-spacing: .1em;
+.lhb-stat--green .lhb-stat__val {
+  color: #4ade80;
+  text-shadow: 0 0 24px rgba(34,197,94,.5), 0 0 48px rgba(34,197,94,.2);
+}
+.lhb-stat--blue .lhb-stat__val {
+  color: #93c5fd;
+  text-shadow: 0 0 24px rgba(147,197,253,.45), 0 0 48px rgba(59,130,246,.2);
+}
+.lhb-stat--red .lhb-stat__val {
+  color: #fca5a5;
+  text-shadow: 0 0 24px rgba(239,68,68,.45);
+}
+.lhb-stat--gold .lhb-stat__val {
+  color: #fcd34d;
+  text-shadow: 0 0 24px rgba(245,158,11,.45);
+}
+.lhb-stat__key {
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--text3);
+  color: rgba(255,255,255,.2);
+}
+.lhb-sep {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.07) 30%, rgba(255,255,255,.07) 70%, transparent);
+  flex-shrink: 0;
+}
+.live-hud-bar__divider {
+  width: 1px;
+  background: rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+.live-hud-bar__status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 24px;
+  flex-shrink: 0;
+}
+.live-hud-bar__status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.live-hud-bar__status-dot--green {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34,197,94,.7), 0 0 16px rgba(34,197,94,.3);
+  animation: blink 2.4s ease-in-out infinite;
+}
+.live-hud-bar__status-text {
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.22);
+  white-space: nowrap;
 }
 
-/* ── Cinematic Player ── */
-.cinematic-player {
-  background: #08090d;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 18px;
+/* ── Featured Marquee ── */
+.live-marquee-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(90deg,
+    rgba(10,12,22,.95) 0%,
+    rgba(14,18,28,.90) 60%,
+    rgba(10,12,22,.95) 100%);
+  border: 1px solid rgba(34,197,94,.1);
+  border-radius: 12px;
+  padding: 10px 18px;
+  margin-bottom: 20px;
   overflow: hidden;
-  margin-bottom: 28px;
-  box-shadow:
-    0 32px 80px rgba(0,0,0,.75),
-    0 0 0 1px rgba(255,255,255,.04),
-    inset 0 1px 0 rgba(255,255,255,.06);
   position: relative;
 }
-.cinematic-player__header {
+.live-marquee-wrap::before,
+.live-marquee-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 48px;
+  z-index: 2;
+  pointer-events: none;
+}
+.live-marquee-wrap::before {
+  right: 0;
+  background: linear-gradient(to left, rgba(10,12,22,.95), transparent);
+}
+.live-marquee-wrap::after {
+  left: 76px;
+  background: linear-gradient(to right, rgba(10,12,22,.95), transparent);
+}
+.live-marquee-wrap__label {
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(34,197,94,.65);
+  white-space: nowrap;
+  flex-shrink: 0;
+  z-index: 3;
+}
+.live-marquee {
+  display: flex;
+  gap: 10px;
+  animation: marquee-scroll 28s linear infinite;
+  flex-shrink: 0;
+}
+.live-marquee:hover { animation-play-state: paused; }
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.live-marquee__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.09);
+  color: rgba(255,255,255,.5);
+  font-size: .72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all .2s;
+  text-decoration: none;
+}
+.live-marquee__chip:hover {
+  background: rgba(59,130,246,.16);
+  border-color: rgba(59,130,246,.4);
+  color: #93c5fd;
+  box-shadow: 0 0 12px rgba(59,130,246,.15);
+}
+.live-marquee__chip-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34,197,94,.7);
+  flex-shrink: 0;
+}
+
+/* ── Cinematic Player (cp) ── */
+.cp {
+  background: #060810;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-bottom: 30px;
+  position: relative;
+  box-shadow:
+    0 40px 100px rgba(0,0,0,.8),
+    0 0 0 1px rgba(255,255,255,.04),
+    inset 0 1px 0 rgba(255,255,255,.07);
+}
+.cp__beam {
+  position: absolute;
+  top: -60px; left: 50%;
+  transform: translateX(-50%);
+  width: 420px; height: 120px;
+  background: radial-gradient(ellipse at center, rgba(59,130,246,.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.cp__bar {
+  position: relative; z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px;
-  background: linear-gradient(
-    135deg,
-    rgba(12,14,22,.98) 0%,
-    rgba(18,21,34,.92) 100%
-  );
-  border-bottom: 1px solid rgba(255,255,255,.07);
+  padding: 14px 22px;
+  background: linear-gradient(135deg, rgba(8,10,20,.98) 0%, rgba(12,15,26,.94) 100%);
+  border-bottom: 1px solid rgba(255,255,255,.06);
   gap: 16px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
 }
-.cinematic-player__brand {
+.cp__identity {
   display: flex;
   align-items: center;
   gap: 14px;
   flex: 1;
   min-width: 0;
 }
-.cinematic-player__logo-wrap {
-  width: 46px; height: 46px;
-  background: rgba(255,255,255,.06);
-  border-radius: 11px;
+.cp__logo-frame {
+  width: 48px; height: 48px;
+  background: rgba(255,255,255,.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.1);
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.1);
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  box-shadow: 0 4px 16px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07);
 }
-.cinematic-player__logo { width: 100%; height: 100%; object-fit: contain; }
-.cinematic-player__logo-text {
-  font-size: .9rem; font-weight: 800;
-  color: rgba(255,255,255,.6); letter-spacing: -.02em;
-}
-.cinematic-player__channel-name {
+.cp__logo-frame img   { width: 100%; height: 100%; object-fit: contain; }
+.cp__logo-frame span  { font-size: .88rem; font-weight: 800; color: rgba(255,255,255,.5); letter-spacing: -.02em; }
+.cp__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cp__channel-name {
   font-size: 1.05rem; font-weight: 700;
-  color: #fff; letter-spacing: -.01em;
+  color: #f0f4ff; letter-spacing: -.015em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cinematic-player__channel-meta {
-  font-size: .72rem; color: rgba(255,255,255,.35);
-  margin-top: 3px; text-transform: uppercase; letter-spacing: .06em;
+.cp__channel-sub {
+  font-size: .66rem; font-weight: 700;
+  color: rgba(255,255,255,.28);
+  letter-spacing: .1em; text-transform: uppercase;
 }
-.cinematic-player__live-badge {
-  display: flex; align-items: center; gap: 7px;
-  background: rgba(239,68,68,.12);
-  border: 1px solid rgba(239,68,68,.35);
-  border-radius: 7px;
-  padding: 6px 13px;
-  font-size: .7rem; font-weight: 800;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: #ff6b6b;
+.cp__live-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: rgba(239,68,68,.1);
+  border: 1px solid rgba(239,68,68,.32);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: .64rem; font-weight: 900;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: #ff7a7a;
   flex-shrink: 0;
+  box-shadow: 0 0 18px rgba(239,68,68,.08);
 }
-.cinematic-player__live-dot {
+.cp__live-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
   background: #ff4444;
-  box-shadow: 0 0 8px #ff4444, 0 0 16px rgba(255,68,68,.5);
+  box-shadow: 0 0 8px #ff4444, 0 0 18px rgba(255,68,68,.5);
   animation: blink 1s ease-in-out infinite;
+  flex-shrink: 0;
 }
-.cinematic-player__controls { display: flex; gap: 8px; flex-shrink: 0; }
-.cinematic-player__btn {
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: .78rem; font-weight: 600;
-  cursor: pointer;
-  transition: all .18s;
-  border: none;
-  text-decoration: none;
-  display: inline-flex; align-items: center; gap: 5px;
+.cp__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.cp__action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px;
+  font-size: .74rem; font-weight: 700;
+  cursor: pointer; transition: all .2s;
+  border: none; text-decoration: none; letter-spacing: .01em;
 }
-.cinematic-player__btn--ghost {
-  background: rgba(255,255,255,.07);
-  color: rgba(255,255,255,.65);
-  border: 1px solid rgba(255,255,255,.12);
+.cp__action-btn--ghost {
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.5);
+  border: 1px solid rgba(255,255,255,.1);
 }
-.cinematic-player__btn--ghost:hover {
-  background: rgba(255,255,255,.13);
+.cp__action-btn--ghost:hover {
+  background: rgba(255,255,255,.12);
   color: #fff;
-  border-color: rgba(255,255,255,.22);
+  border-color: rgba(255,255,255,.2);
 }
-.cinematic-player__btn--close {
-  background: rgba(239,68,68,.1);
-  color: rgba(239,68,68,.75);
-  border: 1px solid rgba(239,68,68,.2);
+.cp__action-btn--close {
+  background: rgba(239,68,68,.08);
+  color: rgba(239,68,68,.65);
+  border: 1px solid rgba(239,68,68,.18);
 }
-.cinematic-player__btn--close:hover {
-  background: rgba(239,68,68,.22);
+.cp__action-btn--close:hover {
+  background: rgba(239,68,68,.2);
   color: #f87171;
-  border-color: rgba(239,68,68,.4);
+  border-color: rgba(239,68,68,.38);
 }
-.cinematic-player__screen {
-  aspect-ratio: 16/9;
-  background: #000;
+.cp__screen {
+  aspect-ratio: 16 / 9;
+  background: #000112;
   position: relative;
   overflow: hidden;
 }
-.cinematic-player__iframe {
+.cp__iframe {
   width: 100%; height: 100%;
   border: none; display: block;
   position: relative; z-index: 1;
 }
-.cinematic-player__scanlines {
-  position: absolute; inset: 0; z-index: 2;
+.cp__scanlines {
+  position: absolute; inset: 0; z-index: 3;
+  pointer-events: none;
   background: repeating-linear-gradient(
     to bottom,
-    transparent 0px,
-    transparent 3px,
-    rgba(0,0,0,.025) 3px,
-    rgba(0,0,0,.025) 4px
+    transparent 0px, transparent 2px,
+    rgba(0,0,0,.018) 2px, rgba(0,0,0,.018) 3px
   );
-  pointer-events: none;
 }
-.cinematic-player__no-embed {
+.cp__vignette {
   position: absolute; inset: 0; z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.35) 100%);
+}
+.cp__no-embed {
+  position: absolute; inset: 0; z-index: 4;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 16px;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(24,28,44,.9) 0%,
-    rgba(8,9,13,.97) 100%
-  );
+  gap: 18px;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 50%, rgba(20,24,42,.95) 0%, rgba(6,8,16,.98) 100%);
 }
-.cinematic-player__no-embed-icon { font-size: 3.8rem; filter: grayscale(.3); }
-.cinematic-player__no-embed-title {
-  font-size: 1.1rem; font-weight: 700;
-  color: rgba(255,255,255,.7);
+.cp__no-embed-ring { position: relative; }
+.cp__no-embed-svg  { width: 80px; height: 80px; }
+.cp__no-embed-title {
+  font-size: 1.05rem; font-weight: 700;
+  color: rgba(255,255,255,.6); letter-spacing: -.01em;
 }
-.cinematic-player__no-embed-sub {
-  font-size: .82rem; color: rgba(255,255,255,.3);
+.cp__no-embed-sub {
+  font-size: .8rem; color: rgba(255,255,255,.25);
+  text-align: center; max-width: 260px;
 }
-.cinematic-player__watch-btn {
-  background: linear-gradient(135deg, var(--accent) 0%, #1d4ed8 100%);
-  color: #fff;
-  padding: 11px 26px;
-  border-radius: 9px;
+.cp__watch-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  color: #eff6ff;
+  padding: 12px 28px; border-radius: 10px;
   font-size: .86rem; font-weight: 700;
-  text-decoration: none;
+  text-decoration: none; letter-spacing: .01em;
+  box-shadow: 0 8px 24px rgba(37,99,235,.35), 0 0 0 1px rgba(255,255,255,.06) inset;
   transition: all .22s;
-  box-shadow: 0 6px 20px rgba(59,130,246,.35);
 }
-.cinematic-player__watch-btn:hover {
+.cp__watch-cta:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(59,130,246,.55);
+  box-shadow: 0 14px 36px rgba(37,99,235,.55), 0 0 0 1px rgba(255,255,255,.1) inset;
 }
-.cinematic-player__desc {
-  padding: 12px 22px;
-  font-size: .82rem;
-  color: rgba(255,255,255,.3);
-  border-top: 1px solid rgba(255,255,255,.06);
-  background: rgba(0,0,0,.25);
-}
-
-/* ── Channel Search ── */
-.lux-ch-search { margin-bottom: 20px; }
-.lux-ch-search .search-bar {
-  background: var(--bg2);
-  border-color: rgba(255,255,255,.1);
-  border-radius: 12px;
-  padding: 10px 16px;
+.cp__footer {
+  padding: 10px 22px;
+  font-size: .78rem;
+  color: rgba(255,255,255,.22);
+  border-top: 1px solid rgba(255,255,255,.05);
+  background: rgba(0,0,0,.3);
+  line-height: 1.5;
 }
 
-/* ── Luxury Channel Grid ── */
-.lux-ch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 14px;
+/* ── Live Search Bar ── */
+.live-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  padding: 11px 18px;
+  margin-bottom: 22px;
+  transition: border-color .2s, box-shadow .2s;
 }
-@media (min-width: 640px) {
-  .lux-ch-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.live-search-bar:focus-within {
+  border-color: rgba(59,130,246,.45);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.1), 0 4px 20px rgba(0,0,0,.3);
 }
-@media (min-width: 1024px) {
-  .lux-ch-grid { grid-template-columns: repeat(auto-fill, minmax(195px, 1fr)); }
+.live-search-bar__icon {
+  color: rgba(255,255,255,.2);
+  flex-shrink: 0;
+  transition: color .2s;
 }
-
-/* ── Luxury Channel Card ── */
-.lux-ch-card {
+.live-search-bar:focus-within .live-search-bar__icon { color: rgba(147,197,253,.6); }
+.live-search-bar__input {
+  flex: 1;
   background: none;
   border: none;
-  padding: 0;
-  cursor: pointer;
-  border-radius: 14px;
-  width: 100%;
-  text-align: inherit;
-  display: block;
+  outline: none;
+  color: var(--text);
+  font-size: .88rem;
+  caret-color: var(--accent);
 }
-.lux-ch-card__inner {
+.live-search-bar__input::placeholder { color: rgba(255,255,255,.18); }
+.live-search-bar__clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,.2);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: color .18s;
+}
+.live-search-bar__clear:hover { color: rgba(255,255,255,.5); }
+
+/* ── Channels Grid ── */
+.live-ch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+@media (min-width: 540px)  { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px; } }
+@media (min-width: 900px)  { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); } }
+@media (min-width: 1200px) { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; } }
+
+.live-empty {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 60px 20px;
+  color: var(--text2);
+  font-size: .88rem;
+}
+
+/* ── Luxury Channel Card (lxc) ── */
+.lxc {
   position: relative;
-  background: linear-gradient(
-    150deg,
-    var(--bg2) 0%,
-    var(--bg3) 100%
-  );
-  border: 1px solid rgba(255,255,255,.07);
-  border-radius: 14px;
-  padding: 18px 14px 14px;
-  transition: all .28s cubic-bezier(.4, 0, .2, 1);
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  min-height: 130px;
+  gap: 12px;
+  padding: 16px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.07);
+  background:
+    linear-gradient(160deg, rgba(22,26,40,.95) 0%, rgba(14,17,28,.98) 100%);
+  cursor: pointer;
+  text-align: inherit;
+  min-height: 148px;
   overflow: hidden;
+  transition: transform .28s cubic-bezier(.34,1.56,.64,1),
+              border-color .24s,
+              box-shadow .28s;
+  outline: none;
+  /* Shimmer highlight */
 }
-.lux-ch-card__inner::before {
+.lxc::before {
   content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 13px;
-  background: linear-gradient(
-    135deg,
-    rgba(255,255,255,.04) 0%,
-    transparent 55%
-  );
+  position: absolute; inset: 0;
+  border-radius: 15px;
+  background: linear-gradient(140deg, rgba(255,255,255,.045) 0%, transparent 50%);
   pointer-events: none;
+  z-index: 0;
 }
-.lux-ch-card:hover .lux-ch-card__inner {
-  border-color: rgba(59,130,246,.5);
-  background: linear-gradient(
-    150deg,
-    color-mix(in srgb, var(--bg2) 85%, var(--accent) 15%) 0%,
-    var(--bg3) 100%
-  );
-  transform: translateY(-4px);
+
+/* Glow blob (JS-driven via --dot-color in lxc__glow) */
+.lxc__glow {
+  position: absolute;
+  top: -30%; right: -20%;
+  width: 120%; height: 100%;
+  background: radial-gradient(ellipse 60% 50% at 80% 30%,
+    rgba(59,130,246,.05) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity .3s;
+  opacity: 0;
+}
+.lxc:hover .lxc__glow { opacity: 1; }
+.lxc--active .lxc__glow {
+  opacity: 1;
+  background: radial-gradient(ellipse 70% 60% at 70% 30%,
+    rgba(59,130,246,.11) 0%, transparent 70%);
+}
+
+/* Hover & active states */
+.lxc:hover {
+  transform: translateY(-5px) scale(1.012);
+  border-color: rgba(96,165,250,.45);
+  box-shadow:
+    0 20px 48px rgba(0,0,0,.55),
+    0 0 0 1px rgba(96,165,250,.2),
+    0 0 28px rgba(59,130,246,.07);
+}
+.lxc--active {
+  transform: translateY(-3px);
+  border-color: rgba(59,130,246,.65);
+  background:
+    linear-gradient(160deg, rgba(37,99,235,.12) 0%, rgba(14,17,28,.96) 100%);
   box-shadow:
     0 16px 40px rgba(0,0,0,.5),
-    0 0 0 1px rgba(59,130,246,.3),
-    0 0 24px rgba(59,130,246,.08);
+    0 0 0 1.5px rgba(59,130,246,.5),
+    0 0 36px rgba(59,130,246,.1);
 }
-.lux-ch-card--active .lux-ch-card__inner {
-  border-color: rgba(59,130,246,.7);
-  background: linear-gradient(
-    150deg,
-    rgba(59,130,246,.12) 0%,
-    rgba(37,99,235,.07) 100%
-  );
-  box-shadow:
-    0 12px 32px rgba(59,130,246,.2),
-    0 0 0 1px rgba(59,130,246,.45),
-    0 0 32px rgba(59,130,246,.1);
-  transform: translateY(-2px);
+.lxc--offline {
+  opacity: .38;
+  filter: grayscale(.7) brightness(.8);
+  pointer-events: none;
 }
-.lux-ch-card--offline .lux-ch-card__inner {
-  opacity: .42;
-  filter: grayscale(.65);
-}
-.lux-ch-card--degraded .lux-ch-card__inner {
-  border-color: rgba(245,158,11,.25);
-}
+.lxc--offline:not([aria-disabled='true']) { pointer-events: auto; }
+.lxc--degraded { border-color: rgba(245,158,11,.2); }
 
-/* Glow ring — top-right online indicator */
-.lux-ch-card__glow-ring {
-  position: absolute;
-  top: 10px; left: 10px;
-  width: 9px; height: 9px;
-  border-radius: 50%;
-  background: var(--text3);
-  border: 1.5px solid var(--bg2);
-  z-index: 2;
+/* Top row */
+.lxc__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  z-index: 1;
 }
-.lux-ch-card__glow-ring--live {
-  background: var(--green);
-  border-color: rgba(0,0,0,.4);
-  box-shadow:
-    0 0 6px var(--green),
-    0 0 14px rgba(34,197,94,.45);
-  animation: blink 2.8s ease-in-out infinite;
-}
-
-/* LIVE status badge — top-left */
-.lux-ch-card__status-badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  position: absolute;
-  top: 8px; right: 8px;
-  background: rgba(34,197,94,.11);
-  border: 1px solid rgba(34,197,94,.28);
-  border-radius: 5px;
-  padding: 3px 8px;
-  font-size: .58rem; font-weight: 800;
+.lxc__status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: .57rem;
+  font-weight: 900;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: var(--green);
-  z-index: 2;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--dot-color, rgba(255,255,255,.3));
+  border-color: color-mix(in srgb, var(--dot-color, #888) 28%, transparent);
+  backdrop-filter: blur(8px);
 }
-.lux-ch-card__status-badge--degraded {
-  background: rgba(245,158,11,.1);
-  border-color: rgba(245,158,11,.3);
-  color: var(--gold);
-}
-.lux-ch-card__status-dot {
+.lxc__status-dot {
   width: 5px; height: 5px;
   border-radius: 50%;
-  background: currentColor;
-  animation: blink 1.8s infinite;
+  background: var(--dot-color, rgba(255,255,255,.3));
+  flex-shrink: 0;
+}
+.lxc__status-dot--live {
+  animation: blink 2s ease-in-out infinite;
+  box-shadow: 0 0 6px var(--dot-shadow, transparent);
+}
+.lxc__embed-icon {
+  font-size: .6rem;
+  color: rgba(147,197,253,.45);
+  font-weight: 900;
+  letter-spacing: -.02em;
 }
 
-/* Logo */
-.lux-ch-card__logo-wrap {
-  width: 52px; height: 52px;
+/* Logo area */
+.lxc__logo {
+  position: relative;
+  width: 54px; height: 54px;
   background: rgba(255,255,255,.05);
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.08);
   flex-shrink: 0;
-  align-self: flex-start;
-  transition: all .28s;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  z-index: 1;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  transition: border-color .24s, box-shadow .24s;
 }
-.lux-ch-card:hover .lux-ch-card__logo-wrap,
-.lux-ch-card--active .lux-ch-card__logo-wrap {
-  background: rgba(255,255,255,.09);
-  border-color: rgba(255,255,255,.15);
-  box-shadow: 0 6px 16px rgba(0,0,0,.4);
+.lxc:hover .lxc__logo {
+  border-color: rgba(147,197,253,.22);
+  box-shadow: 0 6px 18px rgba(0,0,0,.45);
 }
-.lux-ch-card__logo-wrap img {
-  width: 100%; height: 100%; object-fit: contain;
+.lxc__logo img     { width: 100%; height: 100%; object-fit: contain; }
+.lxc__logo-initials {
+  font-size: .9rem; font-weight: 800;
+  color: rgba(255,255,255,.4); letter-spacing: -.02em;
 }
-.lux-ch-card__logo-fallback {
-  display: flex; align-items: center; justify-content: center;
-  width: 100%; height: 100%;
-  font-size: .92rem; font-weight: 800;
-  color: var(--text2); letter-spacing: -.02em;
+.lxc__logo-ring {
+  position: absolute; inset: -2px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(34,197,94,.35);
+  pointer-events: none;
 }
 
-/* Channel info */
-.lux-ch-card__info { display: flex; flex-direction: column; gap: 3px; }
-.lux-ch-card__name {
-  font-size: .83rem; font-weight: 700;
-  color: var(--text); line-height: 1.35;
+/* Name + lang */
+.lxc__info {
+  display: flex; flex-direction: column; gap: 3px;
+  position: relative; z-index: 1;
+  flex: 1;
+}
+.lxc__name {
+  font-size: .82rem; font-weight: 700;
+  color: rgba(255,255,255,.82); line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   transition: color .2s;
+  text-align: right;
 }
-.lux-ch-card:hover .lux-ch-card__name { color: var(--accent2); }
-.lux-ch-card--active .lux-ch-card__name { color: #93c5fd; }
-.lux-ch-card__lang {
-  font-size: .66rem; color: var(--text3);
-  text-transform: uppercase; letter-spacing: .08em;
-}
-
-/* Embed indicator */
-.lux-ch-card__embed-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: .55;
-  align-self: flex-end;
-  margin-top: auto;
-  box-shadow: 0 0 6px var(--accent);
+.lxc:hover .lxc__name  { color: #bfdbfe; }
+.lxc--active .lxc__name { color: #93c5fd; }
+.lxc__lang {
+  font-size: .6rem; font-weight: 800;
+  color: rgba(255,255,255,.2);
+  letter-spacing: .12em; text-transform: uppercase;
+  text-align: right;
 }
 
-/* Active shimmer overlay */
-.lux-ch-card__active-overlay {
-  position: absolute; inset: 0;
-  border-radius: 13px;
-  background: linear-gradient(
-    135deg,
-    rgba(59,130,246,.07) 0%,
-    transparent 60%
-  );
+/* Bottom slot line */
+.lxc__slot-line {
+  position: absolute;
+  bottom: 0; left: 12%; right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
   pointer-events: none;
 }
+.lxc--active .lxc__slot-line {
+  background: linear-gradient(90deg, transparent, rgba(59,130,246,.3), transparent);
+}
 
-/* ── nav badge keep working ── */
+/* nav badge keep working */
 .live-badge-inline {
   background: var(--red); color: #fff;
   padding: 2px 7px; border-radius: 999px;
