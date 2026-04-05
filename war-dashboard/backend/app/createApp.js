@@ -10,6 +10,7 @@ const ingestionRoutes = require('../modules/ingestion/routes');
 const newsFeedRoutes = require('../modules/news-feed/routes');
 const observabilityRoutes = require('../modules/observability/routes');
 const intelligenceRoutes = require('../modules/intelligence/routes');
+const podcastsRoutes = require('../modules/podcasts/routes');
 const legacyClaudeHandler = require('../../api/claude');
 
 function createApp() {
@@ -43,6 +44,7 @@ function createApp() {
   app.use('/api', sourcesRoutes);
   app.use('/api', ingestionRoutes);
   app.use('/api', newsFeedRoutes);
+  app.use('/api', podcastsRoutes);
 
   app.use((err, req, res, _next) => {
     logger.error('http_error', {

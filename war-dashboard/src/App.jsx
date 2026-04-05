@@ -34,6 +34,7 @@ const TABS = [
   { id: 'news',       label: 'الأخبار',          icon: '📰' },
   { id: 'editorial',  label: 'التحرير الذكي',    icon: '🧠' },
   { id: 'live',       label: 'البث المباشر',     icon: '📡' },
+  { id: 'podcast',    label: 'البودكاست',        icon: '🎙️' },
   { id: 'ops',        label: 'غرفة الأخبار',     icon: '🧭' },
   { id: 'map',        label: 'خريطة الأحداث',    icon: '🗺️' },
 ];
@@ -1538,6 +1539,15 @@ export default function App() {
   const liveRequestRef = React.useRef(0);
   const hasAutoSelectedLiveRef = React.useRef(false);
 
+  /* ── Podcast ── */
+  const [podcastSources,    setPodcastSources]    = useState([]);
+  const [selectedPodcastId, setSelectedPodcastId] = useState(null);
+  const [podcastEpisodes,   setPodcastEpisodes]   = useState([]);
+  const [podcastMeta,       setPodcastMeta]       = useState(null);
+  const [loadingPodcast,    setLoadingPodcast]    = useState(false);
+  const [errorPodcast,      setErrorPodcast]      = useState(null);
+  const [playingEpisode,    setPlayingEpisode]    = useState(null);
+
   /* ── Ops ── */
   const [newsroomStatus, setNewsroomStatus] = useState(null);
   const [metricsBasic,   setMetricsBasic]   = useState(null);
@@ -1608,6 +1618,42 @@ export default function App() {
       }
     }
   }, []);
+
+  /* ─── Podcast Loaders ─── */
+  const loadPodcastSources = useCallback(async () => {
+    try {
+      const res = await fetch('/api/podcasts/list');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const sources = data.sources || [];
+      setPodcastSources(sources);
+      if (!selectedPodcastId) {
+        const firstRss = sources.find(s => s.type === 'rss');
+        if (firstRss) setSelectedPodcastId(firstRss.id);
+      }
+    } catch (err) {
+      setErrorPodcast(err.message);
+    }
+  }, [selectedPodcastId]);
+
+  const loadPodcastFeed = useCallback(async (sourceId) => {
+    const source = podcastSources.find(s => s.id === sourceId);
+    if (!source || source.type !== 'rss') return;
+    setLoadingPodcast(true);
+    setErrorPodcast(null);
+    setPodcastEpisodes([]);
+    try {
+      const res = await fetch(`/api/podcasts/feed?url=${encodeURIComponent(source.rss)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setPodcastMeta({ title: data.feed_title, description: data.feed_description, image: data.image });
+      setPodcastEpisodes(data.episodes || []);
+    } catch (err) {
+      setErrorPodcast(err.message || 'فشل تحميل الحلقات');
+    } finally {
+      setLoadingPodcast(false);
+    }
+  }, [podcastSources]);
 
   /* ─── TV Channel Switcher (with static noise animation) ─── */
   const handleTvSelect = React.useCallback((stream) => {
@@ -1712,6 +1758,18 @@ export default function App() {
     }, 400);
     return () => clearTimeout(searchTimer.current);
   }, [searchQ]); // eslint-disable-line
+
+  /* ─── Podcast tab: load sources on first visit ─── */
+  useEffect(() => {
+    if (activeTab !== 'podcast') return;
+    if (podcastSources.length === 0) loadPodcastSources();
+  }, [activeTab]); // eslint-disable-line
+
+  /* ─── Podcast feed: fetch when selection changes ─── */
+  useEffect(() => {
+    if (!selectedPodcastId || podcastSources.length === 0) return;
+    loadPodcastFeed(selectedPodcastId);
+  }, [selectedPodcastId, podcastSources]); // eslint-disable-line
 
   /* ─── Auto-refresh ─── */
   useEffect(() => {
@@ -2642,6 +2700,176 @@ export default function App() {
             }
           </div>
         )}
+
+        {/* ═══════════════════════════════════════════
+            PODCAST TAB  🎙️
+        ═══════════════════════════════════════════ */}
+        {activeTab === 'podcast' && (() => {
+          const selectedSource = podcastSources.find(s => s.id === selectedPodcastId);
+          const isExternal = selectedSource?.type === 'external';
+          return (
+            <div className="pod-arena" dir="rtl">
+
+              {/* ── Header ── */}
+              <div className="pod-header">
+                <div>
+                  <div className="pod-header__eyebrow">
+                    <span className="pod-header__pulse" />
+                    محتوى صوتي
+                  </div>
+                  <h2 className="pod-header__title">البودكاست العربي</h2>
+                  <p className="pod-header__sub">تحليلات وأخبار وتقارير صوتية من أبرز المصادر العربية والدولية</p>
+                </div>
+              </div>
+
+              <div className="pod-layout">
+
+                {/* ── Source list sidebar ── */}
+                <aside className="pod-sidebar">
+                  <div className="pod-sidebar__label">المصادر</div>
+                  {podcastSources.map((source) => (
+                    <button
+                      key={source.id}
+                      className={`pod-source-btn${selectedPodcastId === source.id ? ' pod-source-btn--active' : ''}`}
+                      onClick={() => setSelectedPodcastId(source.id)}
+                    >
+                      <div className="pod-source-btn__icon">
+                        {source.type === 'external' ? '🔗' : '🎙️'}
+                      </div>
+                      <div className="pod-source-btn__body">
+                        <span className="pod-source-btn__name">{source.name}</span>
+                        <span className="pod-source-btn__cat">
+                          {source.category === 'news' ? 'أخبار' : source.category === 'analysis' ? 'تحليل' : source.category}
+                        </span>
+                      </div>
+                      {source.type === 'external' && <span className="pod-source-btn__ext">↗</span>}
+                    </button>
+                  ))}
+                </aside>
+
+                {/* ── Main content area ── */}
+                <div className="pod-main">
+
+                  {/* External source card */}
+                  {isExternal && selectedSource && (
+                    <div className="pod-external-card">
+                      <div className="pod-external-card__icon">🎙️</div>
+                      <div className="pod-external-card__body">
+                        <h3 className="pod-external-card__name">{selectedSource.name}</h3>
+                        <p className="pod-external-card__desc">{selectedSource.description}</p>
+                        <a
+                          href={selectedSource.external_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="pod-external-card__cta"
+                        >
+                          مشاهدة المحتوى
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        </a>
+                        <p className="pod-external-card__note">⚠ لا تتوفر حلقات قابلة للتشغيل مباشرة. يُنصح بمتابعة المحتوى من المنصة الأصلية.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* RSS episodes */}
+                  {!isExternal && (
+                    <>
+                      {loadingPodcast && <LoadingSpinner label="جارٍ تحميل الحلقات…" />}
+                      {errorPodcast && !loadingPodcast && (
+                        <ErrorBanner
+                          message={errorPodcast}
+                          onRetry={() => loadPodcastFeed(selectedPodcastId)}
+                        />
+                      )}
+                      {!loadingPodcast && !errorPodcast && podcastMeta && (
+                        <div className="pod-feed-meta">
+                          {podcastMeta.image && (
+                            <img src={podcastMeta.image} alt={podcastMeta.title} className="pod-feed-meta__img" />
+                          )}
+                          <div>
+                            <h3 className="pod-feed-meta__title">{podcastMeta.title}</h3>
+                            {podcastMeta.description && (
+                              <p className="pod-feed-meta__desc">{podcastMeta.description.slice(0, 180)}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {!loadingPodcast && podcastEpisodes.length > 0 && (
+                        <div className="pod-episodes">
+                          {podcastEpisodes.map((ep) => (
+                            <button
+                              key={ep.id}
+                              className={`pod-ep${playingEpisode?.id === ep.id ? ' pod-ep--playing' : ''}`}
+                              onClick={() => setPlayingEpisode(ep.audio_url ? ep : null)}
+                            >
+                              <div className="pod-ep__play">
+                                {playingEpisode?.id === ep.id
+                                  ? <span className="pod-ep__play-bars"><span/><span/><span/></span>
+                                  : <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                                }
+                              </div>
+                              <div className="pod-ep__body">
+                                <p className="pod-ep__title">{ep.title}</p>
+                                <div className="pod-ep__meta">
+                                  {ep.published_at && <span>{new Date(ep.published_at).toLocaleDateString('ar', { year: 'numeric', month: 'short', day: 'numeric' })}</span>}
+                                  {ep.duration && <span>· {ep.duration}</span>}
+                                  {!ep.audio_url && <span className="pod-ep__no-audio">· بدون رابط صوتي</span>}
+                                </div>
+                                {ep.description && (
+                                  <p className="pod-ep__desc">{ep.description.slice(0, 120)}{ep.description.length > 120 ? '…' : ''}</p>
+                                )}
+                              </div>
+                              {ep.link && (
+                                <a
+                                  href={ep.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="pod-ep__link"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="فتح في المصدر"
+                                >
+                                  ↗
+                                </a>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {!loadingPodcast && !errorPodcast && podcastEpisodes.length === 0 && selectedSource && (
+                        <div className="pod-empty">لا توجد حلقات متاحة</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Persistent audio player bar ── */}
+              {playingEpisode && (
+                <div className="pod-player-bar" dir="rtl">
+                  <div className="pod-player-bar__info">
+                    <span className="pod-player-bar__icon">🎙️</span>
+                    <span className="pod-player-bar__title">{playingEpisode.title}</span>
+                  </div>
+                  <audio
+                    key={playingEpisode.id}
+                    src={playingEpisode.audio_url}
+                    controls
+                    autoPlay
+                    className="pod-player-bar__audio"
+                  />
+                  <button
+                    className="pod-player-bar__close"
+                    onClick={() => setPlayingEpisode(null)}
+                    aria-label="إغلاق المشغل"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              )}
+
+            </div>
+          );
+        })()}
 
       </main>
 
@@ -5737,6 +5965,271 @@ img { display: block; max-width: 100%; }
   .np-lead__headline { font-size: 1.02rem; }
   .np-secondary__headline { font-size: .73rem; }
   .np-focus-card { padding: 18px 14px 14px; }
+}
+
+/* ══════════════════════════════════════════════════════
+   PODCAST TAB  🎙️
+══════════════════════════════════════════════════════ */
+.pod-arena {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 16px;
+  padding-bottom: 80px; /* space for player bar */
+}
+.pod-header {
+  padding: 24px 0 20px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  margin-bottom: 24px;
+}
+.pod-header__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(139,92,246,.8);
+  margin-bottom: 6px;
+}
+.pod-header__pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #8b5cf6;
+  box-shadow: 0 0 8px rgba(139,92,246,.7);
+  animation: pod-pulse 2s ease infinite;
+}
+@keyframes pod-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .5; transform: scale(.75); }
+}
+.pod-header__title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.pod-header__sub {
+  font-size: .84rem;
+  color: rgba(255,255,255,.45);
+}
+
+/* Layout */
+.pod-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 680px) {
+  .pod-layout { grid-template-columns: 1fr; }
+}
+
+/* Sidebar */
+.pod-sidebar {
+  position: sticky;
+  top: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pod-sidebar__label {
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.28);
+  padding: 0 2px 8px;
+}
+.pod-source-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.03);
+  color: rgba(255,255,255,.6);
+  cursor: pointer;
+  text-align: right;
+  transition: all .18s;
+  position: relative;
+}
+.pod-source-btn:hover { background: rgba(139,92,246,.1); border-color: rgba(139,92,246,.28); color: #e9d5ff; }
+.pod-source-btn--active {
+  background: rgba(139,92,246,.14);
+  border-color: rgba(139,92,246,.38);
+  color: #f5f3ff;
+}
+.pod-source-btn__icon { font-size: 1.1rem; flex-shrink: 0; }
+.pod-source-btn__body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.pod-source-btn__name { font-size: .82rem; font-weight: 700; line-height: 1.2; }
+.pod-source-btn__cat { font-size: .68rem; color: rgba(255,255,255,.32); }
+.pod-source-btn--active .pod-source-btn__cat { color: rgba(167,139,250,.6); }
+.pod-source-btn__ext { font-size: .9rem; color: rgba(255,255,255,.3); flex-shrink: 0; }
+
+/* Feed meta */
+.pod-feed-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+.pod-feed-meta__img {
+  width: 68px; height: 68px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+}
+.pod-feed-meta__title {
+  font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 4px;
+}
+.pod-feed-meta__desc {
+  font-size: .8rem; color: rgba(255,255,255,.45); line-height: 1.5;
+}
+
+/* Episode list */
+.pod-episodes { display: flex; flex-direction: column; gap: 6px; }
+.pod-ep {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.03);
+  color: var(--text);
+  cursor: pointer;
+  text-align: right;
+  transition: all .18s;
+  position: relative;
+}
+.pod-ep:hover { background: rgba(139,92,246,.07); border-color: rgba(139,92,246,.22); }
+.pod-ep--playing {
+  background: rgba(139,92,246,.14);
+  border-color: rgba(139,92,246,.4);
+}
+.pod-ep__play {
+  width: 36px; height: 36px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(139,92,246,.18);
+  color: #c4b5fd;
+}
+.pod-ep__play svg { width: 14px; height: 14px; }
+.pod-ep--playing .pod-ep__play { background: rgba(139,92,246,.35); }
+.pod-ep__play-bars {
+  display: flex; gap: 2.5px; align-items: flex-end; height: 14px;
+}
+.pod-ep__play-bars span {
+  width: 3px; border-radius: 2px; background: #a78bfa;
+  animation: pod-bars .9s ease infinite;
+}
+.pod-ep__play-bars span:nth-child(1) { height: 8px; animation-delay: 0s; }
+.pod-ep__play-bars span:nth-child(2) { height: 14px; animation-delay: .15s; }
+.pod-ep__play-bars span:nth-child(3) { height: 6px; animation-delay: .3s; }
+@keyframes pod-bars {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(.4); }
+}
+.pod-ep__body { flex: 1; min-width: 0; }
+.pod-ep__title { font-size: .875rem; font-weight: 700; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.pod-ep__meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: .72rem; color: rgba(255,255,255,.38); margin-bottom: 4px; }
+.pod-ep__no-audio { color: rgba(239,68,68,.5); }
+.pod-ep__desc { font-size: .78rem; color: rgba(255,255,255,.38); line-height: 1.5; margin: 0; }
+.pod-ep__link {
+  font-size: .88rem; color: rgba(139,92,246,.7); flex-shrink: 0;
+  padding: 4px 6px; border-radius: 6px; background: rgba(139,92,246,.08);
+  transition: background .15s;
+}
+.pod-ep__link:hover { background: rgba(139,92,246,.2); color: #c4b5fd; }
+
+/* External card */
+.pod-external-card {
+  display: flex;
+  gap: 20px;
+  padding: 28px;
+  border: 1px solid rgba(139,92,246,.25);
+  border-radius: 14px;
+  background: rgba(139,92,246,.07);
+}
+.pod-external-card__icon { font-size: 2.4rem; flex-shrink: 0; }
+.pod-external-card__body { flex: 1; }
+.pod-external-card__name { font-size: 1.2rem; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+.pod-external-card__desc { font-size: .86rem; color: rgba(255,255,255,.55); line-height: 1.6; margin-bottom: 16px; }
+.pod-external-card__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: rgba(139,92,246,.2);
+  border: 1px solid rgba(139,92,246,.4);
+  color: #c4b5fd;
+  font-size: .84rem;
+  font-weight: 700;
+  transition: all .2s;
+}
+.pod-external-card__cta:hover { background: rgba(139,92,246,.35); color: #ede9fe; }
+.pod-external-card__note { font-size: .75rem; color: rgba(255,255,255,.3); margin-top: 10px; }
+
+/* Empty */
+.pod-empty { padding: 40px; text-align: center; color: rgba(255,255,255,.3); font-size: .9rem; }
+
+/* Persistent player bar */
+.pod-player-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: rgba(10, 8, 20, .97);
+  border-top: 1px solid rgba(139,92,246,.25);
+  backdrop-filter: blur(18px);
+}
+.pod-player-bar__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 280px;
+  flex-shrink: 0;
+}
+.pod-player-bar__icon { font-size: 1.2rem; flex-shrink: 0; }
+.pod-player-bar__title {
+  font-size: .8rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.75);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pod-player-bar__audio {
+  flex: 1;
+  height: 36px;
+  min-width: 0;
+  accent-color: #8b5cf6;
+}
+.pod-player-bar__close {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,.08);
+  border: none;
+  color: rgba(255,255,255,.5);
+  cursor: pointer;
+  transition: background .15s;
+}
+.pod-player-bar__close:hover { background: rgba(239,68,68,.2); color: #fca5a5; }
+@media (max-width: 560px) {
+  .pod-player-bar { flex-wrap: wrap; }
+  .pod-player-bar__info { max-width: 100%; }
+  .pod-player-bar__audio { width: 100%; }
 }
 `;
 
