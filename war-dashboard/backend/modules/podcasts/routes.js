@@ -18,9 +18,10 @@ const rssParser = new Parser({
    ALLOWED RSS FEEDS — only these may be proxied (prevents SSRF)
 ───────────────────────────────────────────────────────────────── */
 const ALLOWED_RSS_URLS = new Set([
-  'https://podcasts.files.bbci.co.uk/p00pgk7p.rss',
-  'https://podcasts.files.bbci.co.uk/p02pc9qx.rss',
-  'https://rss.dw.com/xml/podcast-arabic',
+  'https://podcasts.files.bbci.co.uk/p0h6d6nm.rss',
+  'https://podcasts.files.bbci.co.uk/p02pc9qc.rss',
+  'https://podcasts.files.bbci.co.uk/p086jpqy.rss',
+  'https://feed.podbean.com/arabnews/feed.xml',
 ]);
 
 /* ─────────────────────────────────────────────────────────────────
@@ -28,32 +29,42 @@ const ALLOWED_RSS_URLS = new Set([
 ───────────────────────────────────────────────────────────────── */
 const PODCAST_SOURCES = [
   {
-    id: 'bbc-arabic-daily',
-    name: 'بي بي سي عربي — يومك',
-    description: 'موجز أخبار صوتي يومي يشمل أبرز الأحداث العالمية والعربية',
-    language: 'ar',
-    category: 'news',
-    rss: 'https://podcasts.files.bbci.co.uk/p00pgk7p.rss',
-    type: 'rss',
-    logo: null,
-  },
-  {
-    id: 'bbc-arabic-press',
-    name: 'نافذة على الصحافة — بي بي سي',
-    description: 'قراءة تحليلية أسبوعية للصحافة العالمية والعربية',
+    id: 'bbc-noteworthy',
+    name: 'يستحق الانتباه — بي بي سي',
+    description: 'بودكاست عربي تحليلي من بي بي سي مع حلقات صوتية فعلية قابلة للتشغيل',
     language: 'ar',
     category: 'analysis',
-    rss: 'https://podcasts.files.bbci.co.uk/p02pc9qx.rss',
+    rss: 'https://podcasts.files.bbci.co.uk/p0h6d6nm.rss',
     type: 'rss',
     logo: null,
   },
   {
-    id: 'dw-arabic',
-    name: 'دويتشه فيله عربي',
-    description: 'أخبار وتحليلات ووثائقيات صوتية من إذاعة ألمانيا الدولية',
+    id: 'bbc-extra',
+    name: 'بي بي سي إكسترا',
+    description: 'حلقات صوتية عربية متنوعة من شبكة بي بي سي العربية',
+    language: 'ar',
+    category: 'analysis',
+    rss: 'https://podcasts.files.bbci.co.uk/p02pc9qc.rss',
+    type: 'rss',
+    logo: null,
+  },
+  {
+    id: 'bbc-special-coverage',
+    name: 'تغطية خاصة — بي بي سي',
+    description: 'تغطيات خاصة وتقارير معمقة بحلقات صوتية عربية',
     language: 'ar',
     category: 'news',
-    rss: 'https://rss.dw.com/xml/podcast-arabic',
+    rss: 'https://podcasts.files.bbci.co.uk/p086jpqy.rss',
+    type: 'rss',
+    logo: null,
+  },
+  {
+    id: 'arab-news',
+    name: 'Arab News Podcast',
+    description: 'بودكاست إخباري وتحليلي من Arab News مع ملفات صوتية فعلية',
+    language: 'ar',
+    category: 'news',
+    rss: 'https://feed.podbean.com/arabnews/feed.xml',
     type: 'rss',
     logo: null,
   },
