@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 
 /* ─────────────────────────────────────────────────
    CONSTANTS
@@ -31,7 +32,7 @@ const TABS = [
   { id: 'editorial',  label: 'التحرير الذكي',    icon: '🧠' },
   { id: 'live',       label: 'البث المباشر',     icon: '📡' },
   { id: 'ops',        label: 'غرفة الأخبار',     icon: '🧭' },
-  { id: 'ai',         label: 'مساعد ذكي',        icon: '🤖' },
+  { id: 'map',        label: 'خريطة الأحداث',    icon: '🗺️' },
 ];
 
 const URGENCY_WEIGHT = { high: 3, medium: 2, low: 1 };
@@ -49,14 +50,6 @@ const ALERT_THRESHOLDS = {
   failing_sources_warning:  2,
 };
 
-const SUGGESTED_PROMPTS = [
-  { label: '⚡ العاجل',          q: 'ما أبرز الأخبار العاجلة الآن؟ رتّبها حسب الأهمية.' },
-  { label: '🔍 تحليل الموقف', q: 'حلّل التوترات في الشرق الأوسط من الأخبار الحالية.' },
-  { label: '⚖️ تناقضات',       q: 'هل هناك تناقضات بين المصادر حول نفس الحدث؟' },
-  { label: '📊 الأوثق',          q: 'ما الأخبار الأكثر توثيقاً ومصداقية في هذه الدفعة؟' },
-  { label: '🌍 الصورة الكبيرة', q: 'كيف تلخص المشهد الجيوسياسي الراهن في المنطقة؟' },
-];
-
 const PLACEHOLDER_IMGS = [
   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=60',
   'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=800&q=60',
@@ -64,6 +57,21 @@ const PLACEHOLDER_IMGS = [
   'https://images.unsplash.com/photo-1526628953301-3cd40f68f9e3?w=800&q=60',
   'https://images.unsplash.com/photo-1611605698335-8b1569810432?w=800&q=60',
 ];
+
+const CATEGORY_COORDS = {
+  war:        [33.5, 43.7],
+  iran:       [32.4, 53.7],
+  israel:     [31.8, 35.2],
+  gulf:       [24.7, 46.7],
+  usa:        [38.9, -77.0],
+  politics:   [51.5, -0.1],
+  economy:    [40.7, -74.0],
+  energy:     [27.0, 50.0],
+  world:      [48.9, 2.3],
+  breaking:   [31.5, 36.0],
+  analysis:   [25.0, 55.0],
+  technology: [37.3, -122.0],
+};
 
 /* ─────────────────────────────────────────────────
    UTILITIES
@@ -738,107 +746,157 @@ function AlertsPanel({ alerts }) {
 }
 
 /* ─────────────────────────────────────────────────
-   AI CHAT
+   EVENTS MAP  ★★★★★★★
 ───────────────────────────────────────────────── */
-function AiChat({ newsItems }) {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', text: 'مرحباً! أنا محللك الجيوسياسي. يمكنك سؤالي عن أي حدث أو تطلب تحليلاً بناءً على أخبار اليوم الفعلية.' }
-  ]);
-  const [input, setInput]   = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
+function hashJitter(str, scale) {
+  scale = scale || 1.6;
+  var h = 0;
+  for (var i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  var lat = (((h >>> 0) % 1000) / 1000 - 0.5) * 2 * scale;
+  var lng = ((((h * 1000003) >>> 0) % 1000) / 1000 - 0.5) * 2 * scale;
+  return [lat, lng];
+}
 
+function MapFlyTo({ pos, zoom }) {
+  const map = useMap();
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (pos) map.flyTo(pos, zoom || 6, { duration: 1.2 });
+  }, [pos, zoom, map]);
+  return null;
+}
 
-  const send = useCallback(async (forcedText = '') => {
-    const text = (forcedText || input).trim();
-    if (!text || loading) return;
-    if (!forcedText) setInput('');
-    setMessages(m => [...m, { role: 'user', text }]);
-    setLoading(true);
-    try {
-      const items = (newsItems || []).slice(0, 25);
-      const ctx = items.map(h => {
-        const cat     = CATEGORIES.find(c => c.id === h.category)?.label || h.category;
-        const urgTag  = h.urgency === 'high' ? ' ⚡عاجل' : h.urgency === 'medium' ? ' ●مهم' : '';
-        const trust   = h.source?.trust_score != null
-          ? ` [ثقة: ${Math.round(h.source.trust_score * 100)}%]` : '';
-        const vState  = h.provenance?.verification?.state
-          ? ` [${verificationLabel(h.provenance.verification.state)}]` : '';
-        const corr    = Number(h.provenance?.cluster?.corroboration_count || 0);
-        const corrTag = corr > 1 ? ` (${corr} مصادر داعمة)` : '';
-        const sum     = h.summary
-          ? `\n   الملخص: ${stripHtml(h.summary).slice(0, 120)}` : '';
-        return `• [${cat}]${urgTag}${trust}${vState}${corrTag}\n   ${h.title}${sum}\n   المصدر: ${h.source?.name || '؟'}`;
-      }).join('\n\n');
-      const res = await fetch('/api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          context: ctx ? `أخبار اليوم (${items.length} خبر):\n${ctx}` : '',
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const reply = data.response || data.content || data.text || 'لم أتمكن من توليد رد.';
-      setMessages(m => [...m, { role: 'assistant', text: reply }]);
-    } catch (err) {
-      setMessages(m => [...m, { role: 'assistant', text: `⚠ خطأ: ${err.message}` }]);
-    } finally {
-      setLoading(false);
-    }
-  }, [input, loading, newsItems]);
+function EventsMap({ newsItems }) {
+  const [selected, setSelected] = useState(null);
+  const [urgFilter, setUrgFilter] = useState('all');
 
-  const handleKey = useCallback(e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  }, [send]);
+  const allMapped = useMemo(() =>
+    newsItems.slice(0, 250).filter(it => CATEGORY_COORDS[it.category]),
+    [newsItems]
+  );
+  const items = useMemo(() =>
+    urgFilter === 'all' ? allMapped : allMapped.filter(it => it.urgency === urgFilter),
+    [allMapped, urgFilter]
+  );
+
+  const flyPos = useMemo(() => {
+    if (!selected) return null;
+    const base = CATEGORY_COORDS[selected.category];
+    if (!base) return null;
+    const [jLat, jLng] = hashJitter(String(selected.id || selected.title || ''));
+    return [base[0] + jLat, base[1] + jLng];
+  }, [selected]);
 
   return (
-    <div className="ai-chat" dir="rtl">
-      <div className="ai-chat__history">
-        {messages.map((m, i) => (
-          <div key={i} className={`ai-msg ai-msg--${m.role}`}>
-            <div className="ai-msg__bubble">{m.text}</div>
-          </div>
-        ))}
-        {loading && (
-          <div className="ai-msg ai-msg--assistant">
-            <div className="ai-msg__bubble ai-msg__bubble--typing">
-              <span /><span /><span />
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
+    <div className="mp-inner">
+      {/* ── Map ── */}
+      <div className="mp-map-wrap">
+        <MapContainer
+          center={[31, 38]}
+          zoom={4}
+          className="mp-map"
+          zoomControl={false}
+          scrollWheelZoom
+          attributionControl={false}
+        >
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            subdomains="abcd"
+            maxZoom={19}
+          />
+          {flyPos && <MapFlyTo pos={flyPos} zoom={6} />}
+          {items.map((item, i) => {
+            const base = CATEGORY_COORDS[item.category] || [31, 38];
+            const [jLat, jLng] = hashJitter(String(item.id || item.title || i));
+            const pos = [base[0] + jLat, base[1] + jLng];
+            const isHigh = item.urgency === 'high';
+            const isMed  = item.urgency === 'medium';
+            const color  = isHigh ? '#ef4444' : isMed ? '#f59e0b' : '#3b82f6';
+            const r      = isHigh ? 9 : isMed ? 6 : 5;
+            return (
+              <CircleMarker
+                key={item.id || i}
+                center={pos}
+                radius={r}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.78, weight: isHigh ? 2 : 1.2 }}
+                eventHandlers={{ click: () => setSelected(s => s === item ? null : item) }}
+              >
+                <Popup>
+                  <div className="mp-popup" dir="rtl">
+                    <p className="mp-popup__title">{item.title}</p>
+                    <span className="mp-popup__meta">{item.source?.name} · {relativeTime(item.time)}</span>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+        </MapContainer>
+
+        {/* Legend overlay */}
+        <div className="mp-legend">
+          <div className="mp-legend__item"><span className="mp-legend__dot mp-legend__dot--red" />عاجل</div>
+          <div className="mp-legend__item"><span className="mp-legend__dot mp-legend__dot--amber" />مهم</div>
+          <div className="mp-legend__item"><span className="mp-legend__dot mp-legend__dot--blue" />عادي</div>
+        </div>
       </div>
-      <div className="ai-chat__suggestions">
-        {SUGGESTED_PROMPTS.map((p, i) => (
-          <button
-            key={i}
-            className="ai-suggest-btn"
-            onClick={() => send(p.q)}
-            disabled={loading}
-          >
-            {p.label}
-          </button>
-        ))}
+
+      {/* ── Filter row ── */}
+      <div className="mp-filter-row">
+        <div className="mp-filter-tabs">
+          {[
+            { id: 'all',    label: `الكل (${allMapped.length})` },
+            { id: 'high',   label: '⚡ عاجل' },
+            { id: 'medium', label: '● مهم' },
+            { id: 'low',    label: '◦ عادي' },
+          ].map(f => (
+            <button key={f.id} className={`mp-ftab ${urgFilter === f.id ? 'mp-ftab--active' : ''}`} onClick={() => setUrgFilter(f.id)}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <span className="mp-count">{items.length} حدث على الخريطة</span>
       </div>
-      <div className="ai-chat__input-row">
-        <textarea
-          className="ai-chat__input"
-          placeholder="اكتب سؤالك…"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          rows={2}
-          disabled={loading}
-          dir="rtl"
-        />
-        <button className="btn btn--primary" onClick={() => send()} disabled={loading || !input.trim()}>
-          {loading ? '…' : 'إرسال'}
-        </button>
+
+      {/* ── Selected detail ── */}
+      {selected && (() => {
+        const isHigh = selected.urgency === 'high';
+        const isMed  = selected.urgency === 'medium';
+        return (
+          <div className={`mp-selected-card mp-selected-card--${selected.urgency}`}>
+            <button className="mp-selected-card__close" onClick={() => setSelected(null)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <span className="mp-selected-card__urg">
+              {isHigh ? '⚡ عاجل' : isMed ? '● مهم' : '◦ عادي'}
+            </span>
+            <h4 className="mp-selected-card__title">{selected.title}</h4>
+            <p className="mp-selected-card__meta">{selected.source?.name} · {relativeTime(selected.time)}</p>
+          </div>
+        );
+      })()}
+
+      {/* ── Events list ── */}
+      <div className="mp-events-list">
+        <div className="mp-events-list__hdr">أحدث الأحداث</div>
+        {newsItems.slice(0, 30).map((item, i) => {
+          const isHigh = item.urgency === 'high';
+          const isMed  = item.urgency === 'medium';
+          const dotColor = isHigh ? '#ef4444' : isMed ? '#f59e0b' : '#3b82f6';
+          return (
+            <button
+              key={item.id || i}
+              className={`mp-event-item ${selected === item ? 'mp-event-item--active' : ''}`}
+              onClick={() => setSelected(s => s === item ? null : item)}
+              dir="rtl"
+            >
+              <span className="mp-event-item__dot" style={{ background: dotColor, boxShadow: isHigh ? `0 0 8px ${dotColor}` : 'none' }} />
+              <div className="mp-event-item__body">
+                <p className="mp-event-item__title">{item.title}</p>
+                <span className="mp-event-item__meta">{item.source?.name} · {relativeTime(item.time)}</span>
+              </div>
+              <span className="mp-event-item__cat">{CATEGORIES.find(c => c.id === item.category)?.label || item.category}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1188,6 +1246,12 @@ export default function App() {
   useEffect(() => {
     if (activeTab !== 'editorial') return;
     if (!editorialBriefing && !loadingNews) loadNews('all', '', 1);
+  }, [activeTab]); // eslint-disable-line
+
+  /* ─── Load news when map tab opens ─── */
+  useEffect(() => {
+    if (activeTab !== 'map') return;
+    if (newsItems.length === 0 && !loadingNews) loadNews('all', '', 1);
   }, [activeTab]); // eslint-disable-line
 
   /* ─── Auto-refresh SITREP every 30 min ─── */
@@ -1776,16 +1840,66 @@ export default function App() {
           </div>
         )}
 
-        {/* ═══════════════════════════════
-            AI TAB
-        ═══════════════════════════════ */}
-        {activeTab === 'ai' && (
-          <div className="ai-view">
-            <div className="ai-view__header" dir="rtl">
-              <h2>🤖 المساعد الذكي</h2>
-              <p className="ai-view__sub">مدعوم بـ Claude AI — اسألني عن أي خبر أو حدث</p>
+        {/* ═══════════════════════════════════════════
+            MAP TAB  ★★★★★★★ LUXURY
+        ═══════════════════════════════════════════ */}
+        {activeTab === 'map' && (
+          <div className="mp-arena" dir="rtl">
+
+            {/* ══ COMMAND HEADER ══ */}
+            <div className="mp-hdr">
+              <div className="mp-hdr__left">
+                <div className="mp-hdr__eyebrow">
+                  <span className="mp-hdr__pulse" />
+                  رصد جيوسياسي
+                </div>
+                <h2 className="mp-hdr__title">خريطة الأحداث</h2>
+                <p className="mp-hdr__sub">
+                  {newsItems.length > 0
+                    ? `${newsItems.filter(i => CATEGORY_COORDS[i.category]).length} حدث على الخريطة · ${newsItems.filter(i => i.urgency === 'high').length} عاجل`
+                    : 'رصد جيوسياسي على مدار الساعة'}
+                </p>
+              </div>
+              <button className="mp-hdr__refresh" onClick={() => loadNews('all', '', 1)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                تحديث
+              </button>
             </div>
-            <AiChat newsItems={newsItems} />
+
+            {/* ══ HUD STATS BAR ══ */}
+            <div className="mp-hud-bar">
+              <div className="mp-hud-bar__inner">
+                <div className="mp-hud-stat mp-hud-stat--red">
+                  <span className="mp-hud-stat__val">{newsItems.filter(i => i.urgency === 'high').length}</span>
+                  <span className="mp-hud-stat__key">عاجل</span>
+                </div>
+                <div className="mp-hud-sep" />
+                <div className="mp-hud-stat mp-hud-stat--amber">
+                  <span className="mp-hud-stat__val">{newsItems.filter(i => i.urgency === 'medium').length}</span>
+                  <span className="mp-hud-stat__key">مهم</span>
+                </div>
+                <div className="mp-hud-sep" />
+                <div className="mp-hud-stat mp-hud-stat--blue">
+                  <span className="mp-hud-stat__val">{newsItems.filter(i => i.urgency === 'low').length}</span>
+                  <span className="mp-hud-stat__key">عادي</span>
+                </div>
+                <div className="mp-hud-sep" />
+                <div className="mp-hud-stat mp-hud-stat--gold">
+                  <span className="mp-hud-stat__val">{newsItems.length}</span>
+                  <span className="mp-hud-stat__key">الإجمالي</span>
+                </div>
+              </div>
+              <div className="mp-hud-bar__divider" />
+              <div className="mp-hud-bar__status">
+                <span className="mp-hud-bar__status-dot" />
+                <span className="mp-hud-bar__status-text">نظام الرصد: نشط</span>
+              </div>
+            </div>
+
+            {loadingNews
+              ? <LoadingSpinner label="جارٍ تحميل بيانات الأحداث…" />
+              : <EventsMap newsItems={newsItems} />
+            }
           </div>
         )}
 
@@ -3555,73 +3669,229 @@ img { display: block; max-width: 100%; }
 .src-name { font-weight: 600; }
 .src-fail-count { color: #f87171; font-size: .78rem; }
 
-/* ════════════════════════════════
-   AI CHAT
-════════════════════════════════ */
-.ai-view {
-  max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;
+/* ════════════════════════════════════════
+   MAP TAB  ★★★★★★★ LUXURY
+════════════════════════════════════════ */
+.mp-arena { display: flex; flex-direction: column; gap: 0; }
+
+.mp-hdr {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 28px 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  margin-bottom: 24px;
 }
-.ai-view__header { text-align: center; }
-.ai-view__header h2 { font-size: 1.5rem; font-weight: 800; margin-bottom: 6px; }
-.ai-view__sub { font-size: .85rem; color: var(--text2); }
-.ai-chat {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
-  height: calc(100vh - 280px); min-height: 420px;
+.mp-hdr__left { display: flex; flex-direction: column; gap: 4px; }
+.mp-hdr__eyebrow {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .68rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: #4ade80;
 }
-.ai-chat__history {
-  flex: 1; overflow-y: auto; padding: 20px;
-  display: flex; flex-direction: column; gap: 14px;
-  scroll-behavior: smooth;
+.mp-hdr__pulse {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 10px #22c55e, 0 0 24px rgba(34,197,94,.4);
+  animation: blink 1.6s ease-in-out infinite; flex-shrink: 0;
 }
-.ai-msg { display: flex; }
-.ai-msg--user { justify-content: flex-start; }
-.ai-msg--assistant { justify-content: flex-end; }
-.ai-msg__bubble {
-  max-width: 78%; padding: 10px 14px; border-radius: 14px;
-  font-size: .88rem; line-height: 1.6; white-space: pre-wrap;
+.mp-hdr__title {
+  font-size: 1.7rem; font-weight: 900; letter-spacing: -.04em; line-height: 1;
+  background: linear-gradient(100deg, #fff 30%, rgba(255,255,255,.5) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-.ai-msg--user .ai-msg__bubble {
-  background: var(--accent); color: #fff; border-bottom-left-radius: 4px;
+[data-theme="light"] .mp-hdr__title {
+  background: linear-gradient(100deg, #1a1d2e 30%, #4a5172 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-.ai-msg--assistant .ai-msg__bubble {
-  background: var(--bg3); color: var(--text); border-bottom-right-radius: 4px;
+.mp-hdr__sub { font-size: .78rem; color: var(--text3); letter-spacing: .01em; }
+.mp-hdr__refresh {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: 10px;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1);
+  color: var(--text2); font-size: .78rem; font-weight: 700; cursor: pointer;
+  transition: all .22s; flex-shrink: 0; letter-spacing: .02em;
 }
-.ai-msg__bubble--typing {
-  display: flex; gap: 5px; align-items: center; padding: 12px 16px;
+.mp-hdr__refresh:hover {
+  background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); color: #4ade80;
+  box-shadow: 0 0 16px rgba(34,197,94,.1);
 }
-.ai-msg__bubble--typing span {
-  width: 7px; height: 7px; background: var(--text3); border-radius: 50%;
-  animation: typing-bounce .8s ease-in-out infinite;
+
+/* HUD Bar */
+.mp-hud-bar {
+  display: flex; align-items: stretch; justify-content: space-between;
+  background: linear-gradient(135deg, rgba(6,8,16,.96) 0%, rgba(14,18,30,.94) 100%);
+  border: 1px solid rgba(34,197,94,.1); border-radius: 16px;
+  overflow: hidden; margin-bottom: 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
 }
-.ai-msg__bubble--typing span:nth-child(2) { animation-delay: .15s; }
-.ai-msg__bubble--typing span:nth-child(3) { animation-delay: .3s; }
-@keyframes typing-bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
-.ai-chat__input-row {
-  display: flex; gap: 8px; padding: 12px 16px;
-  border-top: 1px solid var(--border); background: var(--bg2);
+.mp-hud-bar__inner { display: flex; align-items: stretch; flex: 1; }
+.mp-hud-stat {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; padding: 18px 24px; flex: 1; transition: background .2s;
 }
-.ai-chat__input {
-  flex: 1; background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text);
-  font-size: .88rem; resize: none; outline: none;
-  transition: border-color .15s;
+.mp-hud-stat:hover { background: rgba(255,255,255,.02); }
+.mp-hud-stat__val {
+  font-size: 2rem; font-weight: 900; line-height: 1;
+  letter-spacing: -.05em; font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,.4);
 }
-.ai-chat__input:focus { border-color: var(--accent); }
-.ai-chat__suggestions {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  padding: 10px 14px; border-top: 1px solid var(--border);
-  background: var(--bg2);
+.mp-hud-stat--red   .mp-hud-stat__val { color: #fca5a5; text-shadow: 0 0 20px rgba(239,68,68,.5); }
+.mp-hud-stat--amber .mp-hud-stat__val { color: #fcd34d; text-shadow: 0 0 20px rgba(245,158,11,.5); }
+.mp-hud-stat--blue  .mp-hud-stat__val { color: #93c5fd; text-shadow: 0 0 20px rgba(147,197,253,.45); }
+.mp-hud-stat--gold  .mp-hud-stat__val { color: #4ade80; text-shadow: 0 0 20px rgba(34,197,94,.5); }
+.mp-hud-stat__key {
+  font-size: .6rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255,255,255,.2);
 }
-.ai-suggest-btn {
-  padding: 5px 12px; border-radius: 999px; font-size: .78rem;
-  border: 1px solid var(--border); background: var(--bg3);
-  color: var(--text2); cursor: pointer; transition: all .15s; white-space: nowrap;
+.mp-hud-sep {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.07) 30%, rgba(255,255,255,.07) 70%, transparent);
+  flex-shrink: 0;
 }
-.ai-suggest-btn:hover:not(:disabled) {
-  border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,.1);
+.mp-hud-bar__divider { width: 1px; background: rgba(255,255,255,.06); flex-shrink: 0; }
+.mp-hud-bar__status {
+  display: flex; align-items: center; gap: 8px; padding: 18px 22px; flex-shrink: 0;
 }
-.ai-suggest-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mp-hud-bar__status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34,197,94,.7), 0 0 16px rgba(34,197,94,.3);
+  animation: blink 2.2s ease-in-out infinite;
+}
+.mp-hud-bar__status-text {
+  font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: rgba(255,255,255,.22); white-space: nowrap;
+}
+
+/* Map wrap */
+.mp-inner { display: flex; flex-direction: column; gap: 16px; }
+.mp-map-wrap {
+  position: relative; border-radius: 18px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 24px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.mp-map { height: 58vh; min-height: 400px; width: 100%; }
+
+/* Legend overlay */
+.mp-legend {
+  position: absolute; bottom: 18px; right: 18px; z-index: 1000;
+  background: rgba(6,8,16,.88); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 7px;
+  backdrop-filter: blur(12px);
+}
+.mp-legend__item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .72rem; font-weight: 700; color: rgba(255,255,255,.5);
+}
+.mp-legend__dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+}
+.mp-legend__dot--red   { background: #ef4444; box-shadow: 0 0 7px rgba(239,68,68,.7); }
+.mp-legend__dot--amber { background: #f59e0b; }
+.mp-legend__dot--blue  { background: #3b82f6; }
+
+/* Leaflet dark overrides */
+.leaflet-popup-content-wrapper {
+  background: rgba(8,10,20,.96) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.65) !important;
+  padding: 0 !important;
+  color: #fff !important;
+}
+.leaflet-popup-content { margin: 0 !important; }
+.leaflet-popup-tip-container { display: none !important; }
+.leaflet-container { background: #060a14 !important; }
+.mp-popup { padding: 12px 16px; }
+.mp-popup__title {
+  font-size: .82rem; font-weight: 600; color: rgba(255,255,255,.9);
+  margin: 0 0 6px; line-height: 1.4; max-width: 240px;
+}
+.mp-popup__meta { font-size: .7rem; color: rgba(255,255,255,.38); }
+
+/* Filter row */
+.mp-filter-row {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+.mp-filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.mp-ftab {
+  padding: 7px 16px; border-radius: 999px; font-size: .76rem; font-weight: 700;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09);
+  color: rgba(255,255,255,.4); cursor: pointer; transition: all .2s; white-space: nowrap;
+}
+.mp-ftab:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.65); }
+.mp-ftab--active {
+  background: rgba(34,197,94,.14); border-color: rgba(34,197,94,.35); color: #4ade80;
+  box-shadow: 0 0 12px rgba(34,197,94,.1);
+}
+.mp-count { font-size: .75rem; color: var(--text3); font-weight: 600; white-space: nowrap; }
+
+/* Selected card */
+.mp-selected-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(18,22,36,.98) 0%, rgba(10,13,22,.99) 100%);
+  border-radius: 16px; padding: 20px 24px;
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+.mp-selected-card--high   { border-color: rgba(239,68,68,.2); }
+.mp-selected-card--medium { border-color: rgba(245,158,11,.2); }
+.mp-selected-card--low    { border-color: rgba(59,130,246,.18); }
+.mp-selected-card__close {
+  position: absolute; top: 14px; left: 16px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text3); transition: all .2s;
+}
+.mp-selected-card__close:hover { background: rgba(239,68,68,.15); color: #fca5a5; }
+.mp-selected-card__urg {
+  display: inline-block; font-size: .64rem; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase;
+  margin-bottom: 10px; color: var(--text3);
+}
+.mp-selected-card--high   .mp-selected-card__urg { color: #fca5a5; }
+.mp-selected-card--medium .mp-selected-card__urg { color: #fcd34d; }
+.mp-selected-card--low    .mp-selected-card__urg { color: #93c5fd; }
+.mp-selected-card__title {
+  font-size: 1.05rem; font-weight: 700; line-height: 1.45;
+  margin: 0 0 8px; color: var(--text);
+}
+.mp-selected-card__meta { font-size: .78rem; color: var(--text3); margin: 0; }
+
+/* Events list */
+.mp-events-list {
+  background: linear-gradient(160deg, rgba(12,16,26,.98) 0%, rgba(8,10,18,.99) 100%);
+  border: 1px solid rgba(255,255,255,.07); border-radius: 18px; overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,.35);
+}
+.mp-events-list__hdr {
+  padding: 14px 20px 12px; border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: .67rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255,255,255,.28);
+}
+.mp-event-item {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%;
+  padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,.03);
+  text-align: inherit; background: transparent; cursor: pointer;
+  transition: background .18s;
+}
+.mp-event-item:last-child { border-bottom: none; }
+.mp-event-item:hover { background: rgba(255,255,255,.025); }
+.mp-event-item--active { background: rgba(34,197,94,.05) !important; }
+.mp-event-item__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+}
+.mp-event-item__body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.mp-event-item__title {
+  font-size: .84rem; font-weight: 600; color: var(--text); margin: 0;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  line-height: 1.4;
+}
+.mp-event-item__meta { font-size: .71rem; color: var(--text3); }
+.mp-event-item__cat {
+  font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(255,255,255,.22); white-space: nowrap; flex-shrink: 0; margin-top: 3px;
+}
 
 /* ════════════════════════════════
    FOOTER
