@@ -125,6 +125,13 @@ function resetCardTilt(event) {
   el.style.setProperty('--glow-y', '50%');
 }
 
+function headlineTone(title) {
+  const n = String(title || '').trim().length;
+  if (n <= 42) return 'strong';
+  if (n <= 86) return 'balanced';
+  return 'airy';
+}
+
 function pct(value) {
   const num = Number(value || 0);
   return `${Math.round(num * 100)}%`;
@@ -531,7 +538,7 @@ const NP_DATE_STR = new Intl.DateTimeFormat('ar', {
   weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
 }).format(new Date());
 
-const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, totalPages }, ref) {
+const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, totalPages, onSelectItem }, ref) {
   const featured  = items?.[0];
   const secondary = items?.slice(1, 3) ?? [];
   const briefs    = items?.slice(3) ?? [];
@@ -554,9 +561,9 @@ const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, 
         </div>
       )}
       {featured && (
-        <div className="np-lead" onClick={() => featured.link && window.open(featured.link, '_blank')}>
+        <div className="np-lead" onClick={() => onSelectItem?.(featured)}>
           <div className="np-lead__kicker">{featured.category || 'عاجل'}</div>
-          <h2 className="np-lead__headline">{featured.title}</h2>
+          <h2 className={`np-lead__headline np-headline--${headlineTone(featured.title)}`}>{featured.title}</h2>
           <div className="np-lead__byline">
             <span>{featured.source?.name}</span>
             <span>{relativeTime(featured.time || featured.publishedAt || featured.published_at)}</span>
@@ -567,9 +574,9 @@ const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, 
       <div className="np-rule" />
       <div className="np-secondary-row">
         {secondary.map((item, i) => (
-          <div key={item.id ?? i} className="np-secondary" onClick={() => item.link && window.open(item.link, '_blank')}>
+          <div key={item.id ?? i} className="np-secondary" onClick={() => onSelectItem?.(item)}>
             <div className="np-secondary__kicker">{item.category || 'أخبار'}</div>
-            <h3 className="np-secondary__headline">{item.title}</h3>
+            <h3 className={`np-secondary__headline np-headline--${headlineTone(item.title)}`}>{item.title}</h3>
             <span className="np-secondary__meta">{item.source?.name} · {relativeTime(item.time || item.publishedAt || item.published_at)}</span>
           </div>
         ))}
@@ -577,7 +584,7 @@ const NewspaperPage = React.forwardRef(function NewspaperPage({ items, pageNum, 
       {briefs.length > 0 && <div className="np-rule" />}
       <div className="np-briefs">
         {briefs.map((item, i) => (
-          <div key={item.id ?? i} className="np-brief" onClick={() => item.link && window.open(item.link, '_blank')}>
+          <div key={item.id ?? i} className="np-brief" onClick={() => onSelectItem?.(item)}>
             <span className="np-brief__headline">{item.title}</span>
             <span className="np-brief__meta"> — {item.source?.name}</span>
           </div>
@@ -1293,7 +1300,18 @@ export default function App() {
 
   /* ─── Newspaper flipbook ─── */
   const flipBookRef = useRef(null);
+  const npFlipTimerRef = useRef(null);
   const [npCurrentPage, setNpCurrentPage] = useState(0);
+  const [npFlipPulse, setNpFlipPulse] = useState(false);
+  const [npFocusItem, setNpFocusItem] = useState(null);
+  const [viewportW, setViewportW] = useState(typeof window !== 'undefined' ? window.innerWidth : 1440);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   /* ─── Search (debounced) ─── */
   const searchTimer = useRef(null);
@@ -1396,11 +1414,6 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  /* ─── News layout ─── */
-  const heroItem = newsItems[0];
-  const spotlightItems = newsItems.slice(1, 4);
-  const gridItems = newsItems.slice(4);
-
   /* ─── Newspaper pages ─── */
   const NP_PER_PAGE = 6;
   const npPages = useMemo(() => {
@@ -1412,12 +1425,48 @@ export default function App() {
     return out;
   }, [newsItems]);
 
-  const handleNpFlip = useCallback((e) => setNpCurrentPage(e.data), []);
+  const npUsePortrait = viewportW < 980;
+  const npBookPageWidth = useMemo(() => {
+    if (npUsePortrait) {
+      return Math.max(300, Math.min(820, viewportW - 20));
+    }
+    return Math.max(620, Math.min(1180, Math.floor((viewportW - 70) / 2)));
+  }, [npUsePortrait, viewportW]);
+  const npBookPageHeight = Math.floor(npBookPageWidth * 1.28);
+  const npTypographyScale = useMemo(() => {
+    if (npUsePortrait) return Math.max(0.92, Math.min(1.03, npBookPageWidth / 700));
+    return Math.max(0.98, Math.min(1.28, npBookPageWidth / 820));
+  }, [npBookPageWidth, npUsePortrait]);
+
+  const handleNpFlip = useCallback((e) => {
+    setNpCurrentPage(e.data);
+    setNpFlipPulse(true);
+    if (npFlipTimerRef.current) clearTimeout(npFlipTimerRef.current);
+    npFlipTimerRef.current = setTimeout(() => setNpFlipPulse(false), 420);
+  }, []);
   const npGoNext = useCallback(() => flipBookRef.current?.pageFlip()?.flipNext(), []);
   const npGoPrev = useCallback(() => flipBookRef.current?.pageFlip()?.flipPrev(), []);
+  const npOpenFocus = useCallback((item) => item && setNpFocusItem(item), []);
+  const npCloseFocus = useCallback(() => setNpFocusItem(null), []);
+
+  useEffect(() => () => {
+    if (npFlipTimerRef.current) clearTimeout(npFlipTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'news') return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') npCloseFocus();
+      if (e.key === 'ArrowRight') npGoPrev();
+      if (e.key === 'ArrowLeft') npGoNext();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTab, npCloseFocus, npGoNext, npGoPrev]);
 
   // Reset to page 0 when filters change
   useEffect(() => { setNpCurrentPage(0); }, [category, searchQ]);
+  useEffect(() => { setNpFocusItem(null); }, [category, searchQ, npCurrentPage]);
 
   /* ── RENDER ── */
   return (
@@ -1474,7 +1523,7 @@ export default function App() {
       <BreakingTicker items={newsItems} />
 
       {/* ── MAIN CONTENT ── */}
-      <main className="site-main">
+      <main className={`site-main ${activeTab === 'news' ? 'site-main--news' : ''}`}>
 
         {/* ═══════════════════════════════
             NEWS TAB
@@ -1528,32 +1577,74 @@ export default function App() {
                 </div>
                 {/* Flip book */}
                 <div className="np-book-wrap">
-                  <HTMLFlipBook
-                    key={`${category}-${searchQ}`}
-                    ref={flipBookRef}
-                    width={420}
-                    height={600}
-                    size="fixed"
-                    drawShadow={true}
-                    flippingTime={700}
-                    usePortrait={false}
-                    startPage={0}
-                    showCover={false}
-                    mobileScrollSupport={false}
-                    maxShadowOpacity={0.55}
-                    className="np-flipbook"
-                    onFlip={handleNpFlip}
+                  <button
+                    className="np-edge-hit np-edge-hit--prev"
+                    onClick={npGoPrev}
+                    disabled={npCurrentPage === 0}
+                    aria-label="الصفحة السابقة"
+                    title="انقر حافة الصفحة للرجوع"
+                  />
+                  <button
+                    className="np-edge-hit np-edge-hit--next"
+                    onClick={npGoNext}
+                    disabled={npCurrentPage >= npPages.length - 1}
+                    aria-label="الصفحة التالية"
+                    title="انقر حافة الصفحة للمتابعة"
+                  />
+                  <div
+                    className={`np-book-shell ${npFlipPulse ? 'np-book-shell--flip' : ''} ${npCurrentPage % 2 === 0 ? 'np-book-shell--even' : 'np-book-shell--odd'}`}
+                    style={{ '--np-font-scale': npTypographyScale }}
                   >
-                    {npPages.map((pageItems, i) => (
-                      <NewspaperPage
-                        key={i}
-                        items={pageItems}
-                        pageNum={i + 1}
-                        totalPages={npPages.length}
-                      />
-                    ))}
-                  </HTMLFlipBook>
+                    <HTMLFlipBook
+                      key={`${category}-${searchQ}`}
+                      ref={flipBookRef}
+                      width={npBookPageWidth}
+                      height={npBookPageHeight}
+                      size="fixed"
+                      drawShadow={true}
+                      flippingTime={700}
+                      usePortrait={npUsePortrait}
+                      startPage={0}
+                      showCover={false}
+                      mobileScrollSupport={false}
+                      maxShadowOpacity={0.55}
+                      className="np-flipbook"
+                      onFlip={handleNpFlip}
+                    >
+                      {npPages.map((pageItems, i) => (
+                        <NewspaperPage
+                          key={i}
+                          items={pageItems}
+                          pageNum={i + 1}
+                          totalPages={npPages.length}
+                          onSelectItem={npOpenFocus}
+                        />
+                      ))}
+                    </HTMLFlipBook>
+                  </div>
                 </div>
+
+                {npFocusItem && (
+                  <div className="np-focus-layer" role="dialog" aria-modal="true" onClick={npCloseFocus}>
+                    <article className="np-focus-card" onClick={(e) => e.stopPropagation()}>
+                      <button className="np-focus-close" onClick={npCloseFocus} aria-label="إغلاق">×</button>
+                      <span className="np-focus-kicker">{npFocusItem.category || 'أخبار'}</span>
+                      <h3 className={`np-focus-title np-headline--${headlineTone(npFocusItem.title)}`}>{npFocusItem.title}</h3>
+                      <div className="np-focus-meta">
+                        <span>{npFocusItem.source?.name || 'مصدر'}</span>
+                        <span>{relativeTime(npFocusItem.time || npFocusItem.publishedAt || npFocusItem.published_at)}</span>
+                      </div>
+                      {npFocusItem.summary && (
+                        <p className="np-focus-summary">{stripHtml(String(npFocusItem.summary))}</p>
+                      )}
+                      <div className="np-focus-actions">
+                        <button className="np-focus-btn" onClick={() => npFocusItem.link && window.open(npFocusItem.link, '_blank', 'noopener,noreferrer')}>
+                          قراءة من المصدر
+                        </button>
+                      </div>
+                    </article>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2180,6 +2271,7 @@ img { display: block; max-width: 100%; }
 
 /* ── MAIN ── */
 .site-main { flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding: 20px 16px; }
+.site-main--news { max-width: 100%; padding-inline: 0; }
 
 /* ── FILTERS ── */
 .filters-bar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
@@ -4138,6 +4230,7 @@ img { display: block; max-width: 100%; }
   .news-view .list-sidebar { margin-top: 0; }
   .news-view .filters-bar { grid-column: 1 / -1; }
   .news-view .error-banner  { grid-column: 1 / -1; }
+  .news-view .np-arena { grid-column: 1 / -1; }
   .news-view .editorial-grid { grid-column: 1; }
   .news-view .section-label { grid-column: 1; }
   .news-view .news-grid { grid-column: 1; }
@@ -4148,25 +4241,32 @@ img { display: block; max-width: 100%; }
 /* ════════════════════════════════════════════
    NEWSPAPER BOOK  —  LUXURY DARK EDITION
 ════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600;700&family=Playfair+Display:wght@400;600;700;900&display=swap');
 
 .np-arena {
+  --np-font-head: 'Amiri', 'Noto Naskh Arabic', 'Times New Roman', serif;
+  --np-font-body: 'Noto Naskh Arabic', 'Amiri', 'Segoe UI', sans-serif;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 20px 8px 48px;
+  align-items: stretch;
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  padding: 16px clamp(4px, .9vw, 14px) 40px;
   gap: 18px;
 }
 
 /* ── Navigation bar ── */
 .np-nav-bar {
   display: flex; align-items: center; gap: 14px;
+  justify-content: space-between;
   background: rgba(11,13,21,0.92);
   border: 1px solid rgba(212,175,55,0.28);
   border-radius: 8px;
   padding: 8px 22px;
   backdrop-filter: blur(12px);
   user-select: none;
+  width: min(100%, 1920px);
+  margin: 0 auto;
 }
 .np-nav__btn {
   background: transparent;
@@ -4194,14 +4294,96 @@ img { display: block; max-width: 100%; }
 /* ── Book wrapper ── */
 .np-book-wrap {
   position: relative;
+  width: min(100%, 1920px);
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
   filter:
     drop-shadow(0 24px 60px rgba(0,0,0,.85))
     drop-shadow(0 4px 14px rgba(0,0,0,.55));
 }
-.np-flipbook { border-radius: 1px; }
+.np-book-shell {
+  --np-font-scale: 1;
+  position: relative;
+  z-index: 2;
+}
+.np-book-shell::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: clamp(12px, 1.4vw, 22px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(0,0,0,.45) 0%, rgba(0,0,0,.22) 40%, transparent 80%),
+    linear-gradient(to right, rgba(255,255,255,.03), rgba(0,0,0,.3), rgba(255,255,255,.03));
+  opacity: .42;
+  z-index: 3;
+  transition: opacity .22s, transform .22s;
+}
+.np-book-shell--even::before { transform: translateX(-44%); }
+.np-book-shell--odd::before { transform: translateX(-56%); }
+.np-book-shell--flip::before {
+  opacity: .9;
+  animation: np-crease-pulse .42s ease-out;
+}
+.np-book-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 28% 16%, rgba(255,255,255,.07), transparent 26%);
+  mix-blend-mode: screen;
+  opacity: .45;
+  z-index: 1;
+}
+.np-flipbook { border-radius: 1px; max-width: 100%; }
+.np-edge-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: clamp(26px, 2.8vw, 54px);
+  border: none;
+  z-index: 3;
+  background: transparent;
+  cursor: pointer;
+  transition: opacity .2s, filter .2s;
+}
+.np-edge-hit::after {
+  content: '';
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  width: 2px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.np-edge-hit--prev { right: 50%; transform: translateX(0); }
+.np-edge-hit--next { left: 50%; transform: translateX(0); }
+.np-edge-hit--prev:hover {
+  background: linear-gradient(to left, rgba(212,175,55,.12), transparent 72%);
+  filter: drop-shadow(0 0 10px rgba(212,175,55,.2));
+}
+.np-edge-hit--next:hover {
+  background: linear-gradient(to right, rgba(212,175,55,.12), transparent 72%);
+  filter: drop-shadow(0 0 10px rgba(212,175,55,.2));
+}
+.np-edge-hit--prev::after { left: 6px; background: linear-gradient(to bottom, transparent, rgba(212,175,55,.7), transparent); }
+.np-edge-hit--next::after { right: 6px; background: linear-gradient(to bottom, transparent, rgba(212,175,55,.7), transparent); }
+.np-edge-hit:hover::after { opacity: 1; }
+.np-edge-hit:disabled { opacity: .25; cursor: not-allowed; }
 
 /* ── Individual newspaper page ── */
 .np-page {
+  font-family: var(--np-font-body);
+  direction: rtl;
+  text-align: right;
+  font-kerning: normal;
+  font-feature-settings: 'liga' 1, 'clig' 1, 'calt' 1, 'kern' 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   background: #0b0d15;
   background-image:
     radial-gradient(ellipse at 15% 40%, rgba(212,175,55,.018) 0%, transparent 55%),
@@ -4215,6 +4397,24 @@ img { display: block; max-width: 100%; }
   flex-direction: column;
   position: relative;
   cursor: pointer;
+}
+.np-page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,.022) 0,
+      rgba(255,255,255,.022) 1px,
+      rgba(0,0,0,.01) 1px,
+      rgba(0,0,0,.01) 3px
+    ),
+    radial-gradient(circle at 8% 12%, rgba(255,255,255,.025), transparent 42%);
+  mix-blend-mode: overlay;
+  opacity: .6;
+  z-index: 0;
 }
 /* Spine shadow — left pages */
 .np-page:nth-child(odd)::before {
@@ -4238,18 +4438,19 @@ img { display: block; max-width: 100%; }
   flex-shrink: 0;
 }
 .np-masthead__eyebrow {
-  font-size: .56rem; letter-spacing: 5px; text-transform: uppercase;
+  font-size: calc(.56rem * var(--np-font-scale)); letter-spacing: 0; text-transform: none;
   color: var(--gold); margin-bottom: 5px; font-weight: 700;
 }
 .np-masthead__title {
-  font-family: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
-  font-size: 2.5rem; font-weight: 900; color: #f0e6c8;
-  letter-spacing: 3px; margin: 0; line-height: 1;
+  font-family: var(--np-font-head);
+  font-size: calc(2.5rem * var(--np-font-scale)); font-weight: 900; color: #f0e6c8;
+  letter-spacing: 0; word-spacing: .08em; margin: 0; line-height: 1.14;
+  text-wrap: balance;
   text-shadow: 0 0 50px rgba(212,175,55,.18);
 }
 .np-masthead__subline {
   display: flex; justify-content: space-between;
-  font-size: .6rem; color: var(--text3);
+  font-size: calc(.6rem * var(--np-font-scale)); color: var(--text3);
   margin-top: 6px; letter-spacing: .8px;
 }
 .np-masthead__rule {
@@ -4271,28 +4472,33 @@ img { display: block; max-width: 100%; }
   flex-shrink: 0;
 }
 .np-page-hdr__name {
-  font-size: .58rem; letter-spacing: 4px; text-transform: uppercase; color: var(--gold);
+  font-size: calc(.58rem * var(--np-font-scale)); letter-spacing: 0; text-transform: none; color: var(--gold);
 }
-.np-page-hdr__num { font-size: .58rem; color: var(--text3); letter-spacing: 1px; }
+.np-page-hdr__num { font-size: calc(.58rem * var(--np-font-scale)); color: var(--text3); letter-spacing: 0; }
 
 /* ── Lead story ── */
 .np-lead { padding-bottom: 9px; cursor: pointer; flex-shrink: 0; }
 .np-lead:hover .np-lead__headline { color: var(--gold); }
 .np-lead__kicker {
-  font-size: .55rem; letter-spacing: 3.5px; text-transform: uppercase;
+  font-size: calc(.55rem * var(--np-font-scale)); letter-spacing: 0; text-transform: none;
   color: var(--gold); margin-bottom: 5px; font-weight: 700;
 }
 .np-lead__headline {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 1.15rem; font-weight: 800; color: #f0e6c8;
-  line-height: 1.35; margin: 0 0 6px; transition: color .2s;
+  font-family: var(--np-font-head);
+  font-size: calc(1.15rem * var(--np-font-scale)); font-weight: 800; color: #f0e6c8;
+  line-height: 1.52; letter-spacing: 0; word-spacing: .03em;
+  text-wrap: balance;
+  margin: 0 0 6px; transition: color .2s;
 }
 .np-lead__byline {
   display: flex; gap: 10px;
-  font-size: .6rem; color: var(--text3); margin-bottom: 6px; letter-spacing: .3px;
+  font-size: calc(.6rem * var(--np-font-scale)); color: var(--text3); margin-bottom: 6px; letter-spacing: .3px;
 }
 .np-lead__excerpt {
-  font-size: .68rem; line-height: 1.6; color: #9a9280;
+  font-size: calc(.68rem * var(--np-font-scale)); line-height: 1.82; color: #9a9280;
+  text-align: justify;
+  text-justify: inter-word;
+  text-wrap: pretty;
   column-count: 2; column-gap: 12px;
   column-rule: 1px solid rgba(212,175,55,.12);
 }
@@ -4316,15 +4522,26 @@ img { display: block; max-width: 100%; }
 .np-secondary:last-child { border-right: none; }
 .np-secondary:hover { background: rgba(212,175,55,.05); }
 .np-secondary__kicker {
-  font-size: .52rem; letter-spacing: 2.5px; text-transform: uppercase;
+  font-size: calc(.52rem * var(--np-font-scale)); letter-spacing: 0; text-transform: none;
   color: var(--gold); margin-bottom: 3px; font-weight: 700;
 }
 .np-secondary__headline {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: .78rem; font-weight: 700; color: #cec4a4;
-  line-height: 1.35; margin: 0 0 4px;
+  font-family: var(--np-font-head);
+  font-size: calc(.78rem * var(--np-font-scale)); font-weight: 700; color: #cec4a4;
+  line-height: 1.56; letter-spacing: 0; word-spacing: .02em;
+  text-wrap: balance;
+  margin: 0 0 4px;
 }
-.np-secondary__meta { font-size: .56rem; color: var(--text3); display: block; }
+.np-secondary__meta { font-size: calc(.56rem * var(--np-font-scale)); color: var(--text3); display: block; }
+
+/* ── Adaptive Arabic headline rhythm ── */
+.np-lead__headline.np-headline--strong { font-weight: 900; line-height: 1.45; font-size: calc(1.19rem * var(--np-font-scale)); }
+.np-lead__headline.np-headline--balanced { font-weight: 800; line-height: 1.52; font-size: calc(1.15rem * var(--np-font-scale)); }
+.np-lead__headline.np-headline--airy { font-weight: 700; line-height: 1.64; font-size: calc(1.07rem * var(--np-font-scale)); }
+
+.np-secondary__headline.np-headline--strong { font-weight: 780; line-height: 1.48; font-size: calc(.82rem * var(--np-font-scale)); }
+.np-secondary__headline.np-headline--balanced { font-weight: 700; line-height: 1.56; font-size: calc(.78rem * var(--np-font-scale)); }
+.np-secondary__headline.np-headline--airy { font-weight: 620; line-height: 1.68; font-size: calc(.74rem * var(--np-font-scale)); }
 
 /* ── Brief items ── */
 .np-briefs {
@@ -4332,32 +4549,148 @@ img { display: block; max-width: 100%; }
   flex: 1; overflow: hidden;
 }
 .np-brief {
-  font-size: .67rem; line-height: 1.42;
+  font-size: calc(.67rem * var(--np-font-scale)); line-height: 1.42;
   padding: 5px 4px;
   border-bottom: 1px dotted rgba(255,255,255,.07);
   cursor: pointer; transition: background .12s;
 }
 .np-brief:hover { background: rgba(212,175,55,.04); }
 .np-brief:hover .np-brief__headline { color: var(--gold); }
-.np-brief__headline { color: #b0a890; transition: color .15s; }
-.np-brief__meta { color: var(--text3); font-size: .58rem; }
+.np-brief__headline { color: #b0a890; transition: color .15s; letter-spacing: 0; word-spacing: .02em; }
+.np-brief__meta { color: var(--text3); font-size: calc(.58rem * var(--np-font-scale)); }
 
 /* ── Page footer ── */
 .np-page-footer {
   margin-top: auto; padding-top: 7px;
   border-top: 1px solid rgba(212,175,55,.16);
   text-align: center;
-  font-size: .56rem; color: var(--text3); letter-spacing: 2px;
+  font-size: calc(.56rem * var(--np-font-scale)); color: var(--text3); letter-spacing: 2px;
   flex-shrink: 0;
 }
 
-/* ── Responsive: scale on smaller viewports ── */
-@media (max-width: 920px) {
-  .np-book-wrap { transform: scale(0.78); transform-origin: top center; margin-bottom: -130px; }
+/* ── Reader focus layer ── */
+.np-focus-layer {
+  position: fixed;
+  inset: 0;
+  background: rgba(6,8,14,.62);
+  backdrop-filter: blur(6px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: np-fade-in .24s ease-out;
 }
-@media (max-width: 600px) {
-  .np-book-wrap { transform: scale(0.52); transform-origin: top center; margin-bottom: -290px; }
-  .np-nav-bar { flex-wrap: wrap; justify-content: center; }
+.np-focus-card {
+  width: min(900px, 96vw);
+  max-height: 86vh;
+  overflow: auto;
+  background: linear-gradient(155deg, rgba(10,12,18,.98), rgba(17,20,30,.98));
+  border: 1px solid rgba(212,175,55,.26);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+  padding: 26px 24px 20px;
+  position: relative;
+  animation: np-focus-rise .26s ease-out;
+}
+.np-focus-close {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(212,175,55,.3);
+  background: rgba(255,255,255,.03);
+  color: #f4deb2;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+.np-focus-kicker {
+  display: inline-block;
+  font-size: .65rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+.np-focus-title {
+  font-family: var(--np-font-head);
+  font-size: clamp(1.25rem, 2.2vw, 2.1rem);
+  line-height: 1.5;
+  letter-spacing: 0;
+  word-spacing: .03em;
+  text-wrap: balance;
+  color: #f1e5c5;
+  margin-bottom: 10px;
+}
+.np-focus-title.np-headline--strong { font-weight: 900; line-height: 1.42; }
+.np-focus-title.np-headline--balanced { font-weight: 800; line-height: 1.5; }
+.np-focus-title.np-headline--airy { font-weight: 700; line-height: 1.62; font-size: clamp(1.18rem, 1.95vw, 1.82rem); }
+.np-focus-meta {
+  display: flex;
+  gap: 14px;
+  font-size: .8rem;
+  color: var(--text3);
+  margin-bottom: 14px;
+}
+.np-focus-summary {
+  font-family: var(--np-font-body);
+  color: #d5ccb2;
+  line-height: 1.95;
+  font-size: .96rem;
+  text-align: justify;
+  text-justify: inter-word;
+  text-wrap: pretty;
+  white-space: pre-wrap;
+}
+.np-focus-actions { margin-top: 16px; }
+.np-focus-btn {
+  border: 1px solid rgba(212,175,55,.36);
+  background: rgba(212,175,55,.1);
+  color: #f7dfaa;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes np-crease-pulse {
+  0% { opacity: .18; }
+  25% { opacity: .95; }
+  100% { opacity: .42; }
+}
+@keyframes np-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes np-focus-rise {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Responsive refinements ── */
+@media (max-width: 980px) {
+  .np-nav-bar { padding: 8px 12px; }
+  .np-nav__info { flex-wrap: wrap; justify-content: center; }
+}
+@media (max-width: 640px) {
+  .np-arena { padding: 12px 0 30px; }
+  .np-edge-hit { width: 24px; }
+  .np-nav-bar {
+    width: 100%;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .np-page { padding: 14px 14px 10px; }
+  .np-lead__headline { font-size: 1.02rem; }
+  .np-secondary__headline { font-size: .73rem; }
+  .np-focus-card { padding: 18px 14px 14px; }
 }
 `;
 
