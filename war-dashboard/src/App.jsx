@@ -640,14 +640,64 @@ function getChStatus(s) {
   return CH_STATUS.unknown;
 }
 
-function LuxChannelCard({ stream, onSelect, isActive }) {
+/* ─────────────────────────────────────────────────
+   TV STATIC CANVAS  — animated noise on channel switch
+───────────────────────────────────────────────── */
+function TvStaticCanvas({ active }) {
+  const canvasRef = React.useRef(null);
+  const rafRef    = React.useRef(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!active) {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    const draw = () => {
+      const w = (canvas.width  = canvas.offsetWidth  || 200);
+      const h = (canvas.height = canvas.offsetHeight || 150);
+      const imgData = ctx.createImageData(w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = (Math.random() * 255) | 0;
+        d[i] = v; d[i+1] = v; d[i+2] = v;
+        d[i+3] = i % 8 === 0 ? 255 : 180; /* slight scanline banding */
+      }
+      ctx.putImageData(imgData, 0, 0);
+      /* add a random horizontal white streak for authenticity */
+      if (Math.random() < 0.25) {
+        const y = (Math.random() * h) | 0;
+        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.4})`;
+        ctx.fillRect(0, y, w, 1 + (Math.random() * 2 | 0));
+      }
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
+  }, [active]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={`tv-static${active ? ' tv-static--on' : ''}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+/* ─────────────────────────────────────────────────
+   LUXURY CHANNEL CARD  — retro CRT TV set
+───────────────────────────────────────────────── */
+function LuxChannelCard({ stream, onSelect, isActive, isSwitching }) {
   if (!stream) return null;
-  const s    = stream.stream || stream;
-  const name = stream.source?.name || s.name || s.registry_id || '';
-  const lang = stream.source?.language || s.language || '';
+  const s      = stream.stream || stream;
+  const name   = stream.source?.name || s.name || s.registry_id || '';
+  const lang   = stream.source?.language || s.language || '';
   const status   = getChStatus(s);
   const isOnline = status.cls === 'online' || status.cls === 'degraded';
-  const hasEmbed = !!(s.embed_url || s.embedUrl);
   const [imgErr, setImgErr] = React.useState(false);
 
   return (
@@ -657,48 +707,67 @@ function LuxChannelCard({ stream, onSelect, isActive }) {
       title={name}
       aria-pressed={isActive}
     >
-      {/* ── Ambient glow layer (active/hover) ── */}
-      <span className="lxc__glow" aria-hidden="true" />
-
-      {/* ── Top row: status pill + embed icon ── */}
-      <div className="lxc__top">
-        <span
-          className="lxc__status-pill"
-          style={{
-            '--dot-color': status.dot,
-            '--dot-shadow': status.shadow,
-          }}
-        >
-          <span className={`lxc__status-dot${isOnline ? ' lxc__status-dot--live' : ''}`} />
-          {status.label}
-        </span>
-        {hasEmbed && isOnline && (
-          <span className="lxc__embed-icon" title="يدعم التشغيل المدمج">▶</span>
-        )}
+      {/* ── TV Antennae ── */}
+      <div className="lxc__ant-wrap" aria-hidden="true">
+        <span className="lxc__ant lxc__ant--l" />
+        <span className="lxc__ant lxc__ant--r" />
       </div>
 
-      {/* ── Logo ── */}
-      <div className="lxc__logo">
-        {s.logo_url && !imgErr
-          ? <img src={s.logo_url} alt={name} loading="lazy" onError={() => setImgErr(true)} />
-          : <span className="lxc__logo-initials">{name.slice(0, 2)}</span>
-        }
-        {isOnline && <span className="lxc__logo-ring" />}
+      {/* ── TV Cabinet body ── */}
+      <div className="lxc__cabinet">
+
+        {/* CRT Bezel + Screen */}
+        <div className="lxc__bezel">
+          <div className="lxc__screen-face">
+
+            {/* Channel content */}
+            <div className="lxc__screen-inner">
+              <div className="lxc__tv-logo">
+                {s.logo_url && !imgErr
+                  ? <img src={s.logo_url} alt={name} loading="lazy" onError={() => setImgErr(true)} />
+                  : <span className="lxc__tv-initials">{name.slice(0, 2)}</span>
+                }
+              </div>
+              <span className="lxc__tv-name">{name}</span>
+              {lang && <span className="lxc__tv-lang">{lang.toUpperCase()}</span>}
+            </div>
+
+            {/* CRT texture overlays */}
+            <div className="lxc__crt-lines" aria-hidden="true" />
+            <div className="lxc__crt-vgn"   aria-hidden="true" />
+            {isOnline && <div className="lxc__crt-glow" aria-hidden="true" />}
+
+            {/* Static noise on channel switch */}
+            <TvStaticCanvas active={!!isSwitching} />
+          </div>
+        </div>
+
+        {/* Controls strip: status pill + channel knobs */}
+        <div className="lxc__ctrls">
+          <span
+            className="lxc__status-pill"
+            style={{ '--dot-color': status.dot, '--dot-shadow': status.shadow }}
+          >
+            <span className={`lxc__status-dot${isOnline ? ' lxc__status-dot--live' : ''}`} />
+            {status.label}
+          </span>
+          <div className="lxc__knobs" aria-hidden="true">
+            <span className="lxc__knob" />
+            <span className="lxc__knob lxc__knob--sm" />
+          </div>
+        </div>
       </div>
 
-      {/* ── Name + lang ── */}
-      <div className="lxc__info">
-        <span className="lxc__name">{name}</span>
-        {lang && <span className="lxc__lang">{lang.toUpperCase()}</span>}
+      {/* ── TV Feet ── */}
+      <div className="lxc__feet" aria-hidden="true">
+        <span className="lxc__foot" />
+        <span className="lxc__foot" />
       </div>
-
-      {/* ── Slot line bottom (decorative) ── */}
-      <span className="lxc__slot-line" aria-hidden="true" />
     </button>
   );
 }
 
-function CinematicPlayer({ stream, onClose }) {
+function CinematicPlayer({ stream, onClose, switching }) {
   if (!stream) return null;
   const s       = stream.stream || stream;
   const name    = stream.source?.name || s.name || s.registry_id || '';
@@ -710,7 +779,7 @@ function CinematicPlayer({ stream, onClose }) {
   const [imgErr, setImgErr] = React.useState(false);
 
   return (
-    <div className="cp" dir="rtl" role="region" aria-label={`مشاهدة ${name}`}>
+    <div className={`cp${switching ? ' cp--switching' : ''}`} dir="rtl" role="region" aria-label={`مشاهدة ${name}`}>
 
       {/* ── Ambient background beam ── */}
       <div className="cp__beam" aria-hidden="true" />
@@ -785,6 +854,8 @@ function CinematicPlayer({ stream, onClose }) {
             )}
           </div>
         )}
+        {/* TV static overlay during channel switch */}
+        <TvStaticCanvas active={!!switching} />
         {/* CRT scanlines texture */}
         <div className="cp__scanlines" aria-hidden="true" />
         {/* Bottom gradient vignette */}
@@ -1175,6 +1246,8 @@ export default function App() {
   const [loadingLive,  setLoadingLive]   = useState(false);
   const [errorLive,    setErrorLive]     = useState(null);
   const [channelSearch, setChannelSearch] = useState('');
+  const [tvSwitching,  setTvSwitching]   = useState(false);
+  const tvSwitchTimerRef = React.useRef(null);
 
   /* ── Ops ── */
   const [newsroomStatus, setNewsroomStatus] = useState(null);
@@ -1237,6 +1310,18 @@ export default function App() {
     } finally {
       setLoadingLive(false);
     }
+  }, []);
+
+  /* ─── TV Channel Switcher (with static noise animation) ─── */
+  const handleTvSelect = React.useCallback((stream) => {
+    if (tvSwitchTimerRef.current) clearTimeout(tvSwitchTimerRef.current);
+    setTvSwitching(true);
+    tvSwitchTimerRef.current = setTimeout(() => {
+      setSelectedStream(stream);
+      tvSwitchTimerRef.current = setTimeout(() => {
+        setTvSwitching(false);
+      }, 380);
+    }, 520);
   }, []);
 
   /* ─── Ops Loader ─── */
@@ -1994,7 +2079,7 @@ export default function App() {
                       <button
                         key={`${sv.id ?? i}-${i}`}
                         className="live-marquee__chip"
-                        onClick={() => setSelectedStream(st)}
+                        onClick={() => handleTvSelect(st)}
                       >
                         <span className="live-marquee__chip-dot" />
                         {nm}
@@ -2009,7 +2094,8 @@ export default function App() {
             {selectedStream && (
               <CinematicPlayer
                 stream={selectedStream}
-                onClose={() => setSelectedStream(null)}
+                switching={tvSwitching}
+                onClose={() => { setSelectedStream(null); setTvSwitching(false); }}
               />
             )}
 
@@ -2040,8 +2126,9 @@ export default function App() {
                     <LuxChannelCard
                       key={st.stream?.id || st.id || i}
                       stream={st}
-                      onSelect={setSelectedStream}
+                      onSelect={handleTvSelect}
                       isActive={selectedStream === st}
+                      isSwitching={selectedStream === st && tvSwitching}
                     />
                   ))}
                   {filteredStreams.length === 0 && (
@@ -3269,105 +3356,263 @@ img { display: block; max-width: 100%; }
   font-size: .88rem;
 }
 
-/* ── Luxury Channel Card (lxc) ── */
+/* ════════════════════════════════════════
+   RETRO TV CHANNEL CARDS ★★★★★★★
+════════════════════════════════════════ */
+
+/* ── lxc: TV Cabinet outer shell ── */
 .lxc {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 14px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,.07);
+  gap: 0;
+  padding: 0;
+  border-radius: 18px 18px 10px 10px;
+  border: 2px solid rgba(255,255,255,.09);
   background:
-    linear-gradient(160deg, rgba(22,26,40,.95) 0%, rgba(14,17,28,.98) 100%);
+    linear-gradient(175deg, #252639 0%, #191b28 50%, #0e0f18 100%);
   cursor: pointer;
-  text-align: inherit;
-  min-height: 148px;
+  text-align: center;
   overflow: hidden;
   transition: transform .28s cubic-bezier(.34,1.56,.64,1),
               border-color .24s,
               box-shadow .28s;
   outline: none;
-  /* Shimmer highlight */
+  box-shadow:
+    0 6px 24px rgba(0,0,0,.5),
+    inset 0 1px 0 rgba(255,255,255,.07);
 }
+/* Piano-gloss highlight on top edge */
 .lxc::before {
   content: '';
   position: absolute; inset: 0;
-  border-radius: 15px;
-  background: linear-gradient(140deg, rgba(255,255,255,.045) 0%, transparent 50%);
+  border-radius: inherit;
+  background: linear-gradient(175deg, rgba(255,255,255,.06) 0%, transparent 30%);
   pointer-events: none;
   z-index: 0;
 }
-
-/* Glow blob (JS-driven via --dot-color in lxc__glow) */
-.lxc__glow {
-  position: absolute;
-  top: -30%; right: -20%;
-  width: 120%; height: 100%;
-  background: radial-gradient(ellipse 60% 50% at 80% 30%,
-    rgba(59,130,246,.05) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  transition: opacity .3s;
-  opacity: 0;
-}
-.lxc:hover .lxc__glow { opacity: 1; }
-.lxc--active .lxc__glow {
-  opacity: 1;
-  background: radial-gradient(ellipse 70% 60% at 70% 30%,
-    rgba(59,130,246,.11) 0%, transparent 70%);
-}
-
-/* Hover & active states */
+/* Hover lift */
 .lxc:hover {
-  transform: translateY(-5px) scale(1.012);
-  border-color: rgba(96,165,250,.45);
+  transform: translateY(-6px) scale(1.015);
+  border-color: rgba(100,180,255,.4);
   box-shadow:
-    0 20px 48px rgba(0,0,0,.55),
-    0 0 0 1px rgba(96,165,250,.2),
-    0 0 28px rgba(59,130,246,.07);
+    0 20px 50px rgba(0,0,0,.65),
+    0 0 0 1px rgba(100,180,255,.18),
+    0 0 32px rgba(59,130,246,.08);
 }
+/* Active (selected) TV — accent ring */
 .lxc--active {
-  transform: translateY(-3px);
-  border-color: rgba(59,130,246,.65);
+  transform: translateY(-4px);
+  border-color: rgba(59,130,246,.7);
   background:
-    linear-gradient(160deg, rgba(37,99,235,.12) 0%, rgba(14,17,28,.96) 100%);
+    linear-gradient(175deg, #1e2848 0%, #131927 50%, #0a0d18 100%);
   box-shadow:
-    0 16px 40px rgba(0,0,0,.5),
-    0 0 0 1.5px rgba(59,130,246,.5),
-    0 0 36px rgba(59,130,246,.1);
+    0 16px 44px rgba(0,0,0,.7),
+    0 0 0 2px rgba(59,130,246,.55),
+    0 0 40px rgba(59,130,246,.14);
 }
+/* Offline: dead set */
 .lxc--offline {
-  opacity: .38;
-  filter: grayscale(.7) brightness(.8);
-  pointer-events: none;
+  opacity: .35;
+  filter: grayscale(.85) brightness(.7);
 }
-.lxc--offline:not([aria-disabled='true']) { pointer-events: auto; }
-.lxc--degraded { border-color: rgba(245,158,11,.2); }
+.lxc--offline { pointer-events: auto; }
+.lxc--degraded { border-color: rgba(245,158,11,.25); }
 
-/* Top row */
-.lxc__top {
+/* ── Antennae ── */
+.lxc__ant-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  height: 22px;
+  padding-top: 4px;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.lxc__ant {
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(to top, rgba(255,255,255,.22), rgba(255,255,255,.06));
+  border-radius: 2px 2px 0 0;
+  flex-shrink: 0;
+  transform-origin: bottom center;
+}
+.lxc__ant--l { transform: rotate(-22deg); }
+.lxc__ant--r { transform: rotate(22deg); }
+.lxc--active .lxc__ant {
+  background: linear-gradient(to top, rgba(96,165,250,.8), rgba(96,165,250,.2));
+  box-shadow: 0 0 6px rgba(59,130,246,.4);
+}
+
+/* ── Cabinet body (wraps bezel + ctrls) ── */
+.lxc__cabinet {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 8px 0;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+/* ── CRT Bezel ── */
+.lxc__bezel {
+  background:
+    linear-gradient(160deg, #1a1c2e 0%, #10121c 100%);
+  border-radius: 10px;
+  padding: 6px;
+  border: 2px solid rgba(0,0,0,.6);
+  box-shadow:
+    inset 0 2px 8px rgba(0,0,0,.7),
+    inset 0 -1px 3px rgba(255,255,255,.03),
+    0 2px 6px rgba(0,0,0,.4);
+  position: relative;
+}
+.lxc--active .lxc__bezel {
+  border-color: rgba(40,80,160,.5);
+  box-shadow:
+    inset 0 2px 8px rgba(0,0,0,.7),
+    inset 0 0 12px rgba(0,100,220,.04),
+    0 0 10px rgba(59,130,246,.06);
+}
+
+/* ── CRT Screen Face ── */
+.lxc__screen-face {
+  aspect-ratio: 4 / 3;
+  background: #01030a;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 28px rgba(0,0,0,.9),
+    inset 0 0 8px rgba(0,0,0,.5);
+}
+/* Phosphor glow on live channels */
+.lxc--active .lxc__screen-face,
+.lxc--online .lxc__screen-face {
+  box-shadow:
+    inset 0 0 28px rgba(0,0,0,.9),
+    inset 0 0 20px rgba(0,160,100,.1),
+    0 0 8px rgba(0,140,80,.06);
+}
+
+/* ── Screen content ── */
+.lxc__screen-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 5px;
+  padding: 8px;
+  z-index: 1;
+}
+.lxc__tv-logo {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgba(255,255,255,.03);
+  flex-shrink: 0;
+}
+.lxc__tv-logo img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  filter: brightness(.85) saturate(.6);
+}
+.lxc__tv-initials {
+  font-size: 1rem; font-weight: 900;
+  color: rgba(0,230,140,.5);   /* phosphor green */
+  letter-spacing: -.02em;
+  text-shadow: 0 0 10px rgba(0,220,120,.3);
+}
+.lxc__tv-name {
+  font-size: .68rem; font-weight: 700;
+  color: rgba(180,240,200,.45);   /* phosphor tint */
+  text-align: center;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 0 8px rgba(0,220,120,.2);
+  letter-spacing: 0;
+}
+.lxc__tv-lang {
+  font-size: .52rem; font-weight: 800;
+  color: rgba(0,200,110,.28);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+/* When card is offline, use amber/dead-CRT tint */
+.lxc--offline .lxc__tv-initials { color: rgba(200,160,60,.35); }
+.lxc--offline .lxc__tv-name     { color: rgba(200,160,60,.25); }
+
+/* ── CRT Texture Overlays ── */
+.lxc__crt-lines {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 2px,
+    rgba(0,0,0,.14) 2px, rgba(0,0,0,.14) 3px
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+.lxc__crt-vgn {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.72) 100%);
+  pointer-events: none;
+  z-index: 3;
+}
+.lxc__crt-glow {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 65% 55% at 50% 50%,
+    rgba(0,200,120,.055) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 2;
+  animation: crt-breathe 3.5s ease-in-out infinite;
+}
+@keyframes crt-breathe {
+  0%, 100% { opacity: .6; }
+  50%       { opacity: 1; }
+}
+
+/* ── TV Static Canvas ── */
+.tv-static {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity .12s;
+  border-radius: inherit;
+}
+.tv-static--on { opacity: 1; }
+
+/* ── Controls strip ── */
+.lxc__ctrls {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  position: relative;
-  z-index: 1;
+  padding: 7px 2px 5px;
+  flex-shrink: 0;
 }
+
+/* Status pill — shared from old design, minor update */
 .lxc__status-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
+  padding: 3px 8px;
   border-radius: 999px;
-  font-size: .57rem;
+  font-size: .55rem;
   font-weight: 900;
-  letter-spacing: .1em;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  background: rgba(0,0,0,.35);
-  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(0,0,0,.5);
+  border: 1px solid rgba(255,255,255,.08);
   color: var(--dot-color, rgba(255,255,255,.3));
   border-color: color-mix(in srgb, var(--dot-color, #888) 28%, transparent);
-  backdrop-filter: blur(8px);
 }
 .lxc__status-dot {
   width: 5px; height: 5px;
@@ -3379,78 +3624,79 @@ img { display: block; max-width: 100%; }
   animation: blink 2s ease-in-out infinite;
   box-shadow: 0 0 6px var(--dot-shadow, transparent);
 }
-.lxc__embed-icon {
-  font-size: .6rem;
-  color: rgba(147,197,253,.45);
-  font-weight: 900;
-  letter-spacing: -.02em;
-}
 
-/* Logo area */
-.lxc__logo {
+/* ── Channel Knobs ── */
+.lxc__knobs {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.lxc__knob {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%, #3e4058, #16172a);
+  border: 1.5px solid rgba(255,255,255,.13);
+  box-shadow: 0 2px 5px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
   position: relative;
-  width: 54px; height: 54px;
-  background: rgba(255,255,255,.05);
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.08);
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
   flex-shrink: 0;
-  z-index: 1;
-  box-shadow: 0 4px 14px rgba(0,0,0,.35);
-  transition: border-color .24s, box-shadow .24s;
 }
-.lxc:hover .lxc__logo {
-  border-color: rgba(147,197,253,.22);
-  box-shadow: 0 6px 18px rgba(0,0,0,.45);
-}
-.lxc__logo img     { width: 100%; height: 100%; object-fit: contain; }
-.lxc__logo-initials {
-  font-size: .9rem; font-weight: 800;
-  color: rgba(255,255,255,.4); letter-spacing: -.02em;
-}
-.lxc__logo-ring {
-  position: absolute; inset: -2px;
-  border-radius: 16px;
-  border: 1.5px solid rgba(34,197,94,.35);
-  pointer-events: none;
-}
-
-/* Name + lang */
-.lxc__info {
-  display: flex; flex-direction: column; gap: 3px;
-  position: relative; z-index: 1;
-  flex: 1;
-}
-.lxc__name {
-  font-size: .82rem; font-weight: 700;
-  color: rgba(255,255,255,.82); line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  transition: color .2s;
-  text-align: right;
-}
-.lxc:hover .lxc__name  { color: #bfdbfe; }
-.lxc--active .lxc__name { color: #93c5fd; }
-.lxc__lang {
-  font-size: .6rem; font-weight: 800;
-  color: rgba(255,255,255,.2);
-  letter-spacing: .12em; text-transform: uppercase;
-  text-align: right;
-}
-
-/* Bottom slot line */
-.lxc__slot-line {
+.lxc__knob::after {
+  content: '';
   position: absolute;
-  bottom: 0; left: 12%; right: 12%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
-  pointer-events: none;
+  top: 50%; left: 2px;
+  width: 4px; height: 1.5px;
+  background: rgba(255,255,255,.22);
+  border-radius: 1px;
+  transform: translateY(-50%);
 }
-.lxc--active .lxc__slot-line {
-  background: linear-gradient(90deg, transparent, rgba(59,130,246,.3), transparent);
+.lxc__knob--sm {
+  width: 10px; height: 10px;
+}
+.lxc--active .lxc__knob {
+  border-color: rgba(59,130,246,.45);
+  box-shadow: 0 0 8px rgba(59,130,246,.2), 0 2px 5px rgba(0,0,0,.7);
+}
+
+/* ── TV Feet ── */
+.lxc__feet {
+  display: flex;
+  justify-content: space-evenly;
+  padding: 0 18px 2px;
+  flex-shrink: 0;
+}
+.lxc__foot {
+  width: 22px; height: 7px;
+  background: linear-gradient(to bottom, #1c1e2e, #0e0f18);
+  border-radius: 0 0 5px 5px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-top: none;
+  box-shadow: 0 3px 8px rgba(0,0,0,.5);
+}
+
+/* ── CinematicPlayer: static overlay during switching ── */
+.cp--switching .cp__screen { animation: tv-hsync .18s steps(2) infinite; }
+.cp--switching .cp__scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 1px,
+    rgba(0,0,0,.08) 1px, rgba(0,0,0,.08) 2px
+  );
+}
+@keyframes tv-hsync {
+  0%   { transform: translateY(0); }
+  25%  { transform: translateY(-2px); }
+  75%  { transform: translateY(1px); }
+  100% { transform: translateY(0); }
+}
+
+/* ── Channel turn-on animation on activation ── */
+@keyframes tv-turn-on {
+  0%   { clip-path: inset(50% 0); filter: brightness(2); }
+  40%  { clip-path: inset(2% 0);  filter: brightness(1.3); }
+  100% { clip-path: inset(0% 0);  filter: brightness(1); }
+}
+.lxc--active .lxc__bezel {
+  animation: tv-turn-on .4s ease-out 1;
 }
 
 /* nav badge keep working */
