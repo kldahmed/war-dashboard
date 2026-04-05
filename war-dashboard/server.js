@@ -16,6 +16,8 @@ const env = require('./backend/config/env');
 const { runRssIngestion }  = require('./backend/modules/ingestion/service');
 const { runAutoOptimizer } = require('./backend/modules/self-optimization/service');
 const { generateSitrep }  = require('./backend/modules/intelligence/service');
+const { refreshWeather }  = require('./backend/modules/weather/service');
+const { refreshMarkets }  = require('./backend/modules/markets/service');
 const { pool } = require('./backend/lib/db');
 
 const app = createApp();
@@ -28,6 +30,12 @@ let optimizerInFlight = false;
 
 let sitrepTimer = null;
 let sitrepInFlight = false;
+
+let weatherTimer = null;
+let weatherInFlight = false;
+
+let marketsTimer = null;
+let marketsInFlight = false;
 
 function scheduleIngestion() {
   if (!env.ingestionScheduleEnabled) return;
@@ -88,6 +96,38 @@ function scheduleSitrep() {
   sitrepTimer = setInterval(runScheduledSitrep, env.sitrepScheduleMs);
 }
 
+function scheduleWeather() {
+  if (!env.weatherScheduleEnabled || !env.weatherApiKey) return;
+
+  const run = async () => {
+    if (weatherInFlight) return;
+    weatherInFlight = true;
+    try { await refreshWeather(); }
+    catch (err) { console.error('[weather:schedule] failed', err.message); }
+    finally { weatherInFlight = false; }
+  };
+
+  // Run immediately at startup, then on schedule
+  run();
+  weatherTimer = setInterval(run, env.weatherScheduleMs);
+}
+
+function scheduleMarkets() {
+  if (!env.marketsScheduleEnabled || !env.alphaVantageApiKey) return;
+
+  const run = async () => {
+    if (marketsInFlight) return;
+    marketsInFlight = true;
+    try { await refreshMarkets(); }
+    catch (err) { console.error('[markets:schedule] failed', err.message); }
+    finally { marketsInFlight = false; }
+  };
+
+  // Run immediately at startup, then on schedule
+  run();
+  marketsTimer = setInterval(run, env.marketsGoldScheduleMs);
+}
+
 app.listen(env.port, () => {
   const keySet = !!process.env.ANTHROPIC_API_KEY;
   console.log(`\n⚡ Dev API server → http://localhost:${env.port}`);
@@ -97,18 +137,24 @@ app.listen(env.port, () => {
   console.log(`   DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
   console.log(`   INGESTION_SCHEDULE_ENABLED: ${env.ingestionScheduleEnabled}`);
   console.log(`   INGESTION_SCHEDULE_MS: ${env.ingestionScheduleMs}`);
+  console.log(`   WEATHER_API_KEY: ${env.weatherApiKey ? '✅ set' : '⚠️  not set (weather panel disabled)'}`);
+  console.log(`   ALPHAVANTAGE_API_KEY: ${env.alphaVantageApiKey ? '✅ set' : '⚠️  not set (markets panel disabled)'}`);
   if (!keySet) {
     console.warn('\n   ⚠️  Copy .env.example → .env.local and set your key.\n');
   }
   scheduleIngestion();
   scheduleOptimizer();
   scheduleSitrep();
+  scheduleWeather();
+  scheduleMarkets();
 });
 
 process.on('SIGINT', async () => {
   if (ingestionTimer) clearInterval(ingestionTimer);
   if (optimizerTimer) clearInterval(optimizerTimer);
   if (sitrepTimer)    clearInterval(sitrepTimer);
+  if (weatherTimer)   clearInterval(weatherTimer);
+  if (marketsTimer)   clearInterval(marketsTimer);
   await pool.end().catch(() => {});
   process.exit(0);
 });

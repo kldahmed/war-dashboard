@@ -30,4 +30,17 @@ module.exports = {
   sitrepEnabled:
     String(process.env.SITREP_ENABLED || 'true').toLowerCase() === 'true',
   sitrepScheduleMs: toInt(process.env.SITREP_SCHEDULE_MS, 30 * 60 * 1000), // default 30min
+
+  // Weather service
+  weatherApiKey: process.env.WEATHER_API_KEY || '',
+  weatherScheduleEnabled:
+    String(process.env.WEATHER_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
+  weatherScheduleMs: toInt(process.env.WEATHER_SCHEDULE_MS, 60_000), // default 60s
+
+  // Markets service (Alpha Vantage)
+  alphaVantageApiKey: process.env.ALPHAVANTAGE_API_KEY || '',
+  marketsScheduleEnabled:
+    String(process.env.MARKETS_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
+  marketsGoldScheduleMs: toInt(process.env.MARKETS_GOLD_SCHEDULE_MS, 60_000),  // default 60s
+  marketsOilScheduleMs:  toInt(process.env.MARKETS_OIL_SCHEDULE_MS, 3_600_000), // default 1h
 };

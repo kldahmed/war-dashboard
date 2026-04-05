@@ -180,6 +180,42 @@ function editorialDecisionLabel(decision) {
   return labels[decision] || 'نشر';
 }
 
+function formatNumeric(value, options = {}) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return new Intl.NumberFormat('ar-AE', options).format(num);
+}
+
+function formatSignedNumeric(value, fractionDigits = 2) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  const sign = num > 0 ? '+' : '';
+  return `${sign}${formatNumeric(num, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })}`;
+}
+
+function formatPercentChange(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${formatSignedNumeric(num, 2)}%`;
+}
+
+function panelStateTone(updatedAt) {
+  if (!updatedAt) return 'neutral';
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - new Date(updatedAt).getTime()) / 1000));
+  if (ageSeconds <= 120) return 'positive';
+  if (ageSeconds <= 900) return 'neutral';
+  return 'negative';
+}
+
+function marketMoveTone(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num === 0) return 'neutral';
+  return num > 0 ? 'positive' : 'negative';
+}
+
 /* ─────────────────────────────────────────────────
    SMALL COMPONENTS
 ───────────────────────────────────────────────── */
@@ -1504,6 +1540,245 @@ function SearchBar({ value, onChange }) {
   );
 }
 
+function UAEWeatherPanel({
+  data,
+  loading,
+  available,
+  error,
+  selectedLocationId,
+  onSelectLocation,
+  onRetry,
+}) {
+  const locations = data?.locations || [];
+  const selectedLocation = locations.find((item) => item.id === selectedLocationId) || locations[0] || null;
+  const hourly = selectedLocation?.hourly?.slice(0, 6) || [];
+  const daily = selectedLocation?.daily?.slice(0, 3) || [];
+  const alerts = selectedLocation?.alerts || [];
+
+  return (
+    <section className="signal-panel signal-panel--weather">
+      <div className="signal-panel__header">
+        <div>
+          <div className="signal-panel__eyebrow">الطقس المباشر</div>
+          <h3 className="signal-panel__title">الإمارات الآن</h3>
+        </div>
+        <div className="signal-panel__meta">
+          <SignalPill tone={panelStateTone(data?.updated_at || selectedLocation?.current?.last_updated)}>
+            {selectedLocation?.current?.last_updated
+              ? `آخر تحديث ${relativeTime(selectedLocation.current.last_updated)}`
+              : data?.updated_at
+                ? `آخر مزامنة ${relativeTime(data.updated_at)}`
+                : 'بانتظار الخدمة'}
+          </SignalPill>
+          {onRetry && (
+            <button className="signal-panel__refresh" onClick={onRetry}>
+              تحديث
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading && <LoadingSpinner label="جارٍ تحميل طقس الإمارات…" />}
+
+      {!loading && !available && (
+        <div className="signal-panel__empty">
+          <strong>واجهة الطقس غير مفعلة بعد</strong>
+          <p>تم تركيب اللوحة داخل الواجهة، وستعرض المدن، التحديث الفعلي، التنبيهات، والتوقعات بمجرد تفعيل endpoint الطقس الحي.</p>
+        </div>
+      )}
+
+      {!loading && available && error && (
+        <div className="signal-panel__empty signal-panel__empty--error">
+          <strong>تعذر قراءة بيانات الطقس</strong>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && available && !error && selectedLocation && (
+        <>
+          <div className="signal-city-tabs">
+            {locations.map((location) => (
+              <button
+                key={location.id}
+                className={`signal-city-tab${selectedLocation.id === location.id ? ' signal-city-tab--active' : ''}`}
+                onClick={() => onSelectLocation(location.id)}
+              >
+                {location.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="weather-hero">
+            <div className="weather-hero__main">
+              <div className="weather-hero__temp">{formatNumeric(selectedLocation.current?.temp_c, { maximumFractionDigits: 0 })}°</div>
+              <div className="weather-hero__summary">
+                <strong>{selectedLocation.current?.condition_text || '—'}</strong>
+                <span>المحسوسة {formatNumeric(selectedLocation.current?.feelslike_c, { maximumFractionDigits: 0 })}°</span>
+                <span>{selectedLocation.name}</span>
+              </div>
+            </div>
+            <div className="weather-hero__stats">
+              <div className="weather-chip"><span>الرطوبة</span><strong>{formatNumeric(selectedLocation.current?.humidity, { maximumFractionDigits: 0 })}%</strong></div>
+              <div className="weather-chip"><span>الرياح</span><strong>{formatNumeric(selectedLocation.current?.wind_kph, { maximumFractionDigits: 0 })} كم/س</strong></div>
+              <div className="weather-chip"><span>الضغط</span><strong>{formatNumeric(selectedLocation.current?.pressure_mb, { maximumFractionDigits: 0 })} mb</strong></div>
+              <div className="weather-chip"><span>الرؤية</span><strong>{formatNumeric(selectedLocation.current?.vis_km, { maximumFractionDigits: 0 })} كم</strong></div>
+            </div>
+          </div>
+
+          <div className="weather-grid">
+            <div className="weather-card">
+              <div className="weather-card__title">الساعات القادمة</div>
+              <div className="weather-hour-list">
+                {hourly.length > 0 ? hourly.map((entry, index) => (
+                  <div key={entry.time || index} className="weather-hour-item">
+                    <span>{entry.time_label || entry.time || '—'}</span>
+                    <strong>{formatNumeric(entry.temp_c, { maximumFractionDigits: 0 })}°</strong>
+                    <small>{entry.condition_text || '—'}</small>
+                  </div>
+                )) : <div className="signal-panel__mini-empty">سيظهر هنا خط الساعات القادمة</div>}
+              </div>
+            </div>
+
+            <div className="weather-card">
+              <div className="weather-card__title">توقع الأيام القادمة</div>
+              <div className="weather-day-list">
+                {daily.length > 0 ? daily.map((entry, index) => (
+                  <div key={entry.date || index} className="weather-day-item">
+                    <div>
+                      <strong>{entry.label || entry.date || '—'}</strong>
+                      <small>{entry.condition_text || '—'}</small>
+                    </div>
+                    <div className="weather-day-item__temps">
+                      <span>{formatNumeric(entry.max_c, { maximumFractionDigits: 0 })}°</span>
+                      <span>{formatNumeric(entry.min_c, { maximumFractionDigits: 0 })}°</span>
+                    </div>
+                  </div>
+                )) : <div className="signal-panel__mini-empty">سيظهر هنا ملخص 3 أيام</div>}
+              </div>
+            </div>
+          </div>
+
+          <div className="signal-panel__footer">
+            <span>المصدر: {data?.provider || '—'}</span>
+            <span>التنبيهات: {alerts.length}</span>
+            <span>التوقيت المحلي: {selectedLocation.local_time || '—'}</span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function UAEMarketsPanel({ data, loading, available, error, onRetry }) {
+  const gold = data?.gold || null;
+  const oilBenchmarks = data?.oil?.benchmarks || [];
+
+  return (
+    <section className="signal-panel signal-panel--markets">
+      <div className="signal-panel__header">
+        <div>
+          <div className="signal-panel__eyebrow">الذهب والطاقة</div>
+          <h3 className="signal-panel__title">أسعار الإمارات المرجعية</h3>
+        </div>
+        <div className="signal-panel__meta">
+          <SignalPill tone={panelStateTone(data?.updated_at)}>
+            {data?.updated_at ? `آخر مزامنة ${relativeTime(data.updated_at)}` : 'بانتظار الخدمة'}
+          </SignalPill>
+          {onRetry && (
+            <button className="signal-panel__refresh" onClick={onRetry}>
+              تحديث
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading && <LoadingSpinner label="جارٍ تحميل أسعار الذهب والنفط…" />}
+
+      {!loading && !available && (
+        <div className="signal-panel__empty">
+          <strong>واجهة الأسواق غير مفعلة بعد</strong>
+          <p>اللوحة جاهزة لعرض الذهب المشتق بالدرهم، زوج USD/AED، ومراجع النفط مثل Murban وBrent فور تفعيل endpoint السوق.</p>
+        </div>
+      )}
+
+      {!loading && available && error && (
+        <div className="signal-panel__empty signal-panel__empty--error">
+          <strong>تعذر قراءة بيانات الأسواق</strong>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && available && !error && (
+        <div className="markets-layout">
+          <div className="markets-card markets-card--gold">
+            <div className="markets-card__title-row">
+              <strong>الذهب</strong>
+              <span>{gold?.provider || '—'}</span>
+            </div>
+            <div className="markets-price-grid">
+              <div className="markets-price-block">
+                <span>سبوت XAU/USD</span>
+                <strong>{formatNumeric(gold?.spot_usd_oz, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</strong>
+                <small>للأونصة</small>
+              </div>
+              <div className="markets-price-block">
+                <span>USD / AED</span>
+                <strong>{formatNumeric(gold?.fx_usd_aed, { maximumFractionDigits: 4, minimumFractionDigits: 2 })}</strong>
+                <small>تحويل</small>
+              </div>
+            </div>
+            <div className="gold-rate-grid">
+              {[
+                ['24K', gold?.derived_aed_gram?.k24],
+                ['22K', gold?.derived_aed_gram?.k22],
+                ['21K', gold?.derived_aed_gram?.k21],
+                ['18K', gold?.derived_aed_gram?.k18],
+              ].map(([label, value]) => (
+                <div key={label} className="gold-rate-tile">
+                  <span>{label}</span>
+                  <strong>{formatNumeric(value, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</strong>
+                  <small>درهم/غرام</small>
+                </div>
+              ))}
+            </div>
+            <div className="signal-panel__footer">
+              <span>{gold?.mode_label || 'سعر مشتق مرجعي'}</span>
+              <span>{gold?.updated_at ? `تم تحديثه ${relativeTime(gold.updated_at)}` : '—'}</span>
+            </div>
+          </div>
+
+          <div className="markets-card markets-card--oil">
+            <div className="markets-card__title-row">
+              <strong>النفط</strong>
+              <span>{data?.oil?.provider || '—'}</span>
+            </div>
+            <div className="oil-benchmark-list">
+              {oilBenchmarks.length > 0 ? oilBenchmarks.map((item, index) => (
+                <div key={item.symbol || index} className="oil-benchmark-item">
+                  <div>
+                    <strong>{item.label || item.symbol || '—'}</strong>
+                    <small>{item.unit || 'USD'}</small>
+                  </div>
+                  <div className="oil-benchmark-item__price">
+                    <span>{formatNumeric(item.price, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span>
+                    <small className={`oil-benchmark-item__move oil-benchmark-item__move--${marketMoveTone(item.change_pct || item.change)}`}>
+                      {formatSignedNumeric(item.change, 2)} · {formatPercentChange(item.change_pct)}
+                    </small>
+                  </div>
+                </div>
+              )) : <div className="signal-panel__mini-empty">سيظهر هنا Murban وBrent وWTI</div>}
+            </div>
+            <div className="signal-panel__footer">
+              <span>عدد المؤشرات: {oilBenchmarks.length}</span>
+              <span>{data?.oil?.updated_at ? `تم تحديثه ${relativeTime(data.oil.updated_at)}` : '—'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ─────────────────────────────────────────────────
    MAIN APP
 ───────────────────────────────────────────────── */
@@ -1554,6 +1829,14 @@ export default function App() {
   const [loadingOps,     setLoadingOps]     = useState(false);
   const [errorOps,       setErrorOps]       = useState(null);
   const [opsUpdatedAt,   setOpsUpdatedAt]   = useState(null);
+  const [weatherHub,     setWeatherHub]     = useState(null);
+  const [weatherHubAvailable, setWeatherHubAvailable] = useState(null);
+  const [weatherHubError, setWeatherHubError] = useState(null);
+  const [marketsHub,     setMarketsHub]     = useState(null);
+  const [marketsHubAvailable, setMarketsHubAvailable] = useState(null);
+  const [marketsHubError, setMarketsHubError] = useState(null);
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [selectedWeatherLocationId, setSelectedWeatherLocationId] = useState(null);
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
@@ -1703,6 +1986,44 @@ export default function App() {
     }
   }, []);
 
+  /* ─── Weather & Markets Loader ─── */
+  const loadSignalPanels = useCallback(async () => {
+    const readPanel = async (url) => {
+      try {
+        const res = await fetch(url);
+        if (res.status === 404 || res.status === 405 || res.status === 501) {
+          return { available: false, data: null, error: null };
+        }
+        if (!res.ok) {
+          return { available: true, data: null, error: `HTTP ${res.status}` };
+        }
+        return { available: true, data: await res.json(), error: null };
+      } catch (err) {
+        return { available: true, data: null, error: err.message || 'network_error' };
+      }
+    };
+
+    setSignalsLoading(true);
+    const [weatherResult, marketsResult] = await Promise.all([
+      readPanel('/api/weather/uae'),
+      readPanel('/api/markets/uae'),
+    ]);
+
+    setWeatherHubAvailable(weatherResult.available);
+    setWeatherHub(weatherResult.data);
+    setWeatherHubError(weatherResult.error);
+
+    setMarketsHubAvailable(marketsResult.available);
+    setMarketsHub(marketsResult.data);
+    setMarketsHubError(marketsResult.error);
+    setSignalsLoading(false);
+  }, []);
+
+  const refreshOpsView = useCallback(() => {
+    loadOps();
+    loadSignalPanels();
+  }, [loadOps, loadSignalPanels]);
+
   /* ─── SITREP Loader ─── */
   const loadSitrep = useCallback(async () => {
     setSitrepLoading(true);
@@ -1724,6 +2045,15 @@ export default function App() {
   useEffect(() => { loadLive({ silent: false }); }, [loadLive]);
   useEffect(() => { loadOps(); }, [loadOps]);
   useEffect(() => { loadSitrep(); }, [loadSitrep]);
+  useEffect(() => {
+    if (activeTab !== 'ops') return;
+    if (weatherHubAvailable === null && marketsHubAvailable === null) loadSignalPanels();
+  }, [activeTab, weatherHubAvailable, marketsHubAvailable, loadSignalPanels]);
+  useEffect(() => {
+    if (selectedWeatherLocationId) return;
+    const firstLocationId = weatherHub?.locations?.[0]?.id;
+    if (firstLocationId) setSelectedWeatherLocationId(firstLocationId);
+  }, [weatherHub, selectedWeatherLocationId]);
 
   /* ─── Category Change ─── */
   useEffect(() => {
@@ -2189,11 +2519,29 @@ export default function App() {
         {activeTab === 'ops' && (
           <div className="ops-view">
             {errorOps && <ErrorBanner message={errorOps} onRetry={loadOps} />}
+            <div className="ops-signal-grid">
+              <UAEWeatherPanel
+                data={weatherHub}
+                loading={signalsLoading && weatherHubAvailable === null}
+                available={weatherHubAvailable}
+                error={weatherHubError}
+                selectedLocationId={selectedWeatherLocationId}
+                onSelectLocation={setSelectedWeatherLocationId}
+                onRetry={loadSignalPanels}
+              />
+              <UAEMarketsPanel
+                data={marketsHub}
+                loading={signalsLoading && marketsHubAvailable === null}
+                available={marketsHubAvailable}
+                error={marketsHubError}
+                onRetry={loadSignalPanels}
+              />
+            </div>
             <NewsroomDashboard
               newsroomStatus={newsroomStatus}
               metricsBasic={metricsBasic}
               updatedAt={opsUpdatedAt}
-              onRefresh={loadOps}
+              onRefresh={refreshOpsView}
               loading={loadingOps}
             />
           </div>
@@ -6361,6 +6709,347 @@ img { display: block; max-width: 100%; }
   .pod-player-bar { flex-wrap: wrap; }
   .pod-player-bar__info { max-width: 100%; }
   .pod-player-bar__audio { width: 100%; }
+}
+
+/* Ops signal panels */
+.ops-signal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, .95fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.signal-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+  box-shadow: 0 18px 42px rgba(0,0,0,.22);
+  padding: 18px;
+}
+.signal-panel--weather {
+  background:
+    radial-gradient(circle at top right, rgba(59,130,246,.18), transparent 32%),
+    linear-gradient(180deg, rgba(11,20,40,.94), rgba(10,14,28,.95));
+}
+.signal-panel--markets {
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.18), transparent 28%),
+    linear-gradient(180deg, rgba(28,18,10,.94), rgba(18,14,12,.95));
+}
+.signal-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.signal-panel__eyebrow {
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.42);
+  margin-bottom: 6px;
+}
+.signal-panel__title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.signal-panel__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.signal-panel__refresh {
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.signal-panel__refresh:hover {
+  background: rgba(255,255,255,.12);
+}
+.signal-panel__empty,
+.signal-panel__mini-empty {
+  border-radius: 14px;
+  border: 1px dashed rgba(255,255,255,.12);
+  background: rgba(255,255,255,.03);
+  color: rgba(255,255,255,.68);
+}
+.signal-panel__empty {
+  padding: 18px;
+}
+.signal-panel__empty strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.signal-panel__empty p {
+  font-size: .84rem;
+  line-height: 1.7;
+}
+.signal-panel__empty--error {
+  border-color: rgba(239,68,68,.22);
+  background: rgba(127,29,29,.16);
+}
+.signal-panel__mini-empty {
+  padding: 14px;
+  font-size: .78rem;
+  text-align: center;
+}
+.signal-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  color: rgba(255,255,255,.45);
+  font-size: .74rem;
+}
+
+.signal-city-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.signal-city-tab {
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.7);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.signal-city-tab--active {
+  background: rgba(96,165,250,.18);
+  border-color: rgba(96,165,250,.34);
+  color: #dbeafe;
+}
+
+.weather-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, .9fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.weather-hero__main,
+.weather-hero__stats,
+.weather-card,
+.markets-card {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+}
+.weather-hero__main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+.weather-hero__temp {
+  font-size: 3rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #e0f2fe;
+}
+.weather-hero__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: rgba(255,255,255,.72);
+  font-size: .82rem;
+}
+.weather-hero__summary strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+.weather-hero__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+.weather-chip {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.05);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.weather-chip span {
+  font-size: .7rem;
+  color: rgba(255,255,255,.48);
+}
+.weather-chip strong {
+  font-size: .95rem;
+  color: var(--text);
+}
+.weather-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.weather-card,
+.markets-card {
+  padding: 16px;
+}
+.weather-card__title,
+.markets-card__title-row strong {
+  font-size: .95rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.weather-hour-list,
+.weather-day-list,
+.oil-benchmark-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.weather-hour-item,
+.weather-day-item,
+.oil-benchmark-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+}
+.weather-hour-item span,
+.weather-day-item small,
+.oil-benchmark-item small {
+  color: rgba(255,255,255,.5);
+  font-size: .72rem;
+}
+.weather-hour-item strong,
+.weather-day-item strong,
+.oil-benchmark-item strong,
+.oil-benchmark-item__price span {
+  color: var(--text);
+}
+.weather-hour-item {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+.weather-hour-item small {
+  text-align: left;
+}
+.weather-day-item__temps {
+  display: flex;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.markets-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.markets-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255,255,255,.48);
+  font-size: .74rem;
+}
+.markets-price-grid,
+.gold-rate-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.markets-price-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.gold-rate-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.markets-price-block,
+.gold-rate-tile {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.markets-price-block span,
+.gold-rate-tile span,
+.gold-rate-tile small {
+  font-size: .72rem;
+  color: rgba(255,255,255,.48);
+}
+.markets-price-block strong,
+.gold-rate-tile strong {
+  font-size: 1.08rem;
+  color: var(--text);
+}
+.oil-benchmark-item__price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.oil-benchmark-item__move--positive { color: #86efac; }
+.oil-benchmark-item__move--negative { color: #fca5a5; }
+.oil-benchmark-item__move--neutral { color: rgba(255,255,255,.48); }
+
+@media (max-width: 1080px) {
+  .ops-signal-grid,
+  .weather-hero,
+  .weather-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .signal-panel__header,
+  .signal-panel__footer,
+  .markets-card__title-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .signal-panel__meta {
+    justify-content: flex-start;
+  }
+  .weather-hour-item {
+    grid-template-columns: 1fr auto;
+  }
+  .weather-hour-item small {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+  .gold-rate-grid,
+  .markets-price-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .signal-panel { padding: 14px; }
+  .weather-hero__main { flex-direction: column; align-items: flex-start; }
+  .weather-hero__temp { font-size: 2.5rem; }
+  .weather-hero__stats,
+  .gold-rate-grid,
+  .markets-price-grid {
+    grid-template-columns: 1fr;
+  }
 }
 `;
 

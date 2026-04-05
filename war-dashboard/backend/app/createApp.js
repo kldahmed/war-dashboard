@@ -11,6 +11,8 @@ const newsFeedRoutes = require('../modules/news-feed/routes');
 const observabilityRoutes = require('../modules/observability/routes');
 const intelligenceRoutes = require('../modules/intelligence/routes');
 const podcastsRoutes = require('../modules/podcasts/routes');
+const weatherRoutes  = require('../modules/weather/routes');
+const marketsRoutes  = require('../modules/markets/routes');
 const legacyClaudeHandler = require('../../api/claude');
 
 function createApp() {
@@ -45,6 +47,8 @@ function createApp() {
   app.use('/api', ingestionRoutes);
   app.use('/api', newsFeedRoutes);
   app.use('/api', podcastsRoutes);
+  app.use('/api', weatherRoutes);
+  app.use('/api', marketsRoutes);
 
   app.use((err, req, res, _next) => {
     logger.error('http_error', {
