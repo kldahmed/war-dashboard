@@ -2,6 +2,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useDeferredValue,
   useRef,
   useMemo,
 } from 'react';
@@ -50,6 +51,16 @@ const ALERT_THRESHOLDS = {
   down_streams_warning:     2,
   failing_sources_critical: 5,
   failing_sources_warning:  2,
+};
+
+const LIVE_CATEGORY_META = {
+  news: { label: 'أخبار' },
+  sports: { label: 'رياضة' },
+  entertainment: { label: 'ترفيه' },
+  economy: { label: 'اقتصاد' },
+  documentary: { label: 'وثائقي' },
+  live: { label: 'مباشر' },
+  other: { label: 'أخرى' },
 };
 
 const CATEGORY_COORDS = {
@@ -634,9 +645,78 @@ const CH_STATUS = {
   unknown:  { label: '—',      cls: 'offline',   dot: '#555e78', shadow: 'none' },
 };
 
+function getStreamRecord(entry) {
+  return entry?.stream || entry || {};
+}
+
+function getStreamId(entry) {
+  const stream = getStreamRecord(entry);
+  return String(stream.registry_id || stream.id || entry?.registry_id || entry?.id || '');
+}
+
+function getStreamName(entry) {
+  const stream = getStreamRecord(entry);
+  return entry?.source?.name || stream.name || stream.registry_id || 'قناة غير معروفة';
+}
+
+function getStreamLanguage(entry) {
+  const stream = getStreamRecord(entry);
+  return entry?.source?.language || stream.language || '';
+}
+
+function getStreamCategory(entry) {
+  return entry?.source?.category || getStreamRecord(entry).category || 'other';
+}
+
+function getLiveCategoryLabel(category) {
+  return LIVE_CATEGORY_META[category]?.label || LIVE_CATEGORY_META.other.label;
+}
+
+function isStreamUp(stream) {
+  return stream?.uptime_status === 'up';
+}
+
+function isStreamDegraded(stream) {
+  return stream?.uptime_status === 'degraded';
+}
+
+function isStreamAvailable(stream) {
+  return isStreamUp(stream) || isStreamDegraded(stream);
+}
+
+function isStreamVerified(stream) {
+  const state = stream?.verification_status || stream?.last_verification_status;
+  return state === 'embed_ok';
+}
+
+function formatStreamReason(reason) {
+  const labels = {
+    verified_embed_available: 'تم التحقق من البث المباشر',
+    recent_success: 'الإشارة حديثة ومستقرة',
+    success_aging: 'الإشارة تعمل لكن تحتاج مراقبة',
+    recent_error_after_success: 'ظهرت أخطاء بعد آخر نجاح',
+    stream_inactive: 'القناة غير مفعلة',
+    success_too_old: 'آخر نجاح قديم',
+    external_watch_available: 'المشاهدة المباشرة متاحة',
+    external_watch_only: 'الفتح الخارجي فقط',
+    awaiting_first_success: 'بانتظار أول نجاح فعلي',
+    no_success_recent_error: 'لا يوجد نجاح مع أخطاء حديثة',
+  };
+  return labels[reason] || 'قيد المراقبة';
+}
+
+function formatStreamVerification(state) {
+  const labels = {
+    embed_ok: 'متحقق',
+    frame_blocked_verified: 'محجوب تضمين',
+    removed_from_registry: 'أزيل من السجل',
+  };
+  return labels[state] || 'غير موثق';
+}
+
 function getChStatus(s) {
-  if (s.uptime_status === 'up' || s.status === 'active') return CH_STATUS.up;
-  if (s.uptime_status === 'degraded') return CH_STATUS.degraded;
+  if (isStreamUp(s)) return CH_STATUS.up;
+  if (isStreamDegraded(s)) return CH_STATUS.degraded;
   if (s.uptime_status === 'down') return CH_STATUS.down;
   return CH_STATUS.unknown;
 }
@@ -770,36 +850,98 @@ function LuxChannelCard({ stream, onSelect, isActive, isSwitching }) {
 
 function CinematicPlayer({ stream, onClose, switching }) {
   if (!stream) return null;
-  const s       = stream.stream || stream;
-  const name    = stream.source?.name || s.name || s.registry_id || '';
-  const lang    = stream.source?.language || s.language || '';
+  const s       = getStreamRecord(stream);
+  const name    = getStreamName(stream);
+  const lang    = getStreamLanguage(stream);
   const embedUrl = s.embed_url || s.embedUrl;
   const watchUrl = s.external_watch_url || s.official_page_url;
   const status  = getChStatus(s);
-  const isLive  = status.cls === 'online';
+  const isLive  = isStreamUp(s);
   const [imgErr, setImgErr] = React.useState(false);
   const videoRef = React.useRef(null);
   const hlsRef   = React.useRef(null);
   const isHls    = typeof embedUrl === 'string' && embedUrl.includes('.m3u8');
+  const [playerState, setPlayerState] = React.useState(embedUrl ? 'loading' : 'idle');
+  const [playerError, setPlayerError] = React.useState(null);
+  const [retryNonce, setRetryNonce] = React.useState(0);
+
+  React.useEffect(() => {
+    setPlayerState(embedUrl ? 'loading' : 'idle');
+    setPlayerError(null);
+  }, [embedUrl, retryNonce, name]);
 
   React.useEffect(() => {
     if (!isHls || !videoRef.current) return;
     const video = videoRef.current;
-    // Destroy previous instance
+    let recoveredOnce = false;
+    const markReady = () => {
+      setPlayerState('ready');
+      setPlayerError(null);
+    };
+    const markBuffering = () => {
+      setPlayerState((current) => (current === 'error' ? current : 'buffering'));
+    };
+    const fail = (message) => {
+      setPlayerState('error');
+      setPlayerError(message);
+    };
+
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+
+    video.addEventListener('playing', markReady);
+    video.addEventListener('canplay', markReady);
+    video.addEventListener('waiting', markBuffering);
+    video.addEventListener('stalled', markBuffering);
+    video.addEventListener('error', () => fail('تعذر تشغيل البث داخل المشغل')); 
+
     if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
       hlsRef.current = hls;
       hls.loadSource(embedUrl);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setPlayerState('ready');
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data?.fatal) return;
+        if (!recoveredOnce && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          recoveredOnce = true;
+          setPlayerState('buffering');
+          hls.startLoad();
+          return;
+        }
+        if (!recoveredOnce && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          recoveredOnce = true;
+          setPlayerState('buffering');
+          hls.recoverMediaError();
+          return;
+        }
+        fail('فشل تشغيل الإشارة المباشرة لهذه القناة');
+      });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS (Safari)
       video.src = embedUrl;
+      video.load();
       video.play().catch(() => {});
+    } else {
+      fail('هذا المتصفح لا يدعم تشغيل هذا النوع من البث');
     }
-    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
-  }, [embedUrl, isHls]);
+
+    return () => {
+      video.removeEventListener('playing', markReady);
+      video.removeEventListener('canplay', markReady);
+      video.removeEventListener('waiting', markBuffering);
+      video.removeEventListener('stalled', markBuffering);
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    };
+  }, [embedUrl, isHls, retryNonce]);
+
+  const reasonLabel = formatStreamReason(s.health_reason);
+  const verificationLabel = formatStreamVerification(s.verification_status);
+  const scorePct = `${Math.round(Number(s.score || 0) * 100)}%`;
 
   return (
     <div className={`cp${switching ? ' cp--switching' : ''}`} dir="rtl" role="region" aria-label={`مشاهدة ${name}`}>
@@ -860,6 +1002,7 @@ function CinematicPlayer({ stream, onClose, switching }) {
           />
         ) : embedUrl ? (
           <iframe
+            key={`${getStreamId(stream)}:${retryNonce}`}
             src={embedUrl}
             title={name}
             allow="autoplay; fullscreen; picture-in-picture"
@@ -887,6 +1030,32 @@ function CinematicPlayer({ stream, onClose, switching }) {
             )}
           </div>
         )}
+        {embedUrl && isHls && playerState !== 'ready' && !playerError && (
+          <div className="cp__overlay cp__overlay--loading">
+            <span className="cp__overlay-spinner" aria-hidden="true" />
+            <span className="cp__overlay-text">
+              {playerState === 'buffering' ? 'يتم تثبيت الإشارة الحية…' : 'جار تجهيز البث المباشر…'}
+            </span>
+          </div>
+        )}
+        {playerError && (
+          <div className="cp__overlay cp__overlay--error">
+            <div className="cp__overlay-card">
+              <strong>تعذر تشغيل القناة داخل المشغل</strong>
+              <p>{playerError}</p>
+              <div className="cp__overlay-actions">
+                <button className="cp__retry-btn" onClick={() => setRetryNonce((value) => value + 1)}>
+                  إعادة المحاولة
+                </button>
+                {watchUrl && (
+                  <a href={watchUrl} target="_blank" rel="noopener noreferrer" className="cp__overlay-link">
+                    فتح المصدر الرسمي
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {/* TV static overlay during channel switch */}
         <TvStaticCanvas active={!!switching} />
         {/* CRT scanlines texture */}
@@ -895,10 +1064,90 @@ function CinematicPlayer({ stream, onClose, switching }) {
         <div className="cp__vignette" aria-hidden="true" />
       </div>
 
-      {s.description && (
-        <div className="cp__footer">{s.description}</div>
-      )}
+      <div className="cp__footer">
+        <div className="cp__footer-grid">
+          <span><strong>الثقة:</strong> {scorePct}</span>
+          <span><strong>التحقق:</strong> {verificationLabel}</span>
+          <span><strong>الحالة:</strong> {reasonLabel}</span>
+          {s.last_verified_at && <span><strong>آخر تحقق:</strong> {relativeTime(s.last_verified_at)}</span>}
+        </div>
+        {s.description && <div className="cp__footer-note">{s.description}</div>}
+      </div>
     </div>
+  );
+}
+
+function LiveFocusPanel({ stream, queue, updatedAt, onSelect }) {
+  if (!stream) return null;
+  const s = getStreamRecord(stream);
+  const status = getChStatus(s);
+  const story = stream.story_link;
+  const scorePct = `${Math.round(Number(s.score || 0) * 100)}%`;
+
+  return (
+    <aside className="live-focus-panel" dir="rtl">
+      <div className="live-focus-panel__top">
+        <div>
+          <span className="live-focus-panel__eyebrow">لوحة القناة</span>
+          <h3 className="live-focus-panel__title">{getStreamName(stream)}</h3>
+          <p className="live-focus-panel__sub">
+            {getLiveCategoryLabel(getStreamCategory(stream))}
+            {getStreamLanguage(stream) ? ` · ${getStreamLanguage(stream).toUpperCase()}` : ''}
+          </p>
+        </div>
+        <span className={`live-focus-panel__status live-focus-panel__status--${status.cls}`}>{status.label}</span>
+      </div>
+
+      <div className="live-focus-panel__stats">
+        <div className="live-focus-stat">
+          <span className="live-focus-stat__label">جودة الإشارة</span>
+          <strong className="live-focus-stat__value">{scorePct}</strong>
+        </div>
+        <div className="live-focus-stat">
+          <span className="live-focus-stat__label">القصص المرتبطة</span>
+          <strong className="live-focus-stat__value">{stream.stats?.story_count ?? 0}</strong>
+        </div>
+        <div className="live-focus-stat">
+          <span className="live-focus-stat__label">التكتلات</span>
+          <strong className="live-focus-stat__value">{stream.stats?.linked_cluster_count ?? 0}</strong>
+        </div>
+      </div>
+
+      <div className="live-focus-panel__badges">
+        <span className="live-focus-badge">{formatStreamVerification(s.verification_status)}</span>
+        <span className="live-focus-badge">{formatStreamReason(s.health_reason)}</span>
+        {updatedAt && <span className="live-focus-badge">آخر تحديث {relativeTime(updatedAt)}</span>}
+      </div>
+
+      <div className={`live-focus-story${story ? '' : ' live-focus-story--empty'}`}>
+        <span className="live-focus-story__eyebrow">أقرب قصة مرتبطة</span>
+        {story ? (
+          <>
+            <strong className="live-focus-story__title">{story.title}</strong>
+            <p className="live-focus-story__meta">
+              {story.published_at ? relativeTime(story.published_at) : 'بدون توقيت'}
+              {typeof story.corroboration_count === 'number' ? ` · ${story.corroboration_count} تأكيد` : ''}
+            </p>
+          </>
+        ) : (
+          <p className="live-focus-story__meta">لا توجد قصة مرتبطة كفاية بهذه القناة حاليًا.</p>
+        )}
+      </div>
+
+      {queue.length > 0 && (
+        <div className="live-focus-queue">
+          <span className="live-focus-queue__title">انتقال سريع</span>
+          <div className="live-focus-queue__items">
+            {queue.map((item) => (
+              <button key={getStreamId(item)} className="live-focus-queue__item" onClick={() => onSelect(item)}>
+                <span className="live-focus-queue__dot" />
+                {getStreamName(item)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -1275,12 +1524,19 @@ export default function App() {
   /* ── Live ── */
   const [streams,      setStreams]       = useState([]);
   const [liveSummary,  setLiveSummary]   = useState(null);
-  const [selectedStream, setSelectedStream] = useState(null);
+  const [selectedStreamId, setSelectedStreamId] = useState(null);
   const [loadingLive,  setLoadingLive]   = useState(false);
+  const [refreshingLive, setRefreshingLive] = useState(false);
   const [errorLive,    setErrorLive]     = useState(null);
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState(null);
   const [channelSearch, setChannelSearch] = useState('');
+  const deferredChannelSearch = useDeferredValue(channelSearch);
+  const [liveCategoryFilter, setLiveCategoryFilter] = useState('all');
+  const [liveHealthFilter, setLiveHealthFilter] = useState('all');
   const [tvSwitching,  setTvSwitching]   = useState(false);
   const tvSwitchTimerRef = React.useRef(null);
+  const liveRequestRef = React.useRef(0);
+  const hasAutoSelectedLiveRef = React.useRef(false);
 
   /* ── Ops ── */
   const [newsroomStatus, setNewsroomStatus] = useState(null);
@@ -1328,33 +1584,47 @@ export default function App() {
   }, []);
 
   /* ─── Live Loader ─── */
-  const loadLive = useCallback(async () => {
-    setLoadingLive(true);
+  const loadLive = useCallback(async ({ silent = false } = {}) => {
+    const requestId = ++liveRequestRef.current;
+    if (silent) setRefreshingLive(true);
+    else setLoadingLive(true);
     setErrorLive(null);
     try {
       const res = await fetch('/api/health/streams');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const payload = await res.json();
+      if (requestId !== liveRequestRef.current) return;
       const rawStreams = payload?.streams ?? [];
       setStreams(rawStreams);
       setLiveSummary(payload?.summary ?? null);
+      setLiveUpdatedAt(payload?.time ?? new Date().toISOString());
     } catch (err) {
+      if (requestId !== liveRequestRef.current) return;
       setErrorLive(err.message);
     } finally {
-      setLoadingLive(false);
+      if (requestId === liveRequestRef.current) {
+        setLoadingLive(false);
+        setRefreshingLive(false);
+      }
     }
   }, []);
 
   /* ─── TV Channel Switcher (with static noise animation) ─── */
   const handleTvSelect = React.useCallback((stream) => {
+    const nextId = getStreamId(stream);
+    if (!nextId) return;
     if (tvSwitchTimerRef.current) clearTimeout(tvSwitchTimerRef.current);
     setTvSwitching(true);
     tvSwitchTimerRef.current = setTimeout(() => {
-      setSelectedStream(stream);
+      setSelectedStreamId(nextId);
       tvSwitchTimerRef.current = setTimeout(() => {
         setTvSwitching(false);
       }, 380);
     }, 520);
+  }, []);
+
+  useEffect(() => () => {
+    if (tvSwitchTimerRef.current) clearTimeout(tvSwitchTimerRef.current);
   }, []);
 
   /* ─── Ops Loader ─── */
@@ -1405,7 +1675,7 @@ export default function App() {
 
   /* ─── Initial Loads ─── */
   useEffect(() => { loadNews('all', '', 1); }, [loadNews]);
-  useEffect(() => { loadLive(); }, [loadLive]);
+  useEffect(() => { loadLive({ silent: false }); }, [loadLive]);
   useEffect(() => { loadOps(); }, [loadOps]);
   useEffect(() => { loadSitrep(); }, [loadSitrep]);
 
@@ -1452,7 +1722,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab !== 'live') return;
-    const id = setInterval(loadLive, 60_000);
+    const id = setInterval(() => loadLive({ silent: true }), 60_000);
     return () => clearInterval(id);
   }, [activeTab, loadLive]);
 
@@ -1496,36 +1766,104 @@ export default function App() {
     [newsItems]
   );
 
+  const featuredStream = useMemo(() => {
+    return streams.find((st) => getStreamRecord(st).featured)
+      || streams.find((st) => isStreamAvailable(getStreamRecord(st)))
+      || streams[0]
+      || null;
+  }, [streams]);
+
+  const selectedStream = useMemo(() => {
+    if (!selectedStreamId) return null;
+    return streams.find((st) => getStreamId(st) === selectedStreamId) || null;
+  }, [streams, selectedStreamId]);
+
+  useEffect(() => {
+    if (streams.length === 0) {
+      setSelectedStreamId(null);
+      hasAutoSelectedLiveRef.current = false;
+      return;
+    }
+    if (selectedStreamId && streams.some((st) => getStreamId(st) === selectedStreamId)) return;
+    if (!selectedStreamId && hasAutoSelectedLiveRef.current) return;
+    const fallback = featuredStream || streams[0];
+    hasAutoSelectedLiveRef.current = true;
+    setSelectedStreamId(getStreamId(fallback));
+  }, [streams, selectedStreamId, featuredStream]);
+
   /* ─── Filtered Streams ─── */
   const filteredStreams = useMemo(() => {
-    const q = channelSearch.trim().toLowerCase();
+    const q = deferredChannelSearch.trim().toLowerCase();
     const base = q
       ? streams.filter(st => {
-          const name = st.source?.name || (st.stream || st).name || (st.stream || st).registry_id || '';
-          const lang = st.source?.language || (st.stream || st).language || '';
+          const name = getStreamName(st);
+          const lang = getStreamLanguage(st);
           return name.toLowerCase().includes(q) || lang.toLowerCase().includes(q);
         })
       : streams;
 
+    const categoryFiltered = liveCategoryFilter === 'all'
+      ? base
+      : base.filter((st) => getStreamCategory(st) === liveCategoryFilter);
+
+    const healthFiltered = liveHealthFilter === 'all'
+      ? categoryFiltered
+      : categoryFiltered.filter((st) => {
+          const stream = getStreamRecord(st);
+          if (liveHealthFilter === 'up') return isStreamUp(stream);
+          if (liveHealthFilter === 'degraded') return isStreamDegraded(stream);
+          if (liveHealthFilter === 'verified') return isStreamVerified(stream);
+          return true;
+        });
+
     const score = (st) => {
-      const s = st.stream || st;
-      const isLive = s.uptime_status === 'up' || s.status === 'active';
-      const isDegraded = s.uptime_status === 'degraded';
+      const s = getStreamRecord(st);
+      const isLive = isStreamUp(s);
+      const isDegraded = isStreamDegraded(s);
       const hasEmbed = Boolean(s.embed_url || s.embedUrl);
-      return (isLive ? 100 : 0) + (isDegraded ? 70 : 0) + (hasEmbed ? 30 : 0);
+      const isVerified = isStreamVerified(s);
+      const isFeatured = Boolean(s.featured);
+      return (isFeatured ? 120 : 0) + (isLive ? 100 : 0) + (isDegraded ? 70 : 0) + (isVerified ? 35 : 0) + (hasEmbed ? 30 : 0) + Number(s.score || 0) * 20;
     };
 
-    return [...base].sort((a, b) => score(b) - score(a));
-  }, [streams, channelSearch]);
+    return [...healthFiltered].sort((a, b) => score(b) - score(a));
+  }, [streams, deferredChannelSearch, liveCategoryFilter, liveHealthFilter]);
 
   const featuredLiveStreams = useMemo(() => {
-    return filteredStreams
+    return streams
       .filter((st) => {
-        const s = st.stream || st;
-        return s.uptime_status === 'up' || s.status === 'active';
+        const s = getStreamRecord(st);
+        return isStreamUp(s);
       })
+      .sort((a, b) => Number(getStreamRecord(b).score || 0) - Number(getStreamRecord(a).score || 0))
       .slice(0, 6);
-  }, [filteredStreams]);
+  }, [streams]);
+
+  const liveCategoryOptions = useMemo(() => {
+    const counts = streams.reduce((acc, stream) => {
+      const category = getStreamCategory(stream);
+      acc[category] = (acc[category] || 0) + 1;
+      return acc;
+    }, {});
+
+    return [
+      { id: 'all', label: 'الكل', count: streams.length },
+      ...Object.keys(counts).sort((left, right) => counts[right] - counts[left]).map((category) => ({
+        id: category,
+        label: getLiveCategoryLabel(category),
+        count: counts[category],
+      })),
+    ];
+  }, [streams]);
+
+  const relatedLiveQueue = useMemo(() => {
+    if (!selectedStreamId) return [];
+    const current = selectedStream ? getStreamCategory(selectedStream) : null;
+    return filteredStreams
+      .filter((stream) => getStreamId(stream) !== selectedStreamId)
+      .filter((stream) => !current || getStreamCategory(stream) === current)
+      .slice(0, 4);
+  }, [filteredStreams, selectedStream, selectedStreamId]);
 
   /* ─── Theme toggle ─── */
   useEffect(() => {
@@ -2052,13 +2390,13 @@ export default function App() {
                 <h2 className="live-hdr__title">مركز قنوات الأخبار</h2>
                 <p className="live-hdr__sub">
                   {liveSummary
-                    ? `${liveSummary.active_streams ?? streams.length} قناة نشطة · ${liveSummary.total_streams ?? streams.length} إجمالاً`
+                    ? `${liveSummary.playable_streams ?? streams.length} قناة صالحة للتشغيل · ${liveSummary.total_streams ?? streams.length} إجمالاً`
                     : 'تغطية استخباراتية على مدار الساعة'}
                 </p>
               </div>
-              <button className="live-hdr__refresh" onClick={loadLive}>
+              <button className="live-hdr__refresh" onClick={() => loadLive({ silent: streams.length > 0 })}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                تحديث
+                {refreshingLive ? 'جار التحديث…' : 'تحديث'}
               </button>
             </div>
 
@@ -2073,7 +2411,7 @@ export default function App() {
                   <div className="lhb-sep" />
                   <div className="lhb-stat lhb-stat--blue">
                     <span className="lhb-stat__val">{liveSummary.active_streams ?? '?'}</span>
-                    <span className="lhb-stat__key">نشط الآن</span>
+                    <span className="lhb-stat__key">متاح الآن</span>
                   </div>
                   {(liveSummary.down_streams ?? 0) > 0 && (
                     <>
@@ -2093,12 +2431,70 @@ export default function App() {
                 <div className="live-hud-bar__divider" />
                 <div className="live-hud-bar__status-row">
                   <span className="live-hud-bar__status-dot live-hud-bar__status-dot--green" />
-                  <span className="live-hud-bar__status-text">نظام المراقبة: نشط</span>
+                  <span className="live-hud-bar__status-text">{liveUpdatedAt ? `آخر مزامنة ${relativeTime(liveUpdatedAt)}` : 'نظام المراقبة: نشط'}</span>
                 </div>
               </div>
             )}
 
             {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
+
+            {!loadingLive && streams.length > 0 && (
+              <div className="live-command-grid">
+                <div className="live-filter-panel">
+                  <div className="live-filter-section">
+                    <span className="live-filter-section__title">الفئات</span>
+                    <div className="live-chip-row">
+                      {liveCategoryOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          className={`live-chip${liveCategoryFilter === option.id ? ' live-chip--active' : ''}`}
+                          onClick={() => setLiveCategoryFilter(option.id)}
+                        >
+                          {option.label}
+                          <span>{option.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="live-filter-section">
+                    <span className="live-filter-section__title">الحالة</span>
+                    <div className="live-chip-row">
+                      {[
+                        { id: 'all', label: 'الكل' },
+                        { id: 'up', label: 'مباشر فقط' },
+                        { id: 'degraded', label: 'جزئي' },
+                        { id: 'verified', label: 'موثق' },
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          className={`live-chip${liveHealthFilter === option.id ? ' live-chip--active' : ''}`}
+                          onClick={() => setLiveHealthFilter(option.id)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="live-filter-meta">
+                    <span>{filteredStreams.length} قناة بعد التصفية</span>
+                    <span>{liveSummary?.verified_streams ?? 0} قناة موثقة</span>
+                    <span>{liveSummary?.up_streams ?? 0} مباشرة بالكامل</span>
+                  </div>
+                </div>
+
+                {featuredStream && (
+                  <button className="live-spotlight-card" onClick={() => handleTvSelect(featuredStream)}>
+                    <span className="live-spotlight-card__eyebrow">القناة المرجعية</span>
+                    <strong className="live-spotlight-card__title">{getStreamName(featuredStream)}</strong>
+                    <p className="live-spotlight-card__sub">
+                      {getLiveCategoryLabel(getStreamCategory(featuredStream))} · {Math.round(Number(getStreamRecord(featuredStream).score || 0) * 100)}% ثقة
+                    </p>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* ══ FEATURED ON-AIR MARQUEE ══ */}
             {!loadingLive && featuredLiveStreams.length > 0 && (
@@ -2125,11 +2521,19 @@ export default function App() {
 
             {/* ══ CINEMATIC PLAYER ══ */}
             {selectedStream && (
-              <CinematicPlayer
-                stream={selectedStream}
-                switching={tvSwitching}
-                onClose={() => { setSelectedStream(null); setTvSwitching(false); }}
-              />
+              <div className="live-focus-layout">
+                <CinematicPlayer
+                  stream={selectedStream}
+                  switching={tvSwitching}
+                  onClose={() => { setSelectedStreamId(null); setTvSwitching(false); }}
+                />
+                <LiveFocusPanel
+                  stream={selectedStream}
+                  queue={relatedLiveQueue}
+                  updatedAt={liveUpdatedAt}
+                  onSelect={handleTvSelect}
+                />
+              </div>
             )}
 
             {/* ══ CHANNEL COMMAND SEARCH ══ */}
@@ -2160,8 +2564,8 @@ export default function App() {
                       key={st.stream?.id || st.id || i}
                       stream={st}
                       onSelect={handleTvSelect}
-                      isActive={selectedStream === st}
-                      isSwitching={selectedStream === st && tvSwitching}
+                      isActive={selectedStreamId === getStreamId(st)}
+                      isSwitching={selectedStreamId === getStreamId(st) && tvSwitching}
                     />
                   ))}
                   {filteredStreams.length === 0 && (
@@ -3065,6 +3469,112 @@ img { display: block; max-width: 100%; }
   white-space: nowrap;
 }
 
+.live-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(260px, .95fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.live-filter-panel,
+.live-spotlight-card,
+.live-focus-panel {
+  background: linear-gradient(135deg, rgba(10,12,22,.94) 0%, rgba(17,20,34,.92) 100%);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.live-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+.live-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.live-filter-section__title {
+  font-size: .68rem;
+  color: rgba(255,255,255,.45);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.live-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.66);
+  font-size: .76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+}
+.live-chip span {
+  display: inline-flex;
+  min-width: 20px;
+  justify-content: center;
+  color: rgba(255,255,255,.3);
+  font-size: .68rem;
+}
+.live-chip:hover,
+.live-chip--active {
+  background: rgba(59,130,246,.16);
+  border-color: rgba(59,130,246,.36);
+  color: #dbeafe;
+}
+.live-chip--active span { color: rgba(219,234,254,.75); }
+.live-filter-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 6px;
+  color: rgba(255,255,255,.36);
+  font-size: .72rem;
+}
+.live-spotlight-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 18px;
+  cursor: pointer;
+  text-align: right;
+  transition: transform .22s, border-color .22s, box-shadow .22s;
+}
+.live-spotlight-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(59,130,246,.32);
+  box-shadow: 0 24px 48px rgba(0,0,0,.42), 0 0 0 1px rgba(59,130,246,.14);
+}
+.live-spotlight-card__eyebrow {
+  color: rgba(96,165,250,.75);
+  font-size: .68rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.live-spotlight-card__title {
+  color: #f8fbff;
+  font-size: 1.12rem;
+  line-height: 1.25;
+}
+.live-spotlight-card__sub {
+  color: rgba(255,255,255,.5);
+  font-size: .82rem;
+  margin: 0;
+}
+
 /* ── Featured Marquee ── */
 .live-marquee-wrap {
   display: flex;
@@ -3286,6 +3796,81 @@ img { display: block; max-width: 100%; }
   pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.35) 100%);
 }
+.cp__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, rgba(6,8,16,.66) 0%, rgba(6,8,16,.86) 100%);
+  backdrop-filter: blur(6px);
+}
+.cp__overlay--loading {
+  flex-direction: column;
+  gap: 12px;
+  color: rgba(255,255,255,.82);
+}
+.cp__overlay-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,.12);
+  border-top-color: #93c5fd;
+  animation: spin 1s linear infinite;
+}
+.cp__overlay-text {
+  font-size: .86rem;
+  color: rgba(255,255,255,.72);
+}
+.cp__overlay-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  text-align: center;
+  max-width: 320px;
+  padding: 24px;
+  border-radius: 18px;
+  background: rgba(9,12,24,.92);
+  border: 1px solid rgba(239,68,68,.18);
+  box-shadow: 0 18px 50px rgba(0,0,0,.5);
+}
+.cp__overlay-card strong { color: #fff; }
+.cp__overlay-card p {
+  margin: 0;
+  color: rgba(255,255,255,.62);
+  line-height: 1.6;
+}
+.cp__overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.cp__retry-btn,
+.cp__overlay-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: .8rem;
+  text-decoration: none;
+}
+.cp__retry-btn {
+  border: 1px solid rgba(59,130,246,.32);
+  background: rgba(59,130,246,.16);
+  color: #dbeafe;
+  cursor: pointer;
+}
+.cp__overlay-link {
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.05);
+  color: rgba(255,255,255,.74);
+}
 .cp__no-embed {
   position: absolute; inset: 0; z-index: 4;
   display: flex; flex-direction: column;
@@ -3320,11 +3905,178 @@ img { display: block; max-width: 100%; }
 }
 .cp__footer {
   padding: 10px 22px;
-  font-size: .78rem;
-  color: rgba(255,255,255,.22);
   border-top: 1px solid rgba(255,255,255,.05);
   background: rgba(0,0,0,.3);
   line-height: 1.5;
+}
+.cp__footer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: rgba(255,255,255,.32);
+  font-size: .74rem;
+}
+.cp__footer-grid strong { color: rgba(255,255,255,.6); }
+.cp__footer-note {
+  margin-top: 8px;
+  color: rgba(255,255,255,.24);
+  font-size: .76rem;
+}
+
+.live-focus-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, .95fr);
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 28px;
+}
+.live-focus-layout > .cp { margin-bottom: 0; }
+.live-focus-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  min-height: 100%;
+}
+.live-focus-panel__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.live-focus-panel__eyebrow {
+  display: inline-block;
+  font-size: .66rem;
+  color: rgba(255,255,255,.42);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.live-focus-panel__title {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  color: #fff;
+}
+.live-focus-panel__sub {
+  margin: 0;
+  color: rgba(255,255,255,.45);
+  font-size: .8rem;
+}
+.live-focus-panel__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.live-focus-panel__status--online { background: rgba(34,197,94,.14); color: #86efac; }
+.live-focus-panel__status--degraded { background: rgba(245,158,11,.14); color: #fcd34d; }
+.live-focus-panel__status--offline { background: rgba(239,68,68,.12); color: #fca5a5; }
+.live-focus-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.live-focus-stat {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 14px;
+  padding: 12px;
+}
+.live-focus-stat__label {
+  display: block;
+  color: rgba(255,255,255,.38);
+  font-size: .68rem;
+  margin-bottom: 8px;
+}
+.live-focus-stat__value {
+  color: #f8fbff;
+  font-size: 1.1rem;
+}
+.live-focus-panel__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.live-focus-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  color: rgba(255,255,255,.7);
+  font-size: .72rem;
+}
+.live-focus-story {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.06);
+}
+.live-focus-story--empty { opacity: .8; }
+.live-focus-story__eyebrow {
+  font-size: .66rem;
+  font-weight: 800;
+  color: rgba(147,197,253,.72);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.live-focus-story__title {
+  color: #f3f7ff;
+  line-height: 1.6;
+}
+.live-focus-story__meta {
+  margin: 0;
+  color: rgba(255,255,255,.46);
+  font-size: .78rem;
+}
+.live-focus-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.live-focus-queue__title {
+  font-size: .72rem;
+  color: rgba(255,255,255,.4);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.live-focus-queue__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.live-focus-queue__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.76);
+  cursor: pointer;
+  text-align: right;
+}
+.live-focus-queue__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #60a5fa;
+  box-shadow: 0 0 10px rgba(96,165,250,.55);
+  flex-shrink: 0;
+}
 }
 
 /* ── Live Search Bar ── */
@@ -3380,6 +4132,21 @@ img { display: block; max-width: 100%; }
 @media (min-width: 540px)  { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px; } }
 @media (min-width: 900px)  { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); } }
 @media (min-width: 1200px) { .live-ch-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; } }
+@media (max-width: 1180px) {
+  .live-command-grid,
+  .live-focus-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .live-focus-panel__stats {
+    grid-template-columns: 1fr;
+  }
+  .live-filter-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
 
 .live-empty {
   grid-column: 1 / -1;

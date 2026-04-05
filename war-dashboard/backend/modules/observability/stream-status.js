@@ -333,10 +333,12 @@ async function getStreamStatusSnapshot() {
 
   const summary = streams.reduce((acc, stream) => {
     acc.total_streams += 1;
-    if (stream.stream.status === 'active') acc.active_streams += 1;
-    if (stream.stream.status === 'active') acc.playable_streams += 1;
+    if (stream.stream.uptime_status === 'up' || stream.stream.uptime_status === 'degraded') acc.active_streams += 1;
+    if (stream.stream.playback_mode === 'playable' && stream.stream.uptime_status !== 'down') acc.playable_streams += 1;
     if (stream.stream.playback_mode === 'external_only') acc.external_only_streams += 1;
     if (stream.stream.verification_status || stream.stream.last_verified_at) acc.channels_verified_count += 1;
+    if (stream.stream.verification_status === 'embed_ok') acc.verified_streams += 1;
+    if (stream.stream.verification_status === 'embed_ok' && stream.stream.uptime_status === 'up') acc.verified_live_streams += 1;
     acc[`${stream.stream.uptime_status}_streams`] = (acc[`${stream.stream.uptime_status}_streams`] || 0) + 1;
     acc[`detail_${stream.stream.detail_status}_streams`] = (acc[`detail_${stream.stream.detail_status}_streams`] || 0) + 1;
     acc.linked_stories += stream.stats.story_count;
@@ -347,6 +349,8 @@ async function getStreamStatusSnapshot() {
     active_streams: 0,
     playable_streams: 0,
     external_only_streams: 0,
+    verified_streams: 0,
+    verified_live_streams: 0,
     up_streams: 0,
     degraded_streams: 0,
     down_streams: 0,
