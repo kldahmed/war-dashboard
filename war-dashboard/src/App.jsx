@@ -1162,14 +1162,34 @@ export default function App() {
 
   /* ─── Filtered Streams ─── */
   const filteredStreams = useMemo(() => {
-    if (!channelSearch.trim()) return streams;
     const q = channelSearch.trim().toLowerCase();
-    return streams.filter(st => {
-      const name = st.source?.name || (st.stream || st).name || (st.stream || st).registry_id || '';
-      const lang = st.source?.language || (st.stream || st).language || '';
-      return name.toLowerCase().includes(q) || lang.toLowerCase().includes(q);
-    });
+    const base = q
+      ? streams.filter(st => {
+          const name = st.source?.name || (st.stream || st).name || (st.stream || st).registry_id || '';
+          const lang = st.source?.language || (st.stream || st).language || '';
+          return name.toLowerCase().includes(q) || lang.toLowerCase().includes(q);
+        })
+      : streams;
+
+    const score = (st) => {
+      const s = st.stream || st;
+      const isLive = s.uptime_status === 'up' || s.status === 'active';
+      const isDegraded = s.uptime_status === 'degraded';
+      const hasEmbed = Boolean(s.embed_url || s.embedUrl);
+      return (isLive ? 100 : 0) + (isDegraded ? 70 : 0) + (hasEmbed ? 30 : 0);
+    };
+
+    return [...base].sort((a, b) => score(b) - score(a));
   }, [streams, channelSearch]);
+
+  const featuredLiveStreams = useMemo(() => {
+    return filteredStreams
+      .filter((st) => {
+        const s = st.stream || st;
+        return s.uptime_status === 'up' || s.status === 'active';
+      })
+      .slice(0, 6);
+  }, [filteredStreams]);
 
   /* ─── Theme toggle ─── */
   useEffect(() => {
@@ -1331,63 +1351,6 @@ export default function App() {
         )}
 
         {/* ═══════════════════════════════
-            LIVE TAB
-        ═══════════════════════════════ */}
-        {activeTab === 'live' && (
-          <div className="live-view" dir="rtl">
-            {/* Summary badges */}
-            {liveSummary && (
-              <div className="live-summary-bar">
-                <span className="live-badge live-badge--green">● {liveSummary.playable_streams ?? liveSummary.active_streams ?? '?'} قابل للتشغيل</span>
-                <span className="live-badge live-badge--blue">{liveSummary.active_streams ?? '?'} نشط</span>
-                {(liveSummary.down_streams ?? 0) > 0 && (
-                  <span className="live-badge live-badge--red">⛔ {liveSummary.down_streams} متوقف</span>
-                )}
-                <span className="live-badge live-badge--gray">{(liveSummary.total_streams ?? streams.length)} إجمالي</span>
-              </div>
-            )}
-
-            {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
-
-            {/* Player */}
-            {selectedStream && (
-              <PlayerPanel
-                stream={selectedStream}
-                onClose={() => setSelectedStream(null)}
-              />
-            )}
-
-            {/* Channel search */}
-            <div className="ch-search-bar" dir="rtl">
-              <SearchBar value={channelSearch} onChange={setChannelSearch} />
-            </div>
-
-            {/* Channel grid */}
-            {loadingLive
-              ? <LoadingSpinner label="تحميل القنوات…" />
-              : (
-                <div className="ch-grid">
-                  {filteredStreams.map((st, i) => (
-                    <ChannelCard
-                      key={st.stream?.id || st.id || i}
-                      stream={st}
-                      onSelect={setSelectedStream}
-                      isActive={selectedStream === st}
-                    />
-                  ))}
-                  {filteredStreams.length === 0 && (
-                    <div className="empty-state">
-                      <span className="empty-state__icon">📡</span>
-                      <p>لا توجد قنوات مطابقة</p>
-                    </div>
-                  )}
-                </div>
-              )
-            }
-          </div>
-        )}
-
-        {/* ═══════════════════════════════
             OPS TAB
         ═══════════════════════════════ */}
         {activeTab === 'ops' && (
@@ -1461,6 +1424,29 @@ export default function App() {
             )}
 
             {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
+
+            {/* ── Featured Live Strip ── */}
+            {!loadingLive && featuredLiveStreams.length > 0 && (
+              <div className="live-featured-strip" dir="rtl">
+                <span className="live-featured-strip__label">القنوات المميزة الآن</span>
+                <div className="live-featured-strip__chips">
+                  {featuredLiveStreams.map((st, i) => {
+                    const s = st.stream || st;
+                    const name = st.source?.name || s.name || s.registry_id || `قناة ${i + 1}`;
+                    return (
+                      <button
+                        key={s.id || st.id || i}
+                        className="live-featured-strip__chip"
+                        onClick={() => setSelectedStream(st)}
+                      >
+                        <span className="live-featured-strip__chip-dot" />
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── Cinematic Player ── */}
             {selectedStream && (
@@ -2106,6 +2092,56 @@ img { display: block; max-width: 100%; }
   background: rgba(59,130,246,.15);
   border-color: rgba(59,130,246,.4);
   color: var(--accent2);
+}
+
+/* ── Featured live channels strip ── */
+.live-featured-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: linear-gradient(90deg, rgba(14,18,28,.9) 0%, rgba(20,23,32,.8) 100%);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+}
+.live-featured-strip__label {
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 700;
+}
+.live-featured-strip__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.live-featured-strip__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: var(--text2);
+  font-size: .74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.live-featured-strip__chip:hover {
+  border-color: rgba(59,130,246,.55);
+  color: #bfdbfe;
+  background: rgba(59,130,246,.16);
+}
+.live-featured-strip__chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(34,197,94,.6);
 }
 
 /* ── HUD Stats Bar ── */
