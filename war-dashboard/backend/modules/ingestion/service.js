@@ -291,6 +291,8 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
   }
   const parser = buildParser(env.rssRequestTimeoutMs);
   const feeds = await listActiveRssFeeds();
+  const ingestionConcurrency = Math.max(1, Number(env.ingestionConcurrency) || 1);
+  const skipTranslation = Boolean(env.ingestionSkipTranslation);
   const registryStats = getSourceRegistryStats();
   const summary = {
     jobId: job.id,
@@ -316,8 +318,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
     errors: [],
   };
 
-  try {
-    for (const feed of feeds) {
+  async function processFeed(feed) {
       const feedRun = await createFeedRun(job.id, feed);
       const ingestionRun = await createIngestionRun(job.id, feed);
       const feedSummary = {
@@ -350,7 +351,10 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
                 feedSummary.rawUpdatedCount += 1;
               }
 
-              const normalizedResult = await normalizeRawItem(rawResult.id, { correlationId });
+              const normalizedResult = await normalizeRawItem(rawResult.id, {
+                correlationId,
+                skipTranslation,
+              });
               if (normalizedResult?.id) {
                 summary.totalStoredItems += 1;
                 summary.normalizedUpserted += 1;
@@ -410,7 +414,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
            WHERE id = $1`,
           [feed.id, String(feedErr.message || 'unknown_error').slice(0, 500)],
         );
-        await markSourceRuntimeState(feed.source_id, 'failed');
+        await markSourceRuntimeState(feed.source_id, 'active');
         await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
         await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
         logger.warn('rss_feed_failed', {
@@ -422,7 +426,21 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
           attempts: feedSummary.attemptCount,
         });
       }
-    }
+  }
+
+  try {
+    let cursor = 0;
+    const workerCount = Math.min(ingestionConcurrency, Math.max(feeds.length, 1));
+    const workers = Array.from({ length: workerCount }, () => (async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= feeds.length) break;
+        await processFeed(feeds[index]);
+      }
+    })());
+
+    await Promise.all(workers);
 
     await finishJob(job.id, summary.feedsFailed > 0 ? 'completed_with_errors' : 'completed', job.started_at, null);
     logger.info('rss_ingestion_completed', { correlationId, summary });

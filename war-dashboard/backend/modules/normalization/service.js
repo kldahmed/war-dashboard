@@ -204,7 +204,7 @@ function inferLanguage(raw, sourceLanguage = null) {
   return 'unknown';
 }
 
-async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
+async function normalizeRawItem(rawItemId, { correlationId = null, skipTranslation = false } = {}) {
   const res = await query(
     `SELECT ri.id, ri.source_feed_id, ri.source_url, ri.title, ri.published_at_source, ri.raw_payload_json,
             sf.source_id, s.language AS source_language, s.name AS source_name, s.domain AS source_domain, s.category AS source_category
@@ -234,7 +234,9 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
   const titleFingerprint = hashFingerprint(title);
   const contentFingerprint = hashFingerprint(body);
   const timeBucket30m = buildTimeBucket30m(row.published_at_source || payload.isoDate || payload.pubDate || null);
-  const initialTranslationStatus = language.startsWith('ar') ? 'not_required' : 'pending';
+  const initialTranslationStatus = language.startsWith('ar')
+    ? 'not_required'
+    : (skipTranslation ? 'unavailable' : 'pending');
   const classifiedCategory = classifyNormalizedContent({
     title,
     body,
@@ -345,6 +347,14 @@ async function normalizeRawItem(rawItemId, { correlationId = null } = {}) {
 
   await recordArticleVersionIfNeeded(previousNormalized, normalizedItem);
   await assignStoryCluster(normalizedItem);
+
+  if (skipTranslation) {
+    return {
+      id: insert.rows[0].id,
+      translationStatus: initialTranslationStatus,
+      translated: false,
+    };
+  }
 
   const translation = await translateNormalizedItem(insert.rows[0].id, { correlationId });
 

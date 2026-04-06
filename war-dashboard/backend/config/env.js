@@ -14,13 +14,16 @@ module.exports = {
   feedMode: process.env.FEED_MODE || 'stored',
   feedFallbackEnabled:
     String(process.env.FEED_FALLBACK_ENABLED || 'false').toLowerCase() === 'true',
-  rssRequestTimeoutMs: toInt(process.env.RSS_REQUEST_TIMEOUT_MS, 15000),
-  ingestionDefaultLimit: toInt(process.env.INGESTION_DEFAULT_LIMIT, 60),
-  ingestionFeedTimeoutMs: toInt(process.env.INGESTION_FEED_TIMEOUT_MS, 120000),
+  rssRequestTimeoutMs: toInt(process.env.RSS_REQUEST_TIMEOUT_MS, 5000),
+  ingestionDefaultLimit: toInt(process.env.INGESTION_DEFAULT_LIMIT, 120),
+  ingestionFeedTimeoutMs: toInt(process.env.INGESTION_FEED_TIMEOUT_MS, 30000),
   ingestionStaleJobMinutes: toInt(process.env.INGESTION_STALE_JOB_MINUTES, 45),
+  ingestionConcurrency: toInt(process.env.INGESTION_CONCURRENCY, 32),
+  ingestionSkipTranslation:
+    String(process.env.INGESTION_SKIP_TRANSLATION || 'true').toLowerCase() === 'true',
   ingestionScheduleEnabled:
     String(process.env.INGESTION_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
-  ingestionScheduleMs: toInt(process.env.INGESTION_SCHEDULE_MS, 300000),
+  ingestionScheduleMs: toInt(process.env.INGESTION_SCHEDULE_MS, 60000),
   newsFeedMaxLimit: toInt(process.env.NEWS_FEED_MAX_LIMIT, 400),
   translationTimeoutMs: toInt(process.env.TRANSLATION_TIMEOUT_MS, 12000),
   translationEnabled:
