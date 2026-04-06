@@ -9,7 +9,7 @@ const { runRssIngestion } = require('../ingestion/service');
 
 const router = express.Router();
 const KNOWN_CATEGORIES = new Set(['breaking', 'politics', 'economy', 'war', 'gulf', 'iran', 'israel', 'usa', 'world', 'energy', 'analysis', 'technology']);
-const FEED_STALE_TRIGGER_SEC = 15 * 60;
+const FEED_STALE_TRIGGER_SEC = 90;
 const INGESTION_COOLDOWN_MS = 2 * 60 * 1000;
 let autoIngestionInFlight = false;
 let lastAutoIngestionAt = 0;
@@ -41,7 +41,7 @@ function inferUrgency(row) {
 
 function mapToUiItem(row) {
   const category = row.news_category_slug || row.category || row.source_category || 'world';
-  const published = row.published_at_source || row.fetched_at || row.created_at;
+  const published = row.fetched_at || row.published_at_source || row.created_at;
   return {
     id: row.normalized_id,
     title: row.display_title,
@@ -177,9 +177,28 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
   res.set('Surrogate-Control', 'no-store');
 
   const limit = Math.min(env.newsFeedMaxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const requestedOffset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+  const requestedPage = Math.floor(requestedOffset / limit) + 1;
+  const hasSearch = typeof req.query.q === 'string' && req.query.q.trim().length > 0;
+  const todayWindowPages = 5;
+  const todayWindowItems = todayWindowPages * limit;
+  const partition = !hasSearch && requestedPage <= todayWindowPages
+    ? 'today'
+    : (!hasSearch ? 'archive' : 'all');
+  const clusterRankLimit = partition === 'today' ? 1000 : 1;
+  const effectiveOffset = partition === 'archive'
+    ? Math.max(0, requestedOffset - todayWindowItems)
+    : requestedOffset;
   const category = normalizeCategorySlug(req.query.category);
-  const categoryClause = '';
-  const params = [limit];
+  const categoryClause = category === 'all'
+    ? ''
+    : `AND LOWER(COALESCE(nc.slug, ni.category, s.category, 'world')) = $3`;
+  const freshnessClause = partition === 'today'
+    ? `AND COALESCE(ri.fetched_at, ni.published_at_source, ni.created_at) >= DATE_TRUNC('day', NOW())`
+    : (partition === 'archive'
+      ? `AND COALESCE(ri.fetched_at, ni.published_at_source, ni.created_at) < DATE_TRUNC('day', NOW())`
+      : '');
+  const params = category === 'all' ? [limit, effectiveOffset] : [limit, effectiveOffset, category];
 
   const [result, lastJob] = await Promise.all([
     query(
@@ -347,6 +366,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
          AND LENGTH(TRIM(ni.canonical_title)) > 0
          AND ni.canonical_body IS NOT NULL
          AND LENGTH(TRIM(ni.canonical_body)) > 0
+         ${freshnessClause}
          ${categoryClause}
      ),
      ranked_items AS (
@@ -399,13 +419,15 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        editorial_decision,
        editorial_priority,
        rank_score,
-       cluster_last_seen_at
+       cluster_last_seen_at,
+       COUNT(*) OVER()::int AS total_count
      FROM ranked_items
-     WHERE cluster_rank = 1
+      WHERE cluster_rank <= ${clusterRankLimit}
         ORDER BY COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST,
         rank_score DESC,
         fetched_at DESC
-     LIMIT $1`,
+     LIMIT $1
+     OFFSET $2`,
     params,
     ),
     query(
@@ -422,10 +444,7 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
     ? new Date(lastJob.rows[0].ended_at).toISOString()
     : null;
   const categoryCounts = buildCategoryCounts(result.rows);
-  const filteredRows = category === 'all'
-    ? result.rows
-    : result.rows.filter((row) => normalizeCategorySlug(row.news_category_slug || row.category || row.source_category || 'world') === category);
-  const selectedRows = filteredRows
+  const selectedRows = result.rows
     .slice()
     .sort((a, b) => {
       const aMs = new Date(a.cluster_last_seen_at || a.published_at_source || a.fetched_at || a.created_at || 0).getTime();
@@ -433,21 +452,33 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
       return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
     })
     .slice(0, limit);
-  const latestItemIso = latestTimestampFromRows(filteredRows);
+  const latestItemIso = latestTimestampFromRows(selectedRows);
+  const totalAvailableItems = Number.isFinite(Number(result.rows?.[0]?.total_count))
+    ? Number(result.rows[0].total_count)
+    : 0;
 
-  await maybeTriggerAutoIngestion({
-    latestItemIso,
-    reqCorrelationId: req.correlationId,
-    lastIngestionAt,
-  });
+  if (partition !== 'archive') {
+    await maybeTriggerAutoIngestion({
+      latestItemIso,
+      reqCorrelationId: req.correlationId,
+      lastIngestionAt,
+    });
+  }
 
   res.json({
     mode: 'stored',
     fallback_used: false,
     freshness: buildFreshness(selectedRows, lastIngestionAt),
     item_count: selectedRows.length,
-    total_available_items: filteredRows.length,
+    total_available_items: totalAvailableItems,
     category_counts: categoryCounts,
+    partition,
+    page_policy: {
+      today_window_pages: todayWindowPages,
+      requested_page: requestedPage,
+      requested_offset: requestedOffset,
+      effective_offset: effectiveOffset,
+    },
     correlation_id: req.correlationId || null,
     error_reason: null,
     items: selectedRows.map(mapToUiItem),

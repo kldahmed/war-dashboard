@@ -23,7 +23,7 @@ module.exports = {
     String(process.env.INGESTION_SKIP_TRANSLATION || 'true').toLowerCase() === 'true',
   ingestionScheduleEnabled:
     String(process.env.INGESTION_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
-  ingestionScheduleMs: toInt(process.env.INGESTION_SCHEDULE_MS, 60000),
+  ingestionScheduleMs: toInt(process.env.INGESTION_SCHEDULE_MS, 15000),
   newsFeedMaxLimit: toInt(process.env.NEWS_FEED_MAX_LIMIT, 400),
   translationTimeoutMs: toInt(process.env.TRANSLATION_TIMEOUT_MS, 12000),
   translationEnabled:

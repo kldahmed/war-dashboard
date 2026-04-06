@@ -166,6 +166,8 @@ function normalizeStoredMetadata(body, mode) {
     fallback_used: toBool(body?.fallback_used, false),
     item_count: Number.isFinite(body?.item_count) ? body.item_count : (Array.isArray(body?.items) ? body.items.length : 0),
     total_available_items: Number.isFinite(body?.total_available_items) ? body.total_available_items : (Array.isArray(body?.items) ? body.items.length : 0),
+    partition: normalizeText(body?.partition, null),
+    page_policy: body?.page_policy && typeof body.page_policy === 'object' ? body.page_policy : null,
     freshness,
     category_counts: normalizeCategoryCounts(body?.category_counts, Array.isArray(body?.items) ? body.items.length : 0),
     briefing: body?.briefing && typeof body.briefing === "object" ? body.briefing : null,
@@ -304,9 +306,9 @@ async function callStoredNews(params, signal) {
   if (!Array.isArray(body.items)) throw buildStoredRequestError("stored_feed_invalid_shape");
   return {
     items: body.items.map(mapStoredItem).filter(Boolean),
-    total: body.total_count ?? body.item_count ?? 0,
+    total: body.total_available_items ?? body.total_count ?? body.item_count ?? 0,
     briefing: body?.briefing ?? null,
-    metadata: normalizeStoredMetadata({ ...body, total_available_items: body.total_count ?? body.item_count, correlation_id: body?.correlation_id || correlationId }, "stored"),
+    metadata: normalizeStoredMetadata({ ...body, total_available_items: body.total_available_items ?? body.total_count ?? body.item_count, correlation_id: body?.correlation_id || correlationId }, "stored"),
   };
 }
 

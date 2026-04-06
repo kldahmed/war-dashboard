@@ -2129,7 +2129,7 @@ export default function App() {
   const [sitrep,        setSitrep]        = useState(null);
   const [sitrepLoading, setSitrepLoading] = useState(false);
 
-  const PAGE_SIZE = 60;
+  const PAGE_SIZE = 100;
 
   /* ─── News Loader ─── */
   const loadNews = useCallback(async (cat, q, pg) => {
@@ -2147,8 +2147,16 @@ export default function App() {
       });
       const total = envelope?.total ?? envelope?.metadata?.total_available_items ?? envelope?.metadata?.item_count ?? items.length;
       const briefing = envelope?.briefing ?? envelope?.metadata?.briefing ?? null;
+      const todayWindowPages = Number(envelope?.metadata?.page_policy?.today_window_pages ?? 5);
+      const isArchivePartition = envelope?.metadata?.partition === 'archive';
+      const archivePageNumber = Math.max(1, pg - todayWindowPages);
+      const hasMoreByTotal = isArchivePartition
+        ? (items.length === PAGE_SIZE && (archivePageNumber * PAGE_SIZE) < total)
+        : (items.length === PAGE_SIZE && (pg * PAGE_SIZE) < total);
+      const keepTodayWindowPaging = !q?.trim() && pg < todayWindowPages;
+      const jumpToArchivePage = !q?.trim() && pg === todayWindowPages;
       setTotalCount(total);
-      setHasMore(items.length === PAGE_SIZE && (pg * PAGE_SIZE) < total);
+      setHasMore(keepTodayWindowPaging || jumpToArchivePage || hasMoreByTotal);
       if (pg === 1) {
         setEditorialBriefing(briefing);
         setNewsItems(items);
@@ -2514,7 +2522,7 @@ export default function App() {
     if (activeTab !== 'news') return;
     const id = setInterval(() => {
       if (page === 1 && !searchQ.trim()) loadNews(category, '', 1);
-    }, 30_000);
+    }, 8_000);
     return () => clearInterval(id);
   }, [activeTab, category, searchQ, page, loadNews]);
 
@@ -2542,7 +2550,7 @@ export default function App() {
     if (page !== 1) return;
     if (searchQ.trim()) return;
     const ageSec = newsFreshness?.data_age_sec;
-    if (ageSec == null || ageSec < 180) return;
+    if (ageSec == null || ageSec < 45) return;
     triggerNewsIngestionRecovery({ silent: true });
   }, [
     activeTab,
