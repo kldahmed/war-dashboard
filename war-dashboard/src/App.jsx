@@ -54,6 +54,8 @@ const ALERT_THRESHOLDS = {
   failing_sources_warning:  2,
 };
 
+const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
+
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
   sports: { label: 'رياضة' },
@@ -1848,6 +1850,8 @@ export default function App() {
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [selectedWeatherLocationId, setSelectedWeatherLocationId] = useState(null);
   const [signalsHealth, setSignalsHealth] = useState(null);
+  const [signalsRecovering, setSignalsRecovering] = useState(false);
+  const [lastSignalsRecoveryAt, setLastSignalsRecoveryAt] = useState(null);
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
@@ -2079,6 +2083,31 @@ export default function App() {
     loadSignalPanels();
   }, [loadOps, loadSignalPanels]);
 
+  const triggerSignalsRecovery = useCallback(async ({ silent = false } = {}) => {
+    if (signalsRecovering) return;
+    if (!silent && lastSignalsRecoveryAt && (Date.now() - lastSignalsRecoveryAt) < SIGNAL_SELF_HEAL_COOLDOWN_MS) return;
+
+    setSignalsRecovering(true);
+    try {
+      await fetch('/api/signals/refresh', { method: 'POST' });
+      const now = Date.now();
+      setLastSignalsRecoveryAt(now);
+      if (!silent) {
+        setGlobalAlert({ severity: 'warning', message: '⟳ تم إطلاق تعافٍ فوري لإشارات الطقس والأسواق' });
+      }
+      setTimeout(() => {
+        loadSignalPanels();
+        loadOps();
+      }, 1200);
+    } catch (err) {
+      if (!silent) {
+        setGlobalAlert({ severity: 'critical', message: `تعذر تنفيذ التعافي الفوري: ${err.message || 'network_error'}` });
+      }
+    } finally {
+      setSignalsRecovering(false);
+    }
+  }, [signalsRecovering, lastSignalsRecoveryAt, loadSignalPanels, loadOps]);
+
   /* ─── SITREP Loader ─── */
   const loadSitrep = useCallback(async () => {
     setSitrepLoading(true);
@@ -2158,6 +2187,20 @@ export default function App() {
     const id = setInterval(loadOps, 45_000);
     return () => clearInterval(id);
   }, [activeTab, loadOps]);
+
+  useEffect(() => {
+    if (activeTab !== 'ops') return;
+    if (signalsHealth?.overall_status !== 'red') return;
+    if (signalsRecovering) return;
+    if (lastSignalsRecoveryAt && (Date.now() - lastSignalsRecoveryAt) < SIGNAL_SELF_HEAL_COOLDOWN_MS) return;
+    triggerSignalsRecovery({ silent: true });
+  }, [
+    activeTab,
+    signalsHealth?.overall_status,
+    signalsRecovering,
+    lastSignalsRecoveryAt,
+    triggerSignalsRecovery,
+  ]);
 
   useEffect(() => {
     if (activeTab !== 'live') return;
@@ -2580,6 +2623,16 @@ export default function App() {
               </span>
               <span className="signals-health-item">تحديث الطقس: {fmtMs(signalsHealth?.weather_age_ms)}</span>
               <span className="signals-health-item">تحديث الأسواق: {fmtMs(signalsHealth?.markets_age_ms)}</span>
+              <button
+                className="signals-heal-btn"
+                onClick={() => triggerSignalsRecovery()}
+                disabled={signalsRecovering}
+              >
+                {signalsRecovering ? 'جاري الإصلاح…' : 'إصلاح الإشارات الآن'}
+              </button>
+              {lastSignalsRecoveryAt && (
+                <span className="signals-health-item">آخر محاولة إصلاح: {relativeTime(new Date(lastSignalsRecoveryAt).toISOString())}</span>
+              )}
             </div>
             {Array.isArray(signalsHealth?.alerts) && signalsHealth.alerts.length > 0 && (
               <div className="signals-alerts" dir="rtl">
@@ -5672,6 +5725,25 @@ img { display: block; max-width: 100%; }
   background: var(--card-bg);
   padding: 4px 10px;
   border-radius: 999px;
+}
+.signals-heal-btn {
+  border: 1px solid rgba(59,130,246,.35);
+  background: rgba(59,130,246,.12);
+  color: #93c5fd;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .2s ease;
+}
+.signals-heal-btn:hover:not(:disabled) {
+  background: rgba(59,130,246,.2);
+  color: #bfdbfe;
+}
+.signals-heal-btn:disabled {
+  opacity: .6;
+  cursor: default;
 }
 .signals-alerts {
   display: flex;

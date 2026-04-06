@@ -11,6 +11,10 @@ const TROY_OZ_IN_GRAMS = 31.1034768;
 
 let _snapshot = null;
 let _fetchInFlight = false;
+let _goldCache = null;
+let _goldUpdatedAtMs = 0;
+let _oilCache = null;
+let _oilUpdatedAtMs = 0;
 
 function avGet(params) {
   const key = env.alphaVantageApiKey;
@@ -83,62 +87,97 @@ function deriveGoldAedGrams(spotUsdOz, fxUsdAed) {
   };
 }
 
-async function refreshMarkets() {
+function isFresh(updatedAtMs, ttlMs) {
+  return updatedAtMs > 0 && (Date.now() - updatedAtMs) < ttlMs;
+}
+
+async function refreshGold(nowIso) {
+  const [goldRes, fxRes] = await Promise.allSettled([
+    fetchGoldSpotUsd(),
+    fetchFxUsdAed(),
+  ]);
+
+  if (goldRes.status === 'fulfilled' && fxRes.status === 'fulfilled') {
+    const spotUsdOz = goldRes.value;
+    const fxUsdAed = fxRes.value;
+    _goldCache = {
+      provider: 'AlphaVantage',
+      spot_usd_oz: +spotUsdOz.toFixed(2),
+      fx_usd_aed: +fxUsdAed.toFixed(4),
+      derived_aed_gram: deriveGoldAedGrams(spotUsdOz, fxUsdAed),
+      mode_label: 'سعر مشتق مرجعي',
+      updated_at: nowIso,
+    };
+    _goldUpdatedAtMs = Date.now();
+    return true;
+  }
+
+  logger.warn('markets_gold_fetch_failed', {
+    goldErr: goldRes.reason?.message,
+    fxErr: fxRes.reason?.message,
+  });
+  return false;
+}
+
+async function refreshOil(nowIso) {
+  const [brentRes, wtiRes] = await Promise.allSettled([
+    fetchOilBenchmark('BRENT', 'برنت'),
+    fetchOilBenchmark('WTI', 'WTI'),
+  ]);
+
+  const benchmarks = [];
+  if (brentRes.status === 'fulfilled') benchmarks.push(brentRes.value);
+  else logger.warn('markets_brent_failed', { error: brentRes.reason?.message });
+  if (wtiRes.status === 'fulfilled') benchmarks.push(wtiRes.value);
+  else logger.warn('markets_wti_failed', { error: wtiRes.reason?.message });
+
+  if (benchmarks.length > 0) {
+    _oilCache = {
+      provider: 'AlphaVantage',
+      updated_at: nowIso,
+      benchmarks,
+    };
+    _oilUpdatedAtMs = Date.now();
+    return true;
+  }
+
+  return false;
+}
+
+async function refreshMarkets(options = {}) {
+  const { forceGold = false, forceOil = false } = options;
   if (_fetchInFlight) return;
   _fetchInFlight = true;
   try {
     const now = new Date().toISOString();
+    const hadSnapshot = !!_snapshot;
+    const shouldRefreshGold = forceGold || !isFresh(_goldUpdatedAtMs, env.marketsGoldScheduleMs);
+    const shouldRefreshOil = forceOil || !isFresh(_oilUpdatedAtMs, env.marketsOilScheduleMs);
 
-    const [goldRes, fxRes, brentRes, wtiRes] = await Promise.allSettled([
-      fetchGoldSpotUsd(),
-      fetchFxUsdAed(),
-      fetchOilBenchmark('BRENT', 'برنت'),
-      fetchOilBenchmark('WTI', 'WTI'),
-    ]);
+    let refreshedGold = false;
+    let refreshedOil = false;
+    if (shouldRefreshGold) refreshedGold = await refreshGold(now);
+    if (shouldRefreshOil) refreshedOil = await refreshOil(now);
 
-    // Gold
-    let goldData = null;
-    if (goldRes.status === 'fulfilled' && fxRes.status === 'fulfilled') {
-      const spotUsdOz = goldRes.value;
-      const fxUsdAed = fxRes.value;
-      goldData = {
-        provider: 'AlphaVantage',
-        spot_usd_oz: +spotUsdOz.toFixed(2),
-        fx_usd_aed: +fxUsdAed.toFixed(4),
-        derived_aed_gram: deriveGoldAedGrams(spotUsdOz, fxUsdAed),
-        mode_label: 'سعر مشتق مرجعي',
+    if (_goldCache || _oilCache) {
+      _snapshot = {
         updated_at: now,
+        gold: _goldCache,
+        oil: _oilCache || { provider: 'AlphaVantage', updated_at: now, benchmarks: [] },
       };
-    } else {
-      logger.warn('markets_gold_fetch_failed', {
-        goldErr: goldRes.reason?.message,
-        fxErr: fxRes.reason?.message,
-      });
-    }
 
-    // Oil
-    const benchmarks = [];
-    if (brentRes.status === 'fulfilled') benchmarks.push(brentRes.value);
-    else logger.warn('markets_brent_failed', { error: brentRes.reason?.message });
-    if (wtiRes.status === 'fulfilled') benchmarks.push(wtiRes.value);
-    else logger.warn('markets_wti_failed', { error: wtiRes.reason?.message });
+      if (refreshedGold || refreshedOil || !hadSnapshot) {
+        logger.info('markets_refreshed', {
+          gold_refreshed: refreshedGold,
+          oil_refreshed: refreshedOil,
+          oil_benchmarks: _oilCache?.benchmarks?.length || 0,
+        });
 
-    const oilData = {
-      provider: 'AlphaVantage',
-      updated_at: now,
-      benchmarks,
-    };
-
-    if (goldData || benchmarks.length > 0) {
-      _snapshot = { updated_at: now, gold: goldData, oil: oilData };
-      logger.info('markets_refreshed', {
-        gold: !!goldData,
-        oil_benchmarks: benchmarks.length,
-      });
-      const eventPayload = { available: true, data: _snapshot };
-      sseHub.broadcast('markets', eventPayload);
-      await saveSignalSnapshot('markets', eventPayload);
-      await publishSignalEvent('markets', eventPayload);
+        const eventPayload = { available: true, data: _snapshot };
+        sseHub.broadcast('markets', eventPayload);
+        await saveSignalSnapshot('markets', eventPayload);
+        await publishSignalEvent('markets', eventPayload);
+      }
     }
   } catch (err) {
     logger.error('markets_refresh_failed', { error: err.message });
