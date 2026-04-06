@@ -1548,7 +1548,7 @@ function deadlineTone(remainingMs) {
   return 'info';
 }
 
-function HourglassMetric({ remainingMs, tone }) {
+function HourglassMetric({ remainingMs, tone, compact = false }) {
   const clampedRemaining = Math.max(0, Math.min(TRUMP_DEADLINE_HOURGLASS_WINDOW_MS, remainingMs));
   const topRatio = clampedRemaining / TRUMP_DEADLINE_HOURGLASS_WINDOW_MS;
   const bottomRatio = 1 - topRatio;
@@ -1557,11 +1557,13 @@ function HourglassMetric({ remainingMs, tone }) {
   const flowDurationSec = tone === 'critical' ? 0.35 : tone === 'warning' ? 0.55 : 0.85;
 
   return (
-    <div className={`hourglass-4d hourglass-4d--${tone}`} style={{ '--hg-flow-speed': `${flowDurationSec}s` }}>
-      <div className="hourglass-4d__head">
-        <strong>مقياس الساعة الرملية</strong>
-        <span>4D Time Sync · 8K Vector</span>
-      </div>
+    <div className={`hourglass-4d hourglass-4d--${tone}${compact ? ' hourglass-4d--compact' : ''}`} style={{ '--hg-flow-speed': `${flowDurationSec}s` }}>
+      {!compact && (
+        <div className="hourglass-4d__head">
+          <strong>مقياس الساعة الرملية</strong>
+          <span>4D Time Sync · 8K Vector</span>
+        </div>
+      )}
 
       <svg className="hourglass-4d__svg" viewBox="0 0 220 300" role="img" aria-label="ساعة رملية متزامنة مع المهلة">
         <defs>
@@ -1600,10 +1602,12 @@ function HourglassMetric({ remainingMs, tone }) {
         )}
       </svg>
 
-      <div className="hourglass-4d__meta">
-        <span>الامتلاء العلوي: {Math.round(topRatio * 100)}%</span>
-        <span>التراكم السفلي: {Math.round(bottomRatio * 100)}%</span>
-      </div>
+      {!compact && (
+        <div className="hourglass-4d__meta">
+          <span>الامتلاء العلوي: {Math.round(topRatio * 100)}%</span>
+          <span>التراكم السفلي: {Math.round(bottomRatio * 100)}%</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1613,6 +1617,7 @@ function DeadlineAlertClock({ deadlineIso }) {
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const [lastSyncAtMs, setLastSyncAtMs] = useState(null);
   const [syncErrorCount, setSyncErrorCount] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
   const clockOffsetRef = useRef(0);
 
   useEffect(() => {
@@ -1709,13 +1714,39 @@ function DeadlineAlertClock({ deadlineIso }) {
         ? 'إنذار مرتفع - المهلة تقترب بسرعة'
         : 'مراقبة نشطة - المهلة ما زالت قائمة';
 
+  if (collapsed) {
+    return (
+      <button
+        className={`deadline-dock deadline-dock--${tone}`}
+        onClick={() => setCollapsed(false)}
+        aria-label="إظهار تنبيه المهلة"
+        title="إظهار تنبيه المهلة"
+      >
+        <HourglassMetric remainingMs={remainingMs} tone={tone} compact />
+        <span className="deadline-dock__label">مهلة ترامب</span>
+      </button>
+    );
+  }
+
   return (
     <section className={`deadline-alert deadline-alert--${tone}`} dir="rtl">
       <span className={`deadline-alert__beacon deadline-alert__beacon--${tone}`} aria-hidden="true" />
 
       <div className="deadline-alert__content">
-        <div className="deadline-alert__eyebrow">تنبيه استراتيجي مباشر</div>
-        <h3 className="deadline-alert__title">عداد مهلة ترامب لإيران</h3>
+        <div className="deadline-alert__toprow">
+          <div>
+            <div className="deadline-alert__eyebrow">تنبيه استراتيجي مباشر</div>
+            <h3 className="deadline-alert__title">عداد مهلة ترامب لإيران</h3>
+          </div>
+          <button
+            className="deadline-alert__dismiss"
+            onClick={() => setCollapsed(true)}
+            aria-label="إغلاق التنبيه"
+            title="إغلاق التنبيه"
+          >
+            ✕
+          </button>
+        </div>
         <p className="deadline-alert__status">{statusText}</p>
 
         <div className="deadline-alert__meta">
@@ -3839,6 +3870,22 @@ img { display: block; max-width: 100%; }
   font-size: .82rem;
   color: rgba(248,250,252,.92);
 }
+.deadline-alert__toprow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.deadline-alert__dismiss {
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(15,23,42,.45);
+  color: #f8fafc;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
 .deadline-alert__visuals {
   margin-top: 8px;
   display: grid;
@@ -3931,6 +3978,13 @@ img { display: block; max-width: 100%; }
   gap: 8px;
   box-shadow: inset 0 0 18px rgba(255,255,255,.04), 0 8px 20px rgba(2,6,23,.35);
 }
+.hourglass-4d--compact {
+  padding: 6px;
+  border-radius: 10px;
+}
+.hourglass-4d--compact .hourglass-4d__svg {
+  max-height: 92px;
+}
 .hourglass-4d__head {
   display: flex;
   justify-content: space-between;
@@ -3988,6 +4042,35 @@ img { display: block; max-width: 100%; }
   opacity: .86;
 }
 
+.deadline-dock {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 280;
+  width: 128px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 12px;
+  background: rgba(2,6,23,.78);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(2,6,23,.45);
+}
+.deadline-dock__label {
+  text-align: center;
+  font-size: .67rem;
+  color: rgba(248,250,252,.85);
+  font-weight: 700;
+}
+.deadline-dock--critical {
+  border-color: rgba(248,113,113,.55);
+}
+.deadline-dock--warning {
+  border-color: rgba(245,158,11,.5);
+}
+
 @keyframes hourglass-stream {
   0% { opacity: .9; }
   50% { opacity: .4; }
@@ -4031,6 +4114,11 @@ img { display: block; max-width: 100%; }
   }
   .deadline-alert__grid {
     grid-template-columns: repeat(2, minmax(82px, 1fr));
+  }
+  .deadline-dock {
+    right: 8px;
+    bottom: 8px;
+    width: 114px;
   }
 }
 
