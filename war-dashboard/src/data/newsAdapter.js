@@ -259,11 +259,18 @@ async function callStoredNews(params, signal) {
     offset: offset > 0 ? offset : undefined,
     category: category && category !== 'all' ? category : undefined,
     q: searchQ || undefined,
+    _ts: Date.now(),
   });
 
   let res;
   try {
-    res = await fetch(requestUrl, { signal });
+    res = await fetch(requestUrl, {
+      signal,
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    });
   } catch (error) {
     const requestError = buildStoredRequestError("stored_feed_request_failed");
     requestError.cause = error;

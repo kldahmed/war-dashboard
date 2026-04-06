@@ -56,6 +56,7 @@ const ALERT_THRESHOLDS = {
 
 const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
 const TRUMP_IRAN_DEADLINE_ISO = '2026-04-07T20:00:00-04:00';
+const TRUMP_DEADLINE_HOURGLASS_WINDOW_MS = 36 * 3600 * 1000;
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
@@ -1547,6 +1548,66 @@ function deadlineTone(remainingMs) {
   return 'info';
 }
 
+function HourglassMetric({ remainingMs, tone }) {
+  const clampedRemaining = Math.max(0, Math.min(TRUMP_DEADLINE_HOURGLASS_WINDOW_MS, remainingMs));
+  const topRatio = clampedRemaining / TRUMP_DEADLINE_HOURGLASS_WINDOW_MS;
+  const bottomRatio = 1 - topRatio;
+  const topHeight = 90 * topRatio;
+  const bottomHeight = 90 * bottomRatio;
+  const flowDurationSec = tone === 'critical' ? 0.35 : tone === 'warning' ? 0.55 : 0.85;
+
+  return (
+    <div className={`hourglass-4d hourglass-4d--${tone}`} style={{ '--hg-flow-speed': `${flowDurationSec}s` }}>
+      <div className="hourglass-4d__head">
+        <strong>مقياس الساعة الرملية</strong>
+        <span>4D Time Sync · 8K Vector</span>
+      </div>
+
+      <svg className="hourglass-4d__svg" viewBox="0 0 220 300" role="img" aria-label="ساعة رملية متزامنة مع المهلة">
+        <defs>
+          <linearGradient id="hgFrame" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#f8fafc" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#94a3b8" stopOpacity="0.72" />
+          </linearGradient>
+          <linearGradient id="hgSand" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#fde68a" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.92" />
+          </linearGradient>
+          <clipPath id="hgTopClip">
+            <polygon points="62,34 158,34 121,126 99,126" />
+          </clipPath>
+          <clipPath id="hgBottomClip">
+            <polygon points="99,174 121,174 158,266 62,266" />
+          </clipPath>
+        </defs>
+
+        <path d="M54 20 H166 M54 280 H166" stroke="url(#hgFrame)" strokeWidth="10" strokeLinecap="round" />
+        <path d="M62 34 H158 L121 126 L121 174 L158 266 H62 L99 174 L99 126 Z" fill="rgba(15,23,42,0.22)" stroke="url(#hgFrame)" strokeWidth="4" />
+
+        <g clipPath="url(#hgTopClip)">
+          <rect x="62" y={126 - topHeight} width="96" height={topHeight} fill="url(#hgSand)" />
+        </g>
+        <g clipPath="url(#hgBottomClip)">
+          <rect x="62" y={266 - bottomHeight} width="96" height={bottomHeight} fill="url(#hgSand)" />
+        </g>
+
+        {remainingMs > 0 && (
+          <>
+            <line x1="110" y1="126" x2="110" y2="174" stroke="#fcd34d" strokeWidth="3" opacity="0.92" className="hourglass-4d__stream" />
+            <circle cx="110" cy="150" r="4" fill="#fde68a" className="hourglass-4d__grain hourglass-4d__grain--a" />
+            <circle cx="110" cy="150" r="3" fill="#fcd34d" className="hourglass-4d__grain hourglass-4d__grain--b" />
+          </>
+        )}
+      </svg>
+
+      <div className="hourglass-4d__meta">
+        <span>الامتلاء العلوي: {Math.round(topRatio * 100)}%</span>
+        <span>التراكم السفلي: {Math.round(bottomRatio * 100)}%</span>
+      </div>
+    </div>
+  );
+}
+
 function DeadlineAlertClock({ deadlineIso }) {
   const [nowMs, setNowMs] = useState(Date.now());
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
@@ -1657,27 +1718,6 @@ function DeadlineAlertClock({ deadlineIso }) {
         <h3 className="deadline-alert__title">عداد مهلة ترامب لإيران</h3>
         <p className="deadline-alert__status">{statusText}</p>
 
-        {!ended && (
-          <div className="deadline-alert__grid" role="timer" aria-live="polite">
-            <div className="deadline-unit">
-              <span className="deadline-unit__num">{String(countdown.days).padStart(2, '0')}</span>
-              <span className="deadline-unit__label">يوم</span>
-            </div>
-            <div className="deadline-unit">
-              <span className="deadline-unit__num">{String(countdown.hours).padStart(2, '0')}</span>
-              <span className="deadline-unit__label">ساعة</span>
-            </div>
-            <div className="deadline-unit">
-              <span className="deadline-unit__num">{String(countdown.minutes).padStart(2, '0')}</span>
-              <span className="deadline-unit__label">دقيقة</span>
-            </div>
-            <div className="deadline-unit">
-              <span className="deadline-unit__num">{String(countdown.seconds).padStart(2, '0')}</span>
-              <span className="deadline-unit__label">ثانية</span>
-            </div>
-          </div>
-        )}
-
         <div className="deadline-alert__meta">
           <span>الموعد ET: {targetEt}</span>
           <span>الموعد المحلي: {targetLocal}</span>
@@ -1687,6 +1727,31 @@ function DeadlineAlertClock({ deadlineIso }) {
           <span className={`deadline-health deadline-health--${syncHealth}`}>فحص داخلي: {syncHealthLabel}</span>
           <span className="deadline-health__metric">فرق الساعة: {clockOffsetMs >= 0 ? '+' : ''}{clockOffsetMs}ms</span>
           <span className="deadline-health__metric">آخر مزامنة: {syncAgeSec == null ? '—' : `${syncAgeSec}ث`}</span>
+        </div>
+
+        <div className="deadline-alert__visuals">
+          <HourglassMetric remainingMs={remainingMs} tone={tone} />
+
+          {!ended && (
+            <div className="deadline-alert__grid" role="timer" aria-live="polite">
+              <div className="deadline-unit">
+                <span className="deadline-unit__num">{String(countdown.days).padStart(2, '0')}</span>
+                <span className="deadline-unit__label">يوم</span>
+              </div>
+              <div className="deadline-unit">
+                <span className="deadline-unit__num">{String(countdown.hours).padStart(2, '0')}</span>
+                <span className="deadline-unit__label">ساعة</span>
+              </div>
+              <div className="deadline-unit">
+                <span className="deadline-unit__num">{String(countdown.minutes).padStart(2, '0')}</span>
+                <span className="deadline-unit__label">دقيقة</span>
+              </div>
+              <div className="deadline-unit">
+                <span className="deadline-unit__num">{String(countdown.seconds).padStart(2, '0')}</span>
+                <span className="deadline-unit__label">ثانية</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {!ended && (
@@ -1979,6 +2044,7 @@ export default function App() {
   const [totalCount,   setTotalCount]   = useState(0);
   const [newsFreshness, setNewsFreshness] = useState(null);
   const lastNewsRefreshAtRef = useRef(0);
+  const lastNewsIngestionKickAtRef = useRef(0);
 
   /* ── Live ── */
   const [streams,      setStreams]       = useState([]);
@@ -2179,6 +2245,30 @@ export default function App() {
       setLoadingOps(false);
     }
   }, []);
+
+  const triggerNewsIngestionRecovery = useCallback(async ({ silent = true } = {}) => {
+    const now = Date.now();
+    if ((now - lastNewsIngestionKickAtRef.current) < 120_000) return;
+    lastNewsIngestionKickAtRef.current = now;
+
+    try {
+      const res = await fetch('/api/ingestion/jobs/run', { method: 'POST' });
+      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+
+      if (!silent) {
+        setGlobalAlert({ severity: 'warning', message: '⟳ تم إطلاق استيعاب فوري للأخبار' });
+      }
+
+      setTimeout(() => {
+        loadNews(category, searchQ, 1);
+        loadOps();
+      }, 8_000);
+    } catch (err) {
+      if (!silent) {
+        setGlobalAlert({ severity: 'critical', message: `تعذر إطلاق النشر الفوري: ${err.message || 'network_error'}` });
+      }
+    }
+  }, [category, searchQ, loadNews, loadOps]);
 
   /* ─── Weather & Markets — instant HTTP fetch + SSE live push ─── */
   // Step 1: loadSignalPanels() fires two parallel HTTP GETs → data appears in < 500ms.
@@ -2389,7 +2479,7 @@ export default function App() {
     if (activeTab !== 'news') return;
     const id = setInterval(() => {
       if (page === 1 && !searchQ.trim()) loadNews(category, '', 1);
-    }, 5 * 60 * 1_000);
+    }, 30_000);
     return () => clearInterval(id);
   }, [activeTab, category, searchQ, page, loadNews]);
 
@@ -2409,6 +2499,23 @@ export default function App() {
     searchQ,
     newsFreshness?.data_age_sec,
     loadNews,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'news') return;
+    if (loadingNews) return;
+    if (page !== 1) return;
+    if (searchQ.trim()) return;
+    const ageSec = newsFreshness?.data_age_sec;
+    if (ageSec == null || ageSec < 180) return;
+    triggerNewsIngestionRecovery({ silent: true });
+  }, [
+    activeTab,
+    loadingNews,
+    page,
+    searchQ,
+    newsFreshness?.data_age_sec,
+    triggerNewsIngestionRecovery,
   ]);
 
   /* ─── Load briefing when editorial tab opens ─── */
@@ -3732,11 +3839,17 @@ img { display: block; max-width: 100%; }
   font-size: .82rem;
   color: rgba(248,250,252,.92);
 }
+.deadline-alert__visuals {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
 .deadline-alert__grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(68px, 1fr));
   gap: 8px;
-  margin-bottom: 8px;
 }
 .deadline-unit {
   border: 1px solid rgba(255,255,255,.2);
@@ -3806,6 +3919,93 @@ img { display: block; max-width: 100%; }
   background: rgba(15,23,42,.36);
   color: rgba(248,250,252,.9);
 }
+
+.hourglass-4d {
+  border: 1px solid rgba(255,255,255,.18);
+  background: radial-gradient(circle at 14% 12%, rgba(56,189,248,.18), rgba(15,23,42,.45) 42%),
+              linear-gradient(170deg, rgba(15,23,42,.5), rgba(30,41,59,.28));
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 0 0 18px rgba(255,255,255,.04), 0 8px 20px rgba(2,6,23,.35);
+}
+.hourglass-4d__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.hourglass-4d__head strong {
+  font-size: .78rem;
+  color: #f8fafc;
+}
+.hourglass-4d__head span {
+  font-size: .64rem;
+  color: rgba(248,250,252,.68);
+  letter-spacing: .03em;
+}
+.hourglass-4d__svg {
+  width: 100%;
+  max-height: 190px;
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,.35));
+}
+.hourglass-4d__stream {
+  animation: hourglass-stream var(--hg-flow-speed) linear infinite;
+}
+.hourglass-4d__grain {
+  transform-origin: center;
+}
+.hourglass-4d__grain--a {
+  animation: hourglass-grain-a var(--hg-flow-speed) linear infinite;
+}
+.hourglass-4d__grain--b {
+  animation: hourglass-grain-b calc(var(--hg-flow-speed) * 1.15) linear infinite;
+}
+.hourglass-4d__meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: .68rem;
+  color: rgba(248,250,252,.8);
+}
+.hourglass-4d__meta span {
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(15,23,42,.35);
+}
+.hourglass-4d--warning {
+  border-color: rgba(245,158,11,.35);
+}
+.hourglass-4d--critical {
+  border-color: rgba(248,113,113,.42);
+  box-shadow: inset 0 0 20px rgba(248,113,113,.08), 0 10px 22px rgba(69,10,10,.4);
+}
+.hourglass-4d--expired {
+  border-color: rgba(148,163,184,.38);
+  opacity: .86;
+}
+
+@keyframes hourglass-stream {
+  0% { opacity: .9; }
+  50% { opacity: .4; }
+  100% { opacity: .9; }
+}
+@keyframes hourglass-grain-a {
+  0% { transform: translateY(-20px) scale(1); opacity: 0; }
+  10% { opacity: .95; }
+  90% { opacity: .95; }
+  100% { transform: translateY(20px) scale(.6); opacity: 0; }
+}
+@keyframes hourglass-grain-b {
+  0% { transform: translateY(-18px) scale(.9); opacity: 0; }
+  14% { opacity: .8; }
+  88% { opacity: .8; }
+  100% { transform: translateY(18px) scale(.55); opacity: 0; }
+}
+
 .deadline-alert__pressure {
   margin-top: 8px;
   height: 5px;
@@ -3824,6 +4024,10 @@ img { display: block; max-width: 100%; }
     grid-template-columns: auto 1fr;
     gap: 10px;
     padding: 10px 12px;
+  }
+  .deadline-alert__visuals {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
   .deadline-alert__grid {
     grid-template-columns: repeat(2, minmax(82px, 1fr));

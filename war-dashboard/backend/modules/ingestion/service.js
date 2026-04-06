@@ -263,9 +263,28 @@ async function upsertRawItem(feedId, jobId, item) {
 }
 
 async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'manual', onJobCreated = null } = {}) {
-  await cleanupStaleRunningJobs(120);
-  await syncSourceRegistry();
-  const job = await createJob(correlationId, { triggeredBy });
+  const advisoryLockKey = 48201911;
+  const lockRes = await query('SELECT pg_try_advisory_lock($1) AS locked', [advisoryLockKey]);
+  const lockAcquired = Boolean(lockRes.rows?.[0]?.locked);
+
+  if (!lockAcquired) {
+    logger.warn('rss_ingestion_skipped_lock_busy', { correlationId, triggeredBy });
+    return {
+      skipped: true,
+      reason: 'ingestion_already_running',
+      correlationId,
+    };
+  }
+
+  let job;
+  try {
+    await cleanupStaleRunningJobs(env.ingestionStaleJobMinutes);
+    await syncSourceRegistry();
+    job = await createJob(correlationId, { triggeredBy });
+  } catch (setupError) {
+    await query('SELECT pg_advisory_unlock($1)', [advisoryLockKey]).catch(() => {});
+    throw setupError;
+  }
 
   if (typeof onJobCreated === 'function') {
     onJobCreated(job.id);
@@ -412,6 +431,8 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
     await finishJob(job.id, 'failed', job.started_at, error.message);
     logger.error('rss_ingestion_failed', { correlationId, error: error.message });
     throw error;
+  } finally {
+    await query('SELECT pg_advisory_unlock($1)', [advisoryLockKey]).catch(() => {});
   }
 }
 

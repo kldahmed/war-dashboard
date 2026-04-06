@@ -9,7 +9,7 @@ const { runRssIngestion } = require('../ingestion/service');
 
 const router = express.Router();
 const KNOWN_CATEGORIES = new Set(['breaking', 'politics', 'economy', 'war', 'gulf', 'iran', 'israel', 'usa', 'world', 'energy', 'analysis', 'technology']);
-const FEED_STALE_TRIGGER_SEC = 6 * 3600;
+const FEED_STALE_TRIGGER_SEC = 15 * 60;
 const INGESTION_COOLDOWN_MS = 2 * 60 * 1000;
 let autoIngestionInFlight = false;
 let lastAutoIngestionAt = 0;
@@ -171,6 +171,11 @@ async function maybeTriggerAutoIngestion({ latestItemIso, reqCorrelationId, last
 }
 
 router.get('/news/feed', asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+
   const limit = Math.min(env.newsFeedMaxLimit, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
   const category = normalizeCategorySlug(req.query.category);
   const categoryClause = '';
