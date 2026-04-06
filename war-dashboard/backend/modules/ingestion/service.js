@@ -175,6 +175,55 @@ async function cleanupStaleRunningJobs(maxAgeMinutes = 120) {
   }
 }
 
+async function quarantineFailingFeeds() {
+  const result = await query(
+    `WITH recent AS (
+       SELECT source_feed_id, status, created_at
+       FROM (
+         SELECT
+           source_feed_id,
+           status,
+           created_at,
+           ROW_NUMBER() OVER (PARTITION BY source_feed_id ORDER BY created_at DESC) AS rn
+         FROM ingestion_feed_runs
+       ) ranked
+       WHERE rn <= 3
+     ),
+     unstable AS (
+       SELECT source_feed_id
+       FROM recent
+       GROUP BY source_feed_id
+       HAVING COUNT(*) = 3
+          AND BOOL_AND(status = 'failed')
+     )
+     UPDATE source_feeds sf
+     SET status = 'inactive',
+         updated_at = NOW(),
+         last_error_at = NOW(),
+         last_error_message = COALESCE(sf.last_error_message, 'auto_quarantined_after_repeated_failures')
+     FROM unstable u
+     WHERE sf.id = u.source_feed_id
+       AND sf.status = 'active'
+       AND sf.feed_type = 'rss'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM ingestion_feed_runs ok
+         WHERE ok.source_feed_id = sf.id
+           AND ok.status IN ('completed', 'completed_with_errors')
+           AND ok.created_at >= NOW() - INTERVAL '24 hours'
+       )
+     RETURNING sf.id, sf.endpoint`);
+
+  if (result.rowCount > 0) {
+    logger.warn('rss_feeds_auto_quarantined', {
+      count: result.rowCount,
+      feedIds: result.rows.map((r) => r.id),
+    });
+  }
+
+  return result.rowCount;
+}
+
 async function markSourceRuntimeState(sourceId, status) {
   await query(
     `UPDATE sources
@@ -279,6 +328,7 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
   let job;
   try {
     await cleanupStaleRunningJobs(env.ingestionStaleJobMinutes);
+    await quarantineFailingFeeds();
     await syncSourceRegistry();
     job = await createJob(correlationId, { triggeredBy });
   } catch (setupError) {

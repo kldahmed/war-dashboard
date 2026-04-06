@@ -2140,7 +2140,11 @@ export default function App() {
       if (cat && cat !== 'all') params.category = cat;
       if (q && q.trim()) params.q = q.trim();
       const envelope = await fetchNewsFeedEnvelope(params);
-      const items = envelope?.items ?? envelope?.data ?? [];
+      const items = (envelope?.items ?? envelope?.data ?? []).slice().sort((a, b) => {
+        const aMs = new Date(a?.time || 0).getTime();
+        const bMs = new Date(b?.time || 0).getTime();
+        return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
+      });
       const total = envelope?.total ?? envelope?.metadata?.total_available_items ?? envelope?.metadata?.item_count ?? items.length;
       const briefing = envelope?.briefing ?? envelope?.metadata?.briefing ?? null;
       setTotalCount(total);

@@ -425,7 +425,14 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
   const filteredRows = category === 'all'
     ? result.rows
     : result.rows.filter((row) => normalizeCategorySlug(row.news_category_slug || row.category || row.source_category || 'world') === category);
-  const selectedRows = filteredRows.slice(0, limit);
+  const selectedRows = filteredRows
+    .slice()
+    .sort((a, b) => {
+      const aMs = new Date(a.cluster_last_seen_at || a.published_at_source || a.fetched_at || a.created_at || 0).getTime();
+      const bMs = new Date(b.cluster_last_seen_at || b.published_at_source || b.fetched_at || b.created_at || 0).getTime();
+      return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
+    })
+    .slice(0, limit);
   const latestItemIso = latestTimestampFromRows(filteredRows);
 
   await maybeTriggerAutoIngestion({
