@@ -1,12 +1,18 @@
 'use strict';
 
 const express = require('express');
+const { randomUUID } = require('node:crypto');
 const { query } = require('../../lib/db');
 const { asyncHandler } = require('../../lib/async-handler');
 const env = require('../../config/env');
+const { runRssIngestion } = require('../ingestion/service');
 
 const router = express.Router();
 const KNOWN_CATEGORIES = new Set(['breaking', 'politics', 'economy', 'war', 'gulf', 'iran', 'israel', 'usa', 'world', 'energy', 'analysis', 'technology']);
+const FEED_STALE_TRIGGER_SEC = 6 * 3600;
+const INGESTION_COOLDOWN_MS = 2 * 60 * 1000;
+let autoIngestionInFlight = false;
+let lastAutoIngestionAt = 0;
 
 function safeIsoTime(value) {
   if (!value) return 'unknown';
@@ -126,6 +132,42 @@ function buildCategoryCounts(rows) {
     if (slug !== 'all') counts[slug] += 1;
   }
   return counts;
+}
+
+function latestTimestampFromRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const latest = rows
+    .map((row) => row.published_at_source || row.fetched_at || row.created_at)
+    .filter(Boolean)
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value))
+    .reduce((acc, cur) => Math.max(acc, cur), 0);
+  return latest > 0 ? new Date(latest).toISOString() : null;
+}
+
+async function maybeTriggerAutoIngestion({ latestItemIso, reqCorrelationId, lastIngestionAt }) {
+  if (!latestItemIso) return;
+
+  const latestAgeSec = Math.max(0, Math.floor((Date.now() - new Date(latestItemIso).getTime()) / 1000));
+  const ingestionAgeSec = lastIngestionAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(lastIngestionAt).getTime()) / 1000))
+    : Number.POSITIVE_INFINITY;
+
+  const cooldownPassed = (Date.now() - lastAutoIngestionAt) > INGESTION_COOLDOWN_MS;
+  const shouldKick = latestAgeSec > FEED_STALE_TRIGGER_SEC && ingestionAgeSec > 10 * 60;
+
+  if (!shouldKick || autoIngestionInFlight || !cooldownPassed) return;
+
+  autoIngestionInFlight = true;
+  lastAutoIngestionAt = Date.now();
+  runRssIngestion({
+    correlationId: reqCorrelationId || randomUUID(),
+    triggeredBy: 'news_feed_stale_guard',
+  })
+    .catch(() => {})
+    .finally(() => {
+      autoIngestionInFlight = false;
+    });
 }
 
 router.get('/news/feed', asyncHandler(async (req, res) => {
@@ -355,8 +397,8 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
        cluster_last_seen_at
      FROM ranked_items
      WHERE cluster_rank = 1
-         ORDER BY rank_score DESC,
-        COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST,
+        ORDER BY COALESCE(cluster_last_seen_at, published_at_source, fetched_at) DESC NULLS LAST,
+        rank_score DESC,
         fetched_at DESC
      LIMIT $1`,
     params,
@@ -379,6 +421,13 @@ router.get('/news/feed', asyncHandler(async (req, res) => {
     ? result.rows
     : result.rows.filter((row) => normalizeCategorySlug(row.news_category_slug || row.category || row.source_category || 'world') === category);
   const selectedRows = filteredRows.slice(0, limit);
+  const latestItemIso = latestTimestampFromRows(filteredRows);
+
+  await maybeTriggerAutoIngestion({
+    latestItemIso,
+    reqCorrelationId: req.correlationId,
+    lastIngestionAt,
+  });
 
   res.json({
     mode: 'stored',

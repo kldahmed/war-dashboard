@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config({ path: '.env.local' });
+
 const { randomUUID } = require('node:crypto');
 const { runRssIngestion } = require('../modules/ingestion/service');
 const { pool } = require('../lib/db');

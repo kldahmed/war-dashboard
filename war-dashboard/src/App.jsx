@@ -1808,6 +1808,7 @@ export default function App() {
   const [page,         setPage]         = useState(1);
   const [hasMore,      setHasMore]      = useState(false);
   const [totalCount,   setTotalCount]   = useState(0);
+  const [newsFreshness, setNewsFreshness] = useState(null);
 
   /* ── Live ── */
   const [streams,      setStreams]       = useState([]);
@@ -1880,6 +1881,7 @@ export default function App() {
       if (pg === 1) {
         setEditorialBriefing(briefing);
         setNewsItems(items);
+        if (envelope?.freshness) setNewsFreshness(envelope.freshness);
       } else {
         setNewsItems(prev => [...prev, ...items]);
       }
@@ -2483,6 +2485,20 @@ export default function App() {
                 ))}
               </div>
             </div>
+
+            {newsFreshness?.data_age_sec != null && (() => {
+              const age = newsFreshness.data_age_sec;
+              const dot = age < ALERT_THRESHOLDS.feed_stale_warning ? 'green'
+                        : age < ALERT_THRESHOLDS.feed_stale_critical ? 'yellow'
+                        : 'red';
+              return (
+                <div className="news-freshness-bar" dir="rtl">
+                  <span className={`news-freshness-dot news-freshness-dot--${dot}`} />
+                  <span className="news-freshness-label">آخر خبر منذ {fmtMs(age * 1000)}</span>
+                  {dot === 'red' && <span className="news-freshness-warn">⚠ البيانات قديمة — جارٍ التحديث تلقائياً</span>}
+                </div>
+              );
+            })()}
 
             {errorNews && <ErrorBanner message={errorNews} onRetry={() => loadNews(category, searchQ, 1)} />}
 
@@ -5784,6 +5800,29 @@ img { display: block; max-width: 100%; }
   background: rgba(34,197,94,.12);
   border-color: rgba(34,197,94,.3);
 }
+/* News freshness banner */
+.news-freshness-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  margin: 0 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  font-size: .8rem;
+}
+.news-freshness-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.news-freshness-dot--green  { background: #22c55e; box-shadow: 0 0 6px #22c55e99; }
+.news-freshness-dot--yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b99; animation: blink 1.4s ease-in-out infinite; }
+.news-freshness-dot--red    { background: #ef4444; box-shadow: 0 0 6px #ef444499; animation: blink .9s ease-in-out infinite; }
+.news-freshness-label { color: var(--text2); }
+.news-freshness-warn  { color: #f59e0b; font-weight: 700; margin-right: 4px; }
 .ops-dashboard { display: flex; flex-direction: column; gap: 20px; }
 .ops-header {
   display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px;

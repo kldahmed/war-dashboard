@@ -20,7 +20,7 @@ end();
                                           return;
                                             }
 
-                                              try {  
+                                              try {    
                                                   const body =
                                                         req.body && typeof req.body === 'object'
                                                                 ? req.body
