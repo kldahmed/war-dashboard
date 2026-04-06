@@ -55,6 +55,7 @@ const ALERT_THRESHOLDS = {
 };
 
 const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
+const TRUMP_IRAN_DEADLINE_ISO = '2026-04-07T20:00:00-04:00';
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
@@ -1530,6 +1531,174 @@ function fmtMs(ms) {
   return `${hr}س`;
 }
 
+function splitCountdown(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  return { days, hours, minutes, seconds };
+}
+
+function deadlineTone(remainingMs) {
+  if (remainingMs <= 0) return 'expired';
+  if (remainingMs <= 2 * 3600 * 1000) return 'critical';
+  if (remainingMs <= 6 * 3600 * 1000) return 'warning';
+  return 'info';
+}
+
+function DeadlineAlertClock({ deadlineIso }) {
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
+  const [lastSyncAtMs, setLastSyncAtMs] = useState(null);
+  const [syncErrorCount, setSyncErrorCount] = useState(0);
+  const clockOffsetRef = useRef(0);
+
+  useEffect(() => {
+    clockOffsetRef.current = clockOffsetMs;
+  }, [clockOffsetMs]);
+
+  const syncClock = useCallback(async () => {
+    try {
+      const res = await fetch('/api/health/signals', { method: 'HEAD', cache: 'no-store' });
+      const dateHeader = res.headers.get('date');
+      if (!dateHeader) return;
+      const serverMs = Date.parse(dateHeader);
+      if (!Number.isFinite(serverMs)) return;
+      const nextOffset = serverMs - Date.now();
+      setLastSyncAtMs(Date.now());
+      setSyncErrorCount(0);
+      if (Math.abs(nextOffset - clockOffsetRef.current) < 250) return;
+      setClockOffsetMs(nextOffset);
+    } catch {
+      // Keep local clock when server date header is unavailable.
+      setSyncErrorCount((prev) => prev + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncClock();
+    const intervalId = setInterval(syncClock, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncClock();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [syncClock]);
+
+  useEffect(() => {
+    let timeoutId;
+    const tick = () => {
+      const correctedNow = Date.now() + clockOffsetRef.current;
+      setNowMs(correctedNow);
+      const toNextSecond = 1000 - (correctedNow % 1000);
+      timeoutId = setTimeout(tick, Math.max(60, toNextSecond));
+    };
+    tick();
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  const deadlineMs = new Date(deadlineIso).getTime();
+  if (Number.isNaN(deadlineMs)) return null;
+
+  const remainingMs = deadlineMs - nowMs;
+  const tone = deadlineTone(remainingMs);
+  const ended = remainingMs <= 0;
+  const countdown = splitCountdown(remainingMs);
+  const pressurePct = Math.max(0, Math.min(100, (Math.max(0, remainingMs) / (24 * 3600 * 1000)) * 100));
+  const syncAgeSec = lastSyncAtMs != null ? Math.max(0, Math.floor((Date.now() - lastSyncAtMs) / 1000)) : null;
+  const syncHealth = (() => {
+    if (lastSyncAtMs == null) return 'warning';
+    const offsetAbs = Math.abs(clockOffsetMs);
+    if (syncAgeSec <= 75 && offsetAbs <= 2000 && syncErrorCount === 0) return 'ok';
+    if (syncAgeSec <= 180 && offsetAbs <= 5000 && syncErrorCount <= 2) return 'warning';
+    return 'critical';
+  })();
+
+  const syncHealthLabel =
+    syncHealth === 'ok'
+      ? 'دقة ممتازة'
+      : syncHealth === 'warning'
+        ? 'دقة متوسطة'
+        : 'دقة حرجة';
+
+  const targetEt = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/New_York',
+  }).format(new Date(deadlineMs));
+
+  const targetLocal = new Intl.DateTimeFormat('ar-AE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(deadlineMs));
+
+  const statusText = ended
+    ? 'انتهت المهلة.. ماذا ستفعل الآن يا ترامب؟'
+    : tone === 'critical'
+      ? 'إنذار حرج - نافذة القرار ضيقة جدا'
+      : tone === 'warning'
+        ? 'إنذار مرتفع - المهلة تقترب بسرعة'
+        : 'مراقبة نشطة - المهلة ما زالت قائمة';
+
+  return (
+    <section className={`deadline-alert deadline-alert--${tone}`} dir="rtl">
+      <span className={`deadline-alert__beacon deadline-alert__beacon--${tone}`} aria-hidden="true" />
+
+      <div className="deadline-alert__content">
+        <div className="deadline-alert__eyebrow">تنبيه استراتيجي مباشر</div>
+        <h3 className="deadline-alert__title">عداد مهلة ترامب لإيران</h3>
+        <p className="deadline-alert__status">{statusText}</p>
+
+        {!ended && (
+          <div className="deadline-alert__grid" role="timer" aria-live="polite">
+            <div className="deadline-unit">
+              <span className="deadline-unit__num">{String(countdown.days).padStart(2, '0')}</span>
+              <span className="deadline-unit__label">يوم</span>
+            </div>
+            <div className="deadline-unit">
+              <span className="deadline-unit__num">{String(countdown.hours).padStart(2, '0')}</span>
+              <span className="deadline-unit__label">ساعة</span>
+            </div>
+            <div className="deadline-unit">
+              <span className="deadline-unit__num">{String(countdown.minutes).padStart(2, '0')}</span>
+              <span className="deadline-unit__label">دقيقة</span>
+            </div>
+            <div className="deadline-unit">
+              <span className="deadline-unit__num">{String(countdown.seconds).padStart(2, '0')}</span>
+              <span className="deadline-unit__label">ثانية</span>
+            </div>
+          </div>
+        )}
+
+        <div className="deadline-alert__meta">
+          <span>الموعد ET: {targetEt}</span>
+          <span>الموعد المحلي: {targetLocal}</span>
+        </div>
+
+        <div className="deadline-alert__integrity" dir="rtl">
+          <span className={`deadline-health deadline-health--${syncHealth}`}>فحص داخلي: {syncHealthLabel}</span>
+          <span className="deadline-health__metric">فرق الساعة: {clockOffsetMs >= 0 ? '+' : ''}{clockOffsetMs}ms</span>
+          <span className="deadline-health__metric">آخر مزامنة: {syncAgeSec == null ? '—' : `${syncAgeSec}ث`}</span>
+        </div>
+
+        {!ended && (
+          <div className="deadline-alert__pressure" aria-hidden="true">
+            <span className="deadline-alert__pressure-fill" style={{ width: `${pressurePct}%` }} />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* ─────────────────────────────────────────────────
    SEARCH BAR
 ───────────────────────────────────────────────── */
@@ -2484,6 +2653,8 @@ export default function App() {
 
       {/* BREAKING TICKER */}
       <BreakingTicker items={newsItems} />
+
+      <DeadlineAlertClock deadlineIso={TRUMP_IRAN_DEADLINE_ISO} />
 
       {/* ── MAIN CONTENT ── */}
       <main className={`site-main ${activeTab === 'news' ? 'site-main--news' : ''}`}>
@@ -3502,6 +3673,161 @@ img { display: block; max-width: 100%; }
 .global-alert__close {
   background: none; border: none; cursor: pointer; font-size: 1rem;
   color: inherit; opacity: .7; padding: 0 4px;
+}
+
+/* ── STRATEGIC DEADLINE ALERT ── */
+.deadline-alert {
+  position: sticky;
+  top: 0;
+  z-index: 220;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-bottom: 1px solid transparent;
+  backdrop-filter: blur(8px);
+}
+.deadline-alert--info {
+  background: linear-gradient(90deg, rgba(30,41,59,.96), rgba(17,24,39,.96));
+  border-bottom-color: rgba(59,130,246,.45);
+}
+.deadline-alert--warning {
+  background: linear-gradient(90deg, rgba(120,53,15,.97), rgba(66,32,6,.97));
+  border-bottom-color: rgba(245,158,11,.55);
+}
+.deadline-alert--critical {
+  background: linear-gradient(90deg, rgba(127,29,29,.97), rgba(69,10,10,.97));
+  border-bottom-color: rgba(248,113,113,.62);
+}
+.deadline-alert--expired {
+  background: linear-gradient(90deg, rgba(55,65,81,.97), rgba(17,24,39,.97));
+  border-bottom-color: rgba(148,163,184,.45);
+}
+.deadline-alert__beacon {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-top: 6px;
+}
+.deadline-alert__beacon--info { background: #22d3ee; box-shadow: 0 0 14px rgba(34,211,238,.85); }
+.deadline-alert__beacon--warning { background: #f59e0b; box-shadow: 0 0 14px rgba(245,158,11,.92); animation: blink 1.2s ease-in-out infinite; }
+.deadline-alert__beacon--critical { background: #ef4444; box-shadow: 0 0 15px rgba(239,68,68,.95); animation: blink .8s ease-in-out infinite; }
+.deadline-alert__beacon--expired { background: #94a3b8; box-shadow: 0 0 12px rgba(148,163,184,.45); }
+.deadline-alert__content { min-width: 0; }
+.deadline-alert__eyebrow {
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .92;
+}
+.deadline-alert__title {
+  margin: 2px 0 4px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+.deadline-alert__status {
+  margin: 0 0 8px;
+  font-size: .82rem;
+  color: rgba(248,250,252,.92);
+}
+.deadline-alert__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(68px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.deadline-unit {
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 10px;
+  background: rgba(15,23,42,.35);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.deadline-unit__num {
+  font-size: 1.2rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+.deadline-unit__label {
+  font-size: .68rem;
+  color: rgba(248,250,252,.82);
+}
+.deadline-alert__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: .73rem;
+  color: rgba(248,250,252,.82);
+}
+.deadline-alert__integrity {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.deadline-health {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: .72rem;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+.deadline-health--ok {
+  color: #bbf7d0;
+  background: rgba(34,197,94,.14);
+  border-color: rgba(34,197,94,.38);
+}
+.deadline-health--warning {
+  color: #fde68a;
+  background: rgba(245,158,11,.14);
+  border-color: rgba(245,158,11,.42);
+}
+.deadline-health--critical {
+  color: #fecaca;
+  background: rgba(239,68,68,.16);
+  border-color: rgba(239,68,68,.45);
+}
+.deadline-health__metric {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: .72rem;
+  border: 1px solid rgba(255,255,255,.24);
+  background: rgba(15,23,42,.36);
+  color: rgba(248,250,252,.9);
+}
+.deadline-alert__pressure {
+  margin-top: 8px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(15,23,42,.55);
+  overflow: hidden;
+}
+.deadline-alert__pressure-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #f59e0b, #ef4444);
+  transition: width .6s ease;
+}
+@media (max-width: 760px) {
+  .deadline-alert {
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .deadline-alert__grid {
+    grid-template-columns: repeat(2, minmax(82px, 1fr));
+  }
 }
 
 /* ── HEADER ── */
