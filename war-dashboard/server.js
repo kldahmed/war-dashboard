@@ -18,6 +18,7 @@ const { runAutoOptimizer } = require('./backend/modules/self-optimization/servic
 const { generateSitrep }  = require('./backend/modules/intelligence/service');
 const { refreshWeather }  = require('./backend/modules/weather/service');
 const { refreshMarkets }  = require('./backend/modules/markets/service');
+const sseHub = require('./backend/lib/sse-hub');
 const { pool } = require('./backend/lib/db');
 
 const app = createApp();
@@ -129,6 +130,7 @@ function scheduleMarkets() {
 }
 
 app.listen(env.port, () => {
+  sseHub.initDbListener().catch(() => {});
   const keySet = !!process.env.ANTHROPIC_API_KEY;
   console.log(`\n⚡ Dev API server → http://localhost:${env.port}`);
   console.log(`   ANTHROPIC_API_KEY: ${keySet ? '✅ loaded from .env.local' : '❌ NOT SET — add it to .env.local'}`);

@@ -3,7 +3,7 @@
 const express = require('express');
 const { asyncHandler } = require('../../lib/async-handler');
 const env = require('../../config/env');
-const { getSnapshot } = require('./service');
+const { getSnapshot, refreshMarkets } = require('./service');
 
 const router = express.Router();
 
@@ -15,11 +15,20 @@ router.get('/markets/uae', asyncHandler(async (_req, res) => {
     });
   }
 
-  const snapshot = getSnapshot();
+  let snapshot = getSnapshot();
+  if (!snapshot) {
+    // First request warm-up: fetch now so UI does not stay empty.
+    await Promise.race([
+      refreshMarkets(),
+      new Promise((resolve) => setTimeout(resolve, 9000)),
+    ]);
+    snapshot = getSnapshot();
+  }
+
   if (!snapshot) {
     return res.status(503).json({
       error: 'markets_not_ready',
-      message: 'Markets data not yet available. Try again in a moment.',
+      message: 'Markets warm-up in progress. Retry in a few seconds.',
     });
   }
 

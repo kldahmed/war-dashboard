@@ -7,6 +7,7 @@ const sseHub = require('../../lib/sse-hub');
 const logger = require('../../lib/logger');
 const { getSnapshot: getWeatherSnapshot, refreshWeather } = require('../weather/service');
 const { getSnapshot: getMarketsSnapshot, refreshMarkets } = require('../markets/service');
+const { loadSignalSnapshot } = require('./service');
 
 const router = express.Router();
 
@@ -15,16 +16,20 @@ const PING_MS = 25_000;
 /**
  * Build the two initial event payloads for a newly-connected client.
  */
-function buildInitialPayloads() {
-  const weatherSnap = getWeatherSnapshot();
-  const marketsSnap = getMarketsSnapshot();
+async function buildInitialPayloads() {
+  const [weatherDbSnap, marketsDbSnap] = await Promise.all([
+    loadSignalSnapshot('weather'),
+    loadSignalSnapshot('markets'),
+  ]);
+  const weatherSnap = weatherDbSnap?.payload || getWeatherSnapshot();
+  const marketsSnap = marketsDbSnap?.payload || getMarketsSnapshot();
 
   const weather = weatherSnap
-    ? { available: true, data: weatherSnap }
+    ? weatherSnap
     : { available: !!env.weatherApiKey, data: null, reason: env.weatherApiKey ? 'not_ready' : 'not_configured' };
 
   const markets = marketsSnap
-    ? { available: true, data: marketsSnap }
+    ? marketsSnap
     : { available: !!env.alphaVantageApiKey, data: null, reason: env.alphaVantageApiKey ? 'not_ready' : 'not_configured' };
 
   return { weather, markets };
@@ -35,7 +40,7 @@ function buildInitialPayloads() {
  * Server-Sent Events stream — pushes weather & markets updates in real-time.
  * The browser's EventSource API automatically reconnects on drop.
  */
-router.get('/signals/stream', (req, res) => {
+router.get('/signals/stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -43,7 +48,7 @@ router.get('/signals/stream', (req, res) => {
   res.flushHeaders();
 
   // Send current snapshots right away so the UI populates immediately
-  const { weather, markets } = buildInitialPayloads();
+  const { weather, markets } = await buildInitialPayloads();
   res.write(`event: weather\ndata: ${JSON.stringify(weather)}\n\n`);
   res.write(`event: markets\ndata: ${JSON.stringify(markets)}\n\n`);
 

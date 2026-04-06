@@ -4,6 +4,7 @@ const https = require('node:https');
 const env = require('../../config/env');
 const logger = require('../../lib/logger');
 const sseHub = require('../../lib/sse-hub');
+const { saveSignalSnapshot, publishSignalEvent } = require('../signals/service');
 
 const UAE_CITIES = [
   { id: 'dubai',    name: 'دبي',         lat: 25.2048, lon: 55.2708 },
@@ -152,7 +153,10 @@ async function refreshWeather() {
         locations,
       };
       logger.info('weather_refreshed', { cities: locations.length });
-      sseHub.broadcast('weather', { available: true, data: _snapshot });
+      const eventPayload = { available: true, data: _snapshot };
+      sseHub.broadcast('weather', eventPayload);
+      await saveSignalSnapshot('weather', eventPayload);
+      await publishSignalEvent('weather', eventPayload);
     }
   } catch (err) {
     logger.error('weather_refresh_failed', { error: err.message });

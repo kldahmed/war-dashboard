@@ -4,6 +4,7 @@ const https = require('node:https');
 const env = require('../../config/env');
 const logger = require('../../lib/logger');
 const sseHub = require('../../lib/sse-hub');
+const { saveSignalSnapshot, publishSignalEvent } = require('../signals/service');
 
 const AV_BASE = 'https://www.alphavantage.co/query';
 const TROY_OZ_IN_GRAMS = 31.1034768;
@@ -134,7 +135,10 @@ async function refreshMarkets() {
         gold: !!goldData,
         oil_benchmarks: benchmarks.length,
       });
-      sseHub.broadcast('markets', { available: true, data: _snapshot });
+      const eventPayload = { available: true, data: _snapshot };
+      sseHub.broadcast('markets', eventPayload);
+      await saveSignalSnapshot('markets', eventPayload);
+      await publishSignalEvent('markets', eventPayload);
     }
   } catch (err) {
     logger.error('markets_refresh_failed', { error: err.message });

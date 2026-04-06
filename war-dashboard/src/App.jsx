@@ -1518,6 +1518,16 @@ function NewsroomDashboard({ newsroomStatus, metricsBasic, updatedAt, onRefresh,
   );
 }
 
+function fmtMs(ms) {
+  if (ms == null) return '—';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}ث`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}د`;
+  const hr = Math.floor(min / 60);
+  return `${hr}س`;
+}
+
 /* ─────────────────────────────────────────────────
    SEARCH BAR
 ───────────────────────────────────────────────── */
@@ -1837,6 +1847,7 @@ export default function App() {
   const [marketsHubError, setMarketsHubError] = useState(null);
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [selectedWeatherLocationId, setSelectedWeatherLocationId] = useState(null);
+  const [signalsHealth, setSignalsHealth] = useState(null);
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
@@ -1961,16 +1972,19 @@ export default function App() {
     setLoadingOps(true);
     setErrorOps(null);
     try {
-      const [nrRes, mbRes] = await Promise.all([
+      const [nrRes, mbRes, shRes] = await Promise.all([
         fetch('/api/health/newsroom'),
         fetch('/api/health/metrics-basic'),
+        fetch('/api/health/signals'),
       ]);
-      const [nrData, mbData] = await Promise.all([
+      const [nrData, mbData, shData] = await Promise.all([
         nrRes.ok ? nrRes.json() : Promise.resolve(null),
         mbRes.ok ? mbRes.json() : Promise.resolve(null),
+        shRes.ok ? shRes.json() : Promise.resolve(null),
       ]);
       setNewsroomStatus(nrData);
       setMetricsBasic(mbData);
+      setSignalsHealth(shData);
       setOpsUpdatedAt(new Date().toISOString());
       // Global critical banner?
       const feedMs = nrData?.feed_staleness?.seconds_since_last_feed;
@@ -2556,6 +2570,27 @@ export default function App() {
         {activeTab === 'ops' && (
           <div className="ops-view">
             {errorOps && <ErrorBanner message={errorOps} onRetry={loadOps} />}
+            <div className="signals-health-strip" dir="rtl">
+              <span className={`signals-badge signals-badge--${signalsHealth?.overall_status || 'red'}`}>
+                {signalsHealth?.overall_status === 'green'
+                  ? 'LIVE'
+                  : signalsHealth?.overall_status === 'yellow'
+                    ? 'DEGRADED'
+                    : 'CRITICAL'}
+              </span>
+              <span className="signals-health-item">تحديث الطقس: {fmtMs(signalsHealth?.weather_age_ms)}</span>
+              <span className="signals-health-item">تحديث الأسواق: {fmtMs(signalsHealth?.markets_age_ms)}</span>
+            </div>
+            {Array.isArray(signalsHealth?.alerts) && signalsHealth.alerts.length > 0 && (
+              <div className="signals-alerts" dir="rtl">
+                {signalsHealth.alerts.map((alert, index) => (
+                  <div key={`${alert.code || 'signal'}-${index}`} className={`signal-alert signal-alert--${alert.severity || 'ok'}`}>
+                    <span className="signal-alert__code">{alert.code || 'signal'}</span>
+                    <span className="signal-alert__msg">{alert.message || 'Signal status update'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="ops-signal-grid">
               <UAEWeatherPanel
                 data={weatherHub}
@@ -5596,6 +5631,87 @@ img { display: block; max-width: 100%; }
    OPS DASHBOARD
 ════════════════════════════════ */
 .ops-view { }
+.signals-health-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+.signals-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: .72rem;
+  letter-spacing: .05em;
+  font-weight: 800;
+  border: 1px solid transparent;
+}
+.signals-badge--green {
+  color: #22c55e;
+  border-color: rgba(34,197,94,.35);
+  background: rgba(34,197,94,.12);
+}
+.signals-badge--yellow {
+  color: #f59e0b;
+  border-color: rgba(245,158,11,.35);
+  background: rgba(245,158,11,.12);
+}
+.signals-badge--red {
+  color: #ef4444;
+  border-color: rgba(239,68,68,.35);
+  background: rgba(239,68,68,.12);
+}
+.signals-health-item {
+  font-size: .78rem;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.signals-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.signal-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  border: 1px solid transparent;
+}
+.signal-alert__code {
+  font-size: .67rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid rgba(148,163,184,.35);
+  color: var(--text3);
+}
+.signal-alert__msg {
+  font-size: .83rem;
+  color: var(--text1);
+}
+.signal-alert--critical {
+  background: rgba(239,68,68,.12);
+  border-color: rgba(239,68,68,.35);
+}
+.signal-alert--warning {
+  background: rgba(245,158,11,.12);
+  border-color: rgba(245,158,11,.35);
+}
+.signal-alert--ok {
+  background: rgba(34,197,94,.12);
+  border-color: rgba(34,197,94,.3);
+}
 .ops-dashboard { display: flex; flex-direction: column; gap: 20px; }
 .ops-header {
   display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px;

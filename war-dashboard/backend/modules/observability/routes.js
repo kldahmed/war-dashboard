@@ -6,6 +6,8 @@ const metrics = require('../../lib/metrics');
 const { asyncHandler } = require('../../lib/async-handler');
 const { getStreamStatusSnapshot } = require('./stream-status');
 const { getNewsroomStatusSnapshot } = require('./newsroom-status');
+const sseHub = require('../../lib/sse-hub');
+const { getSignalsHealth } = require('../signals/service');
 
 const router = express.Router();
 
@@ -71,6 +73,20 @@ router.get('/health/newsroom', asyncHandler(async (req, res) => {
     feed_mode: process.env.FEED_MODE || process.env.REACT_APP_FEED_MODE || 'legacy',
     feed_fallback_enabled: String(process.env.FEED_FALLBACK_ENABLED || process.env.REACT_APP_FEED_FALLBACK || 'true').toLowerCase() === 'true',
     verify_mode: String(process.env.REACT_APP_PRODUCTION_VERIFY_MODE || 'false').toLowerCase() === 'true',
+    correlation_id: req.correlationId || null,
+    time: new Date().toISOString(),
+  });
+}));
+
+router.get('/health/signals', asyncHandler(async (req, res) => {
+  const [signals] = await Promise.all([
+    getSignalsHealth(),
+  ]);
+
+  res.json({
+    ...signals,
+    status: signals.overall_status === 'green' ? 'live' : signals.overall_status === 'yellow' ? 'degraded' : 'critical',
+    hub: sseHub.stats(),
     correlation_id: req.correlationId || null,
     time: new Date().toISOString(),
   });
