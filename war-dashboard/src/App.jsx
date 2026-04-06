@@ -1809,6 +1809,7 @@ export default function App() {
   const [hasMore,      setHasMore]      = useState(false);
   const [totalCount,   setTotalCount]   = useState(0);
   const [newsFreshness, setNewsFreshness] = useState(null);
+  const lastNewsRefreshAtRef = useRef(0);
 
   /* ── Live ── */
   const [streams,      setStreams]       = useState([]);
@@ -1881,12 +1882,16 @@ export default function App() {
       if (pg === 1) {
         setEditorialBriefing(briefing);
         setNewsItems(items);
-        if (envelope?.freshness) setNewsFreshness(envelope.freshness);
+        setNewsFreshness(envelope?.freshness ?? null);
+        lastNewsRefreshAtRef.current = Date.now();
       } else {
         setNewsItems(prev => [...prev, ...items]);
       }
     } catch (err) {
-      if (pg === 1) setEditorialBriefing(null);
+      if (pg === 1) {
+        setEditorialBriefing(null);
+        setNewsFreshness(null);
+      }
       setErrorNews(err.message || 'فشل تحميل الأخبار');
     } finally {
       setLoadingNews(false);
@@ -2218,6 +2223,24 @@ export default function App() {
     }, 5 * 60 * 1_000);
     return () => clearInterval(id);
   }, [activeTab, category, searchQ, page, loadNews]);
+
+  useEffect(() => {
+    if (activeTab !== 'news') return;
+    if (loadingNews) return;
+    if (page !== 1) return;
+    const ageSec = newsFreshness?.data_age_sec;
+    if (ageSec == null || ageSec <= ALERT_THRESHOLDS.feed_stale_critical) return;
+    if ((Date.now() - lastNewsRefreshAtRef.current) < 90_000) return;
+    loadNews(category, searchQ, 1);
+  }, [
+    activeTab,
+    loadingNews,
+    page,
+    category,
+    searchQ,
+    newsFreshness?.data_age_sec,
+    loadNews,
+  ]);
 
   /* ─── Load briefing when editorial tab opens ─── */
   useEffect(() => {
