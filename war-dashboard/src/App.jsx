@@ -83,8 +83,14 @@ const MATCH_TICKER_BASELINE = {
   competition: 'Top Global Matches',
   featuredClubLabel: 'ريال مدريد',
   matchFound: false,
+  nextMatch: null,
   syncedAtIso: null,
 };
+
+const COUNTDOWN_NUM_FMT_AR = new Intl.NumberFormat('ar-EG', {
+  useGrouping: false,
+  minimumIntegerDigits: 2,
+});
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
@@ -642,6 +648,7 @@ function LiveMatchTicker({
   source,
   competition,
   featuredClubLabel,
+  nextMatch,
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
 
@@ -704,6 +711,23 @@ function LiveMatchTicker({
             </span>
           ))}
         </div>
+      </div>
+
+      <div className="match-ticker-next" aria-live="polite">
+        <span className="match-ticker-next__label">NOW</span>
+        <span className="match-ticker-next__pair">{homeTeam} {homeScore} - {awayScore} {awayTeam}</span>
+        <span className="match-ticker-next__sep">|</span>
+        <span className="match-ticker-next__label">NEXT</span>
+        {nextMatch ? (
+          <>
+            <span className="match-ticker-next__pair">
+              {nextMatch.homeTeam} {Number(nextMatch.homeScore) || 0} - {Number(nextMatch.awayScore) || 0} {nextMatch.awayTeam}
+            </span>
+            <span className="match-ticker-next__meta">{nextMatch.detail || 'موعد قريب'}</span>
+          </>
+        ) : (
+          <span className="match-ticker-next__meta">جارِ ترشيح المواجهة العالمية التالية</span>
+        )}
       </div>
     </div>
   );
@@ -2429,19 +2453,19 @@ function DeadlineAlertClock({ deadlineIso }) {
           {!ended && (
             <div className="deadline-alert__grid" role="timer" aria-live="polite">
               <div className="deadline-unit">
-                <span className="deadline-unit__num">{String(countdown.days).padStart(2, '0')}</span>
+                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.days) || 0))}</span>
                 <span className="deadline-unit__label">يوم</span>
               </div>
               <div className="deadline-unit">
-                <span className="deadline-unit__num">{String(countdown.hours).padStart(2, '0')}</span>
+                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.hours) || 0))}</span>
                 <span className="deadline-unit__label">ساعة</span>
               </div>
               <div className="deadline-unit">
-                <span className="deadline-unit__num">{String(countdown.minutes).padStart(2, '0')}</span>
+                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.minutes) || 0))}</span>
                 <span className="deadline-unit__label">دقيقة</span>
               </div>
               <div className="deadline-unit">
-                <span className="deadline-unit__num">{String(countdown.seconds).padStart(2, '0')}</span>
+                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.seconds) || 0))}</span>
                 <span className="deadline-unit__label">ثانية</span>
               </div>
             </div>
@@ -2877,6 +2901,14 @@ export default function App() {
         competition: payload?.competition || MATCH_TICKER_BASELINE.competition,
         featuredClubLabel: payload?.featured_club_label || MATCH_TICKER_BASELINE.featuredClubLabel,
         matchFound: Boolean(payload?.match_found),
+        nextMatch: payload?.next_match ? {
+          homeTeam: payload.next_match.homeTeam || '',
+          awayTeam: payload.next_match.awayTeam || '',
+          homeScore: Number(payload.next_match.homeScore) || 0,
+          awayScore: Number(payload.next_match.awayScore) || 0,
+          detail: payload.next_match.detail || '',
+          state: String(payload.next_match.state || '').toLowerCase(),
+        } : null,
         syncedAtIso: payload?.fetched_at || new Date().toISOString(),
       });
     } catch {
@@ -4156,6 +4188,7 @@ export default function App() {
         source={liveMatchData.source}
         competition={liveMatchData.competition}
         featuredClubLabel={liveMatchData.featuredClubLabel}
+        nextMatch={liveMatchData.nextMatch}
       />
 
       <DeadlineAlertClock deadlineIso={TRUMP_IRAN_DEADLINE_ISO} />
@@ -5934,28 +5967,30 @@ img { display: block; max-width: 100%; }
 }
 .deadline-alert__grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(68px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(88px, 1fr));
+  gap: 10px;
 }
 .deadline-unit {
   border: 1px solid rgba(255,255,255,.2);
-  border-radius: 10px;
+  border-radius: 12px;
   background: rgba(15,23,42,.35);
-  padding: 6px 8px;
+  padding: 10px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 .deadline-unit__num {
-  font-size: 1.2rem;
-  line-height: 1;
+  font-size: clamp(1.55rem, 2.5vw, 2.25rem);
+  line-height: .95;
   font-weight: 900;
   color: #f8fafc;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px rgba(255,255,255,.26);
 }
 .deadline-unit__label {
-  font-size: .68rem;
+  font-size: .78rem;
+  font-weight: 700;
   color: rgba(248,250,252,.82);
 }
 .deadline-alert__meta {
@@ -6152,7 +6187,15 @@ img { display: block; max-width: 100%; }
     gap: 10px;
   }
   .deadline-alert__grid {
-    grid-template-columns: repeat(2, minmax(82px, 1fr));
+    grid-template-columns: repeat(2, minmax(112px, 1fr));
+    gap: 12px;
+  }
+  .deadline-unit__num {
+    font-size: clamp(1.85rem, 7vw, 2.35rem);
+  }
+  .match-ticker-next {
+    flex-wrap: wrap;
+    row-gap: 6px;
   }
   .deadline-dock {
     right: 8px;
@@ -6242,6 +6285,8 @@ img { display: block; max-width: 100%; }
     inset 0 -1px 0 rgba(255,255,255,.16),
     inset 0 10px 20px rgba(255,255,255,.06),
     0 8px 18px rgba(0,0,0,.18);
+  flex-wrap: wrap;
+  height: auto;
 }
 
 .match-ticker::before {
@@ -6296,8 +6341,9 @@ img { display: block; max-width: 100%; }
 .match-ticker__track {
   position: relative;
   z-index: 1;
-  flex: 1;
+  flex: 1 1 100%;
   overflow: hidden;
+  height: 38px;
 }
 
 .match-ticker__inner {
@@ -6338,6 +6384,40 @@ img { display: block; max-width: 100%; }
 
 .match-ticker__dot {
   opacity: .65;
+}
+
+.match-ticker-next {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid rgba(255,255,255,.2);
+  background: linear-gradient(90deg, rgba(3,7,18,.52), rgba(15,23,42,.4));
+  color: #eaffef;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.match-ticker-next__label {
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: rgba(2,6,23,.4);
+  font-size: .68rem;
+  letter-spacing: .05em;
+}
+
+.match-ticker-next__pair {
+  font-weight: 800;
+}
+
+.match-ticker-next__sep {
+  opacity: .6;
+}
+
+.match-ticker-next__meta {
+  color: rgba(240,253,244,.88);
 }
 
 @keyframes match-ticker-scroll {

@@ -178,6 +178,26 @@ function pickBestEvent(events) {
   return ranked[0]?.entry || null;
 }
 
+function pickNextEvent(events, currentEventId) {
+  if (!events.length) return null;
+  const nowMs = Date.now();
+
+  const pool = events.filter((entry) => String(entry.eventId || '') !== String(currentEventId || ''));
+  if (!pool.length) return null;
+
+  const upcoming = pool
+    .filter((entry) => entry.state === 'pre')
+    .map((entry) => ({ entry, rank: [entry.featured_priority || 999, Math.abs((entry.startedAtMs || Number.MAX_SAFE_INTEGER) - nowMs)] }))
+    .sort((a, b) => compareRank(a.rank, b.rank));
+
+  if (upcoming.length) return upcoming[0].entry;
+
+  const fallback = pool
+    .map((entry) => ({ entry, rank: eventRank(entry, nowMs) }))
+    .sort((a, b) => compareRank(a.rank, b.rank));
+  return fallback[0]?.entry || null;
+}
+
 module.exports = async function handler(req, res) {
   const correlationId = resolveCorrelationId(req);
   res.setHeader('X-Correlation-Id', correlationId);
@@ -199,12 +219,25 @@ module.exports = async function handler(req, res) {
 
     const match = pickBestEvent(featuredEvents);
     if (match) {
+      const nextMatch = pickNextEvent(featuredEvents, match.eventId);
       return res.status(200).json({
         ok: true,
         match_found: true,
         fetched_at: fetchedAt,
         correlation_id: correlationId,
         runtime: 'vercel',
+        next_match: nextMatch ? {
+          event_id: nextMatch.eventId || null,
+          homeTeam: nextMatch.homeTeam,
+          awayTeam: nextMatch.awayTeam,
+          homeScore: nextMatch.homeScore,
+          awayScore: nextMatch.awayScore,
+          state: nextMatch.state,
+          detail: nextMatch.detail,
+          startedAt: nextMatch.startedAt,
+          competition: nextMatch.competition,
+          featured_club_label: nextMatch.featured_club_label,
+        } : null,
         ...match,
       });
     }
@@ -226,6 +259,7 @@ module.exports = async function handler(req, res) {
       featured_club_id: 'barcelona',
       featured_club_label: 'برشلونة',
       source: 'espn',
+      next_match: null,
       provider_warnings: upstreamErrors,
     });
   } catch (error) {
@@ -242,6 +276,7 @@ module.exports = async function handler(req, res) {
       featured_club_id: 'barcelona',
       featured_club_label: 'برشلونة',
       source: 'espn',
+      next_match: null,
       error: 'match_score_fetch_failed',
       details: error.message,
       correlation_id: correlationId,
