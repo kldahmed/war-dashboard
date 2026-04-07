@@ -40,6 +40,11 @@ const TABS = [
   { id: 'map',        label: 'خريطة الأحداث',    icon: '🗺️' },
 ];
 
+const OPS_TREND_METRICS = {
+  new_users: { label: 'مستخدمون جدد', colorVar: 'var(--ops-trend-users, #22d3ee)' },
+  ready_items: { label: 'أخبار جاهزة', colorVar: 'var(--ops-trend-ready, #f59e0b)' },
+};
+
 const URGENCY_WEIGHT = { high: 3, medium: 2, low: 1 };
 
 const ALERT_THRESHOLDS = {
@@ -94,6 +99,13 @@ function relativeTime(iso) {
   if (diff < 3600) return `منذ ${Math.floor(diff / 60)} د`;
   if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} س`;
   return `منذ ${Math.floor(diff / 86400)} يوم`;
+}
+
+function shortDayLabelAr(value) {
+  if (!value) return '--';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--';
+  return d.toLocaleDateString('ar-EG', { weekday: 'short' });
 }
 
 function fmtSeconds(s) {
@@ -2113,6 +2125,7 @@ export default function App() {
   /* ── Ops ── */
   const [newsroomStatus, setNewsroomStatus] = useState(null);
   const [metricsBasic,   setMetricsBasic]   = useState(null);
+  const [productKpi, setProductKpi] = useState(null);
   const [loadingOps,     setLoadingOps]     = useState(false);
   const [errorOps,       setErrorOps]       = useState(null);
   const [opsUpdatedAt,   setOpsUpdatedAt]   = useState(null);
@@ -2127,6 +2140,7 @@ export default function App() {
   const [signalsHealth, setSignalsHealth] = useState(null);
   const [signalsRecovering, setSignalsRecovering] = useState(false);
   const [lastSignalsRecoveryAt, setLastSignalsRecoveryAt] = useState(null);
+  const [opsTrendMetric, setOpsTrendMetric] = useState('new_users');
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
@@ -2282,19 +2296,22 @@ export default function App() {
     setLoadingOps(true);
     setErrorOps(null);
     try {
-      const [nrRes, mbRes, shRes] = await Promise.all([
+      const [nrRes, mbRes, shRes, pkRes] = await Promise.all([
         fetch('/api/health/newsroom'),
         fetch('/api/health/metrics-basic'),
         fetch('/api/health/signals'),
+        authFetch('/api/health/product-kpi'),
       ]);
-      const [nrData, mbData, shData] = await Promise.all([
+      const [nrData, mbData, shData, pkData] = await Promise.all([
         nrRes.ok ? nrRes.json() : Promise.resolve(null),
         mbRes.ok ? mbRes.json() : Promise.resolve(null),
         shRes.ok ? shRes.json() : Promise.resolve(null),
+        pkRes.ok ? pkRes.json() : Promise.resolve(null),
       ]);
       setNewsroomStatus(nrData);
       setMetricsBasic(mbData);
       setSignalsHealth(shData);
+      setProductKpi(pkData);
       setOpsUpdatedAt(new Date().toISOString());
       // Global critical banner?
       const feedMs = nrData?.feed_staleness?.seconds_since_last_feed;
@@ -2304,11 +2321,12 @@ export default function App() {
         setGlobalAlert(null);
       }
     } catch (err) {
+      setProductKpi(null);
       setErrorOps(err.message);
     } finally {
       setLoadingOps(false);
     }
-  }, []);
+  }, [authFetch]);
 
   const triggerNewsIngestionRecovery = useCallback(async ({ silent = true } = {}) => {
     if (!authUser) return;
@@ -2811,6 +2829,48 @@ export default function App() {
       .filter((stream) => !current || getStreamCategory(stream) === current)
       .slice(0, 4);
   }, [filteredStreams, selectedStream, selectedStreamId]);
+
+  const opsTrendView = useMemo(() => {
+    const rows = Array.isArray(productKpi?.trends_7d) ? productKpi.trends_7d : [];
+    if (!rows.length) {
+      return {
+        rows: [],
+        latestValue: 0,
+        latestDay: '--',
+        metricLabel: OPS_TREND_METRICS[opsTrendMetric]?.label || 'اتجاه',
+        metricColor: OPS_TREND_METRICS[opsTrendMetric]?.colorVar || '#22d3ee',
+        points: '6,28 214,28',
+      };
+    }
+
+    const values = rows.map((row) => Number(row?.[opsTrendMetric] || 0));
+    const maxValue = Math.max(1, ...values);
+    const width = 220;
+    const height = 56;
+    const pad = 6;
+    const step = rows.length > 1 ? (width - pad * 2) / (rows.length - 1) : 0;
+
+    const points = values.map((val, index) => {
+      const x = pad + (step * index);
+      const y = height - pad - ((val / maxValue) * (height - pad * 2));
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+
+    const latest = rows[rows.length - 1] || {};
+    return {
+      rows,
+      latestValue: Number(latest?.[opsTrendMetric] || 0),
+      latestDay: shortDayLabelAr(latest?.day),
+      metricLabel: OPS_TREND_METRICS[opsTrendMetric]?.label || 'اتجاه',
+      metricColor: OPS_TREND_METRICS[opsTrendMetric]?.colorVar || '#22d3ee',
+      points,
+      values,
+      width,
+      height,
+      pad,
+      step,
+    };
+  }, [productKpi, opsTrendMetric]);
 
   /* ─── Theme toggle ─── */
   useEffect(() => {
@@ -3319,6 +3379,79 @@ export default function App() {
                   </div>
                 ))}
               </div>
+            )}
+            {productKpi && (
+              <section className="ops-kpi-strip" dir="rtl">
+                <div className="ops-kpi-strip__item">
+                  <span>المستخدمون</span>
+                  <strong>{productKpi?.product_kpi?.users_total ?? 0}</strong>
+                </div>
+                <div className="ops-kpi-strip__item">
+                  <span>الجلسات النشطة</span>
+                  <strong>{productKpi?.product_kpi?.sessions_active ?? 0}</strong>
+                </div>
+                <div className="ops-kpi-strip__item">
+                  <span>حداثة 24h</span>
+                  <strong>{productKpi?.content_kpi_24h?.freshness_ratio_24h ?? '0.00%'}</strong>
+                </div>
+                <div className="ops-kpi-strip__item">
+                  <span>التكرار 24h</span>
+                  <strong>{productKpi?.content_kpi_24h?.duplicate_ratio_24h ?? '0.00%'}</strong>
+                </div>
+                <div className="ops-kpi-strip__item">
+                  <span>الترجمة 24h</span>
+                  <strong>{productKpi?.content_kpi_24h?.translated_ratio_24h ?? '0.00%'}</strong>
+                </div>
+                {Array.isArray(productKpi?.trends_7d) && productKpi.trends_7d.length > 0 && (
+                  <div className="ops-kpi-strip__trend" dir="rtl">
+                    <header>
+                      <span>اتجاه آخر 7 أيام</span>
+                      <strong>{opsTrendView.metricLabel}</strong>
+                    </header>
+                    <div className="ops-kpi-trend-toggle" role="tablist" aria-label="اختيار مقياس الاتجاه">
+                      {Object.entries(OPS_TREND_METRICS).map(([metricKey, metric]) => (
+                        <button
+                          key={metricKey}
+                          type="button"
+                          className={`ops-kpi-trend-toggle__btn ${opsTrendMetric === metricKey ? 'is-active' : ''}`}
+                          onClick={() => setOpsTrendMetric(metricKey)}
+                        >
+                          {metric.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ops-kpi-trend-chart">
+                      <svg viewBox={`0 0 ${opsTrendView.width} ${opsTrendView.height}`} preserveAspectRatio="none" aria-hidden="true">
+                        <path d={`M ${opsTrendView.pad} ${opsTrendView.height - opsTrendView.pad} H ${opsTrendView.width - opsTrendView.pad}`} className="ops-kpi-trend-axis" />
+                        <polyline
+                          points={opsTrendView.points}
+                          fill="none"
+                          stroke={opsTrendView.metricColor}
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        {opsTrendView.values.map((val, index) => {
+                          const x = opsTrendView.pad + (opsTrendView.step * index);
+                          const y = opsTrendView.height - opsTrendView.pad - ((val / Math.max(1, ...opsTrendView.values)) * (opsTrendView.height - opsTrendView.pad * 2));
+                          return (
+                            <circle key={`trend-dot-${index}`} cx={x} cy={y} r="2.8" fill={opsTrendView.metricColor} />
+                          );
+                        })}
+                      </svg>
+                      <div className="ops-kpi-trend-summary">
+                        <span>آخر يوم: {opsTrendView.latestDay}</span>
+                        <strong>{formatNumeric(opsTrendView.latestValue)}</strong>
+                      </div>
+                    </div>
+                    <div className="ops-kpi-trend-days">
+                      {opsTrendView.rows.map((point, idx) => (
+                        <small key={`${point?.day || idx}-lbl`}>{shortDayLabelAr(point?.day)}</small>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
             )}
             <div className="ops-signal-grid">
               <UAEWeatherPanel
@@ -6863,6 +6996,118 @@ img { display: block; max-width: 100%; }
   gap: 10px;
   margin: 0 0 12px;
   flex-wrap: wrap;
+}
+.ops-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.ops-kpi-strip__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,.24);
+  background: rgba(15,23,42,.42);
+}
+.ops-kpi-strip__item span {
+  font-size: .73rem;
+  color: var(--text2);
+}
+.ops-kpi-strip__item strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+.ops-kpi-strip__trend {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(148,163,184,.24);
+  border-radius: 12px;
+  background: rgba(15,23,42,.42);
+  padding: 12px;
+}
+.ops-kpi-strip__trend header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.ops-kpi-strip__trend header span {
+  font-size: .75rem;
+  color: var(--text2);
+}
+.ops-kpi-strip__trend header strong {
+  font-size: .82rem;
+  color: var(--text);
+}
+.ops-kpi-trend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.ops-kpi-trend-toggle__btn {
+  border: 1px solid rgba(148,163,184,.28);
+  background: rgba(15,23,42,.55);
+  color: var(--text2);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: .73rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .18s ease;
+}
+.ops-kpi-trend-toggle__btn:hover {
+  border-color: rgba(148,163,184,.45);
+  color: var(--text);
+}
+.ops-kpi-trend-toggle__btn.is-active {
+  color: #f8fafc;
+  border-color: rgba(34,211,238,.55);
+  background: rgba(34,211,238,.16);
+}
+.ops-kpi-trend-chart {
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(2,6,23,.35);
+}
+.ops-kpi-trend-chart svg {
+  width: 100%;
+  height: 72px;
+  display: block;
+}
+.ops-kpi-trend-axis {
+  stroke: rgba(148,163,184,.3);
+  stroke-width: 1;
+}
+.ops-kpi-trend-summary {
+  margin-top: 6px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ops-kpi-trend-summary span {
+  font-size: .72rem;
+  color: var(--text2);
+}
+.ops-kpi-trend-summary strong {
+  font-size: .9rem;
+  color: var(--text);
+}
+.ops-kpi-trend-days {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.ops-kpi-trend-days small {
+  text-align: center;
+  font-size: .64rem;
+  color: var(--text3);
 }
 .signals-badge {
   display: inline-flex;

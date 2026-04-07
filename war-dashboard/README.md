@@ -238,6 +238,19 @@ WAVE1_BASE_URL=https://your-app.vercel.app npm run check:vercel:wave1
 
 ### ما تم بناؤه فعلياً
 
+## Roadmap 30/60/90 (تنفيذ فوري)
+
+- الخطة التنفيذية موجودة في:
+	- [docs/roadmap-30-60-90.md](docs/roadmap-30-60-90.md)
+
+- تقرير KPI التشغيلي اليومي/الأسبوعي:
+
+```bash
+npm run check:product:kpi
+```
+
+هذا الأمر يطبع مؤشرات المنتج والمحتوى (المستخدمين، الجلسات، حداثة الأخبار، التكرار، الترجمة) بصيغة JSON.
+
 - تخزين دائم للمصادر والأخبار الخام والمطبّعة.
 - RSS ingestion worker بسيط مع job tracking.
 - Normalization v1 يجهز البيانات لـ dedup لاحقاً.

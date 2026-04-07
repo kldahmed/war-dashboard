@@ -4,8 +4,10 @@ const express = require('express');
 const { query } = require('../../lib/db');
 const metrics = require('../../lib/metrics');
 const { asyncHandler } = require('../../lib/async-handler');
+const { requireAuth, requireRole } = require('../../lib/auth-middleware');
 const { getStreamStatusSnapshot } = require('./stream-status');
 const { getNewsroomStatusSnapshot } = require('./newsroom-status');
+const { getProductKpiSnapshot } = require('./product-kpi');
 const sseHub = require('../../lib/sse-hub');
 const { getSignalsHealth } = require('../signals/service');
 
@@ -123,6 +125,15 @@ router.get('/health/optimizer', asyncHandler(async (req, res) => {
     trust_adjustments_24h: trustChanges.rows[0]?.count ?? 0,
     correlation_id: req.correlationId || null,
     time: new Date().toISOString(),
+  });
+}));
+
+router.get('/health/product-kpi', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
+  const snapshot = await getProductKpiSnapshot();
+
+  res.json({
+    ...snapshot,
+    correlation_id: req.correlationId || null,
   });
 }));
 

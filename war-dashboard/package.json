@@ -36,6 +36,7 @@
     "smoke:backend": "node scripts/smoke-checks.js",
     "check:integration:sprint1": "node scripts/integration-sprint1.js",
     "check:vercel:wave1": "node scripts/vercel-wave1-check.js",
+    "check:product:kpi": "node scripts/product-readiness-kpi.js",
     "optimizer:run": "node backend/jobs/auto-optimize.js",
     "sitrep:run": "node backend/jobs/generate-sitrep.js",
     "sitrep:force": "node backend/jobs/generate-sitrep.js --force"
