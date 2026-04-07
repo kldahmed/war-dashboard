@@ -915,6 +915,28 @@ function getChStatus(s) {
   return CH_STATUS.unknown;
 }
 
+function streamCommandScore(entry, { preferredCategory = 'all', healthMode = 'all' } = {}) {
+  const stream = getStreamRecord(entry);
+  const trustScore = Number(entry?.source?.trust_score ?? stream?.trust_score ?? 0);
+  const sourceScore = Number(stream?.score || 0);
+  const category = getStreamCategory(entry);
+
+  const healthBase = isStreamUp(stream) ? 52 : isStreamDegraded(stream) ? 28 : -25;
+  const verifyBase = isStreamVerified(stream) ? 24 : -4;
+  const trustBase = Math.max(0, Math.min(14, trustScore * 14));
+  const sourceBase = Math.max(0, Math.min(10, sourceScore * 10));
+  const categoryBase = preferredCategory !== 'all' && category === preferredCategory ? 8 : 0;
+  const healthPreferenceBase = healthMode === 'verified' && isStreamVerified(stream)
+    ? 6
+    : healthMode === 'up' && isStreamUp(stream)
+      ? 6
+      : healthMode === 'degraded' && isStreamDegraded(stream)
+        ? 6
+        : 0;
+
+  return healthBase + verifyBase + trustBase + sourceBase + categoryBase + healthPreferenceBase;
+}
+
 /* ─────────────────────────────────────────────────
    TV STATIC CANVAS  — animated noise on channel switch
 ───────────────────────────────────────────────── */
@@ -1041,6 +1063,35 @@ function LuxChannelCard({ stream, onSelect, isActive, isSwitching }) {
       <div className="lxc__feet" aria-hidden="true">
         <span className="lxc__foot" />
         <span className="lxc__foot" />
+      </div>
+    </button>
+  );
+}
+
+function LivePosterCard({ stream, onSelect, rank }) {
+  if (!stream) return null;
+  const s = getStreamRecord(stream);
+  const name = getStreamName(stream);
+  const category = getLiveCategoryLabel(getStreamCategory(stream));
+  const score = Math.max(0, Math.round(streamCommandScore(stream)));
+  const status = getChStatus(s);
+
+  return (
+    <button
+      type="button"
+      className="live-poster"
+      onClick={() => onSelect?.(stream)}
+      title={name}
+    >
+      <div className="live-poster__media">
+        {s.logo_url ? <img src={s.logo_url} alt={name} loading="lazy" /> : <span>{name.slice(0, 2)}</span>}
+        <div className="live-poster__shade" />
+        <span className={`live-poster__badge live-poster__badge--${status.cls}`}>{status.label}</span>
+        <span className="live-poster__rank">#{rank}</span>
+      </div>
+      <div className="live-poster__meta">
+        <strong>{name}</strong>
+        <span>{category} · Score {score}</span>
       </div>
     </button>
   );
@@ -2975,6 +3026,140 @@ export default function App() {
       .slice(0, 4);
   }, [filteredStreams, selectedStream, selectedStreamId]);
 
+  const liveEffectiveness = useMemo(() => {
+    const total = streams.length;
+    if (!total) {
+      return {
+        total: 0,
+        filtered: 0,
+        playable: 0,
+        verified: 0,
+        up: 0,
+        degraded: 0,
+        down: 0,
+        diversityRatio: 0,
+        score: 0,
+        grade: 'N/A',
+        recommendations: [],
+      };
+    }
+
+    const up = streams.filter((st) => isStreamUp(getStreamRecord(st))).length;
+    const degraded = streams.filter((st) => isStreamDegraded(getStreamRecord(st))).length;
+    const playable = up + degraded;
+    const down = Math.max(0, total - playable);
+    const verified = streams.filter((st) => isStreamVerified(getStreamRecord(st))).length;
+
+    const allCats = new Set(streams.map((st) => getStreamCategory(st)).filter(Boolean));
+    const filteredCats = new Set(filteredStreams.map((st) => getStreamCategory(st)).filter(Boolean));
+    const diversityRatio = allCats.size > 0 ? (filteredCats.size / allCats.size) : 0;
+
+    const availabilityRatio = playable / total;
+    const verificationRatio = verified / total;
+    const upRatio = up / total;
+    const selectionCoverage = filteredStreams.length / total;
+
+    const score = Math.round(Math.max(0, Math.min(100,
+      (availabilityRatio * 35) +
+      (verificationRatio * 25) +
+      (upRatio * 20) +
+      (selectionCoverage * 10) +
+      (diversityRatio * 10)
+    )));
+
+    const grade = score >= 85 ? 'A+' : score >= 75 ? 'A' : score >= 65 ? 'B' : score >= 50 ? 'C' : 'D';
+
+    const recommendations = [...filteredStreams]
+      .sort((left, right) => (
+        streamCommandScore(right, { preferredCategory: liveCategoryFilter, healthMode: liveHealthFilter })
+        - streamCommandScore(left, { preferredCategory: liveCategoryFilter, healthMode: liveHealthFilter })
+      ))
+      .slice(0, 3);
+
+    return {
+      total,
+      filtered: filteredStreams.length,
+      playable,
+      verified,
+      up,
+      degraded,
+      down,
+      diversityRatio,
+      score,
+      grade,
+      recommendations,
+    };
+  }, [streams, filteredStreams, liveCategoryFilter, liveHealthFilter]);
+
+  const applyLiveUpgrade = useCallback((mode) => {
+    if (mode === 'precision') {
+      setLiveHealthFilter('verified');
+    } else if (mode === 'resilience') {
+      setLiveHealthFilter('up');
+      setLiveCategoryFilter('all');
+    } else {
+      setLiveHealthFilter('all');
+      setLiveCategoryFilter('all');
+    }
+
+    setChannelSearch('');
+
+    const candidatePool = mode === 'precision'
+      ? streams.filter((st) => isStreamVerified(getStreamRecord(st)))
+      : mode === 'resilience'
+        ? streams.filter((st) => isStreamUp(getStreamRecord(st)))
+        : streams;
+
+    const recommended = [...candidatePool]
+      .sort((left, right) => streamCommandScore(right) - streamCommandScore(left))[0];
+
+    if (recommended) {
+      setSelectedStreamId(getStreamId(recommended));
+    }
+  }, [streams]);
+
+  const liveHeroStream = useMemo(() => {
+    if (selectedStream) return selectedStream;
+    return liveEffectiveness.recommendations[0] || featuredStream || null;
+  }, [selectedStream, liveEffectiveness.recommendations, featuredStream]);
+
+  const liveRails = useMemo(() => {
+    if (!filteredStreams.length) return [];
+
+    const sorted = [...filteredStreams]
+      .sort((left, right) => (
+        streamCommandScore(right, { preferredCategory: liveCategoryFilter, healthMode: liveHealthFilter })
+        - streamCommandScore(left, { preferredCategory: liveCategoryFilter, healthMode: liveHealthFilter })
+      ));
+
+    const rails = [];
+    rails.push({
+      id: 'recommended',
+      title: 'الأفضل لك الآن',
+      items: sorted.slice(0, 14),
+    });
+
+    const grouped = sorted.reduce((acc, stream) => {
+      const key = getStreamCategory(stream) || 'other';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(stream);
+      return acc;
+    }, {});
+
+    Object.entries(grouped)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 4)
+      .forEach(([category, items]) => {
+        rails.push({
+          id: `cat-${category}`,
+          title: getLiveCategoryLabel(category),
+          items: items.slice(0, 14),
+        });
+      });
+
+    return rails;
+  }, [filteredStreams, liveCategoryFilter, liveHealthFilter]);
+
   const opsTrendView = useMemo(() => {
     const rows = Array.isArray(productKpi?.trends_7d) ? productKpi.trends_7d : [];
     if (!rows.length) {
@@ -4023,6 +4208,38 @@ export default function App() {
             {errorLive && <ErrorBanner message={errorLive} onRetry={loadLive} />}
 
             {!loadingLive && streams.length > 0 && (
+              <section className="live-effectiveness" dir="rtl">
+                <div className="live-effectiveness__score">
+                  <span>Selection Effectiveness</span>
+                  <strong>{liveEffectiveness.score}</strong>
+                  <small>{liveEffectiveness.grade}</small>
+                </div>
+
+                <div className="live-effectiveness__stats">
+                  <div><span>قابل للبث</span><strong>{liveEffectiveness.playable}/{liveEffectiveness.total}</strong></div>
+                  <div><span>موثق</span><strong>{liveEffectiveness.verified}</strong></div>
+                  <div><span>تنوع الفئات</span><strong>{Math.round(liveEffectiveness.diversityRatio * 100)}%</strong></div>
+                </div>
+
+                <div className="live-effectiveness__actions">
+                  <button type="button" onClick={() => applyLiveUpgrade('precision')}>Precision Mode</button>
+                  <button type="button" onClick={() => applyLiveUpgrade('resilience')}>Resilience Mode</button>
+                  <button type="button" onClick={() => applyLiveUpgrade('expansion')}>Expansion Mode</button>
+                </div>
+
+                <div className="live-effectiveness__recs">
+                  {liveEffectiveness.recommendations.map((st, idx) => (
+                    <button key={`${getStreamId(st) || idx}-rec`} type="button" onClick={() => handleTvSelect(st)}>
+                      <span>{idx + 1}</span>
+                      <strong>{getStreamName(st)}</strong>
+                      <small>{formatStreamVerification(getStreamRecord(st).verification_status)}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {!loadingLive && streams.length > 0 && (
               <div className="live-command-grid">
                 <div className="live-filter-panel">
                   <div className="live-filter-section">
@@ -4103,6 +4320,31 @@ export default function App() {
               </div>
             )}
 
+            {!loadingLive && liveHeroStream && (
+              <section className="live-hero" dir="rtl">
+                <div className="live-hero__bg" />
+                <div className="live-hero__content">
+                  <span className="live-hero__eyebrow">Featured Channel</span>
+                  <h3>{getStreamName(liveHeroStream)}</h3>
+                  <p>
+                    {getLiveCategoryLabel(getStreamCategory(liveHeroStream))} · {formatStreamReason(getStreamRecord(liveHeroStream).health_reason)}
+                  </p>
+                  <div className="live-hero__actions">
+                    <button type="button" onClick={() => handleTvSelect(liveHeroStream)}>شغّل الآن</button>
+                    {(getStreamRecord(liveHeroStream).external_watch_url || getStreamRecord(liveHeroStream).official_page_url) && (
+                      <a
+                        href={getStreamRecord(liveHeroStream).external_watch_url || getStreamRecord(liveHeroStream).official_page_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        فتح الصفحة الرسمية
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* ══ CINEMATIC PLAYER ══ */}
             {selectedStream && (
               <div className="live-focus-layout">
@@ -4138,21 +4380,30 @@ export default function App() {
               )}
             </div>
 
-            {/* ══ CHANNELS GRID ══ */}
+            {/* ══ CHANNELS RAILS ══ */}
             {loadingLive
               ? <LoadingSpinner label="جارٍ تحميل القنوات…" />
               : (
-                <div className="live-ch-grid">
-                  {filteredStreams.map((st, i) => (
-                    <LuxChannelCard
-                      key={st.stream?.id || st.id || i}
-                      stream={st}
-                      onSelect={handleTvSelect}
-                      isActive={selectedStreamId === getStreamId(st)}
-                      isSwitching={selectedStreamId === getStreamId(st) && tvSwitching}
-                    />
+                <div className="live-rails">
+                  {liveRails.map((rail) => (
+                    <section key={rail.id} className="live-rail" dir="rtl">
+                      <header className="live-rail__header">
+                        <h4>{rail.title}</h4>
+                        <span>{rail.items.length} قناة</span>
+                      </header>
+                      <div className="live-rail__track">
+                        {rail.items.map((st, i) => (
+                          <LivePosterCard
+                            key={`${rail.id}-${getStreamId(st) || i}`}
+                            stream={st}
+                            onSelect={handleTvSelect}
+                            rank={i + 1}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   ))}
-                  {filteredStreams.length === 0 && (
+                  {liveRails.length === 0 && (
                     <div className="live-empty">
                       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity=".3"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
                       <p>لا توجد قنوات مطابقة</p>
@@ -5942,6 +6193,210 @@ img { display: block; max-width: 100%; }
   flex-shrink: 0;
 }
 
+/* Netflix-like channel catalog */
+.live-hero {
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid rgba(148,163,184,.24);
+  overflow: hidden;
+  min-height: 220px;
+  margin: 0 0 18px;
+  background: linear-gradient(115deg, rgba(2,6,23,.96) 0%, rgba(30,41,59,.9) 48%, rgba(15,23,42,.82) 100%);
+}
+.live-hero__bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(59,130,246,.35), transparent 46%),
+    radial-gradient(circle at 76% 18%, rgba(239,68,68,.2), transparent 38%),
+    linear-gradient(120deg, rgba(15,23,42,.8), rgba(2,6,23,.6));
+}
+.live-hero__content {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.live-hero__eyebrow {
+  font-size: .67rem;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: #bfdbfe;
+  font-weight: 800;
+}
+.live-hero h3 {
+  margin: 0;
+  font-size: 1.45rem;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+.live-hero p {
+  margin: 0;
+  color: rgba(226,232,240,.88);
+  font-size: .85rem;
+  line-height: 1.6;
+}
+.live-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.live-hero__actions button,
+.live-hero__actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-size: .77rem;
+  font-weight: 700;
+}
+.live-hero__actions button {
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+}
+.live-hero__actions a {
+  background: rgba(15,23,42,.45);
+  border-color: rgba(148,163,184,.28);
+  color: #cbd5e1;
+}
+
+.live-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.live-rail {
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(2,6,23,.45);
+  padding: 10px;
+}
+.live-rail__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 8px;
+}
+.live-rail__header h4 {
+  margin: 0;
+  font-size: .92rem;
+  color: var(--text);
+}
+.live-rail__header span {
+  font-size: .7rem;
+  color: var(--text3);
+}
+.live-rail__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(172px, 172px);
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.live-rail__track::-webkit-scrollbar {
+  height: 6px;
+}
+.live-rail__track::-webkit-scrollbar-thumb {
+  background: rgba(148,163,184,.35);
+  border-radius: 999px;
+}
+
+.live-poster {
+  border: 1px solid rgba(148,163,184,.22);
+  background: rgba(15,23,42,.46);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  text-align: right;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.live-poster:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96,165,250,.42);
+  box-shadow: 0 10px 28px rgba(15,23,42,.55);
+}
+.live-poster__media {
+  position: relative;
+  height: 112px;
+  background: linear-gradient(130deg, rgba(30,41,59,.95), rgba(15,23,42,.86));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.live-poster__media img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  z-index: 1;
+}
+.live-poster__media span {
+  z-index: 1;
+  color: #e2e8f0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.live-poster__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(2,6,23,.08) 25%, rgba(2,6,23,.78) 100%);
+}
+.live-poster__badge,
+.live-poster__rank {
+  position: absolute;
+  z-index: 2;
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  border-radius: 999px;
+  padding: 3px 7px;
+}
+.live-poster__badge {
+  top: 8px;
+  right: 8px;
+  background: rgba(15,23,42,.7);
+  border: 1px solid rgba(148,163,184,.3);
+  color: #cbd5e1;
+}
+.live-poster__badge--online { color: #86efac; border-color: rgba(34,197,94,.35); }
+.live-poster__badge--degraded { color: #fde68a; border-color: rgba(245,158,11,.35); }
+.live-poster__badge--offline { color: #fca5a5; border-color: rgba(239,68,68,.35); }
+.live-poster__rank {
+  left: 8px;
+  bottom: 8px;
+  color: #fff;
+  background: rgba(2,6,23,.75);
+  border: 1px solid rgba(148,163,184,.26);
+}
+.live-poster__meta {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.live-poster__meta strong {
+  font-size: .74rem;
+  color: var(--text);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.live-poster__meta span {
+  font-size: .64rem;
+  color: var(--text3);
+}
+
 /* ── Cinematic Player (cp) ── */
 .cp {
   background: #060810;
@@ -6406,6 +6861,118 @@ img { display: block; max-width: 100%; }
 }
 .live-search-bar__clear:hover { color: rgba(255,255,255,.5); }
 
+/* Live selection effectiveness */
+.live-effectiveness {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,.26);
+  background: linear-gradient(135deg, rgba(2,6,23,.72) 0%, rgba(15,23,42,.58) 100%);
+}
+.live-effectiveness__score {
+  border: 1px solid rgba(56,189,248,.35);
+  border-radius: 10px;
+  background: rgba(2,132,199,.14);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+}
+.live-effectiveness__score span {
+  font-size: .56rem;
+  color: #bae6fd;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.live-effectiveness__score strong {
+  font-size: 1.35rem;
+  color: #e0f2fe;
+  line-height: 1;
+}
+.live-effectiveness__score small {
+  color: #7dd3fc;
+  font-weight: 800;
+}
+.live-effectiveness__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.live-effectiveness__stats div {
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(15,23,42,.38);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.live-effectiveness__stats span { font-size: .66rem; color: var(--text3); }
+.live-effectiveness__stats strong { font-size: .88rem; color: var(--text); }
+.live-effectiveness__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.live-effectiveness__actions button {
+  border: 1px solid rgba(59,130,246,.35);
+  border-radius: 999px;
+  background: rgba(59,130,246,.14);
+  color: #bfdbfe;
+  font-size: .67rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.live-effectiveness__actions button:hover {
+  background: rgba(59,130,246,.22);
+  color: #dbeafe;
+}
+.live-effectiveness__recs {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.live-effectiveness__recs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148,163,184,.24);
+  border-radius: 10px;
+  background: rgba(15,23,42,.34);
+  color: var(--text2);
+  padding: 8px 10px;
+  text-align: right;
+  cursor: pointer;
+}
+.live-effectiveness__recs button span {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .67rem;
+  border: 1px solid rgba(148,163,184,.3);
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.live-effectiveness__recs button strong {
+  flex: 1;
+  font-size: .73rem;
+  color: var(--text);
+}
+.live-effectiveness__recs button small {
+  font-size: .64rem;
+  color: var(--text3);
+}
+
 /* ── Channels Grid ── */
 .live-ch-grid {
   display: grid;
@@ -6422,6 +6989,28 @@ img { display: block; max-width: 100%; }
   }
 }
 @media (max-width: 760px) {
+  .live-hero__content {
+    padding: 16px;
+  }
+  .live-hero h3 {
+    font-size: 1.2rem;
+  }
+  .live-rail__track {
+    grid-auto-columns: minmax(150px, 150px);
+  }
+  .live-effectiveness {
+    grid-template-columns: 1fr;
+  }
+  .live-effectiveness__stats {
+    grid-template-columns: 1fr;
+  }
+  .live-effectiveness__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .live-effectiveness__recs {
+    grid-template-columns: 1fr;
+  }
   .live-focus-panel__stats {
     grid-template-columns: 1fr;
   }
