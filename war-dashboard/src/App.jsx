@@ -7,7 +7,7 @@ import React, {
   useMemo,
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
-import { getCurrentUser, signIn, signOut, signUp } from './data/authApi';
+import { authFetch, getCurrentUser, signIn, signOut, signUp } from './data/authApi';
 import Hls from 'hls.js';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HTMLFlipBook from 'react-pageflip';
@@ -2138,6 +2138,7 @@ export default function App() {
     displayName: '',
     email: '',
     password: '',
+    confirmPassword: '',
   });
 
   /* ── SITREP ── */
@@ -2310,7 +2311,7 @@ export default function App() {
     lastNewsIngestionKickAtRef.current = now;
 
     try {
-      const res = await fetch('/api/ingestion/jobs/run', { method: 'POST' });
+      const res = await authFetch('/api/ingestion/jobs/run', { method: 'POST' });
       if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
 
       if (!silent) {
@@ -2323,7 +2324,7 @@ export default function App() {
       }, 8_000);
     } catch (err) {
       if (!silent) {
-        setGlobalAlert({ severity: 'critical', message: `تعذر إطلاق النشر الفوري: ${err.message || 'network_error'}` });
+        setGlobalAlert({ severity: 'critical', message: `تعذر إطلاق النشر الفوري: ${err.message === 'HTTP 401' ? 'يجب تسجيل الدخول أولاً' : (err.message || 'network_error')}` });
       }
     }
   }, [category, searchQ, loadNews, loadOps]);
@@ -2413,7 +2414,8 @@ export default function App() {
 
     setSignalsRecovering(true);
     try {
-      await fetch('/api/signals/refresh', { method: 'POST' });
+      const res = await authFetch('/api/signals/refresh', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const now = Date.now();
       setLastSignalsRecoveryAt(now);
       if (!silent) {
@@ -2425,7 +2427,7 @@ export default function App() {
       }, 1200);
     } catch (err) {
       if (!silent) {
-        setGlobalAlert({ severity: 'critical', message: `تعذر تنفيذ التعافي الفوري: ${err.message || 'network_error'}` });
+        setGlobalAlert({ severity: 'critical', message: `تعذر تنفيذ التعافي الفوري: ${err.message === 'HTTP 401' ? 'يجب تسجيل الدخول أولاً' : (err.message || 'network_error')}` });
       }
     } finally {
       setSignalsRecovering(false);
@@ -2631,6 +2633,9 @@ export default function App() {
 
     try {
       if (authMode === 'signup') {
+        if (authForm.password !== authForm.confirmPassword) {
+          throw Object.assign(new Error('password_mismatch'), { code: 'password_mismatch' });
+        }
         const user = await signUp({
           email: authForm.email,
           password: authForm.password,
@@ -2649,6 +2654,10 @@ export default function App() {
         invalid_credentials: 'بيانات الدخول غير صحيحة',
         email_already_exists: 'البريد الإلكتروني مستخدم بالفعل',
         validation_error: 'تحقق من الحقول المطلوبة وقوة كلمة المرور',
+        password_mismatch: 'تأكيد كلمة المرور غير مطابق',
+        method_not_allowed: 'خدمة المصادقة غير مفعلة على الخادم الحالي',
+        HTTP_404: 'مسار التسجيل غير موجود على الخادم',
+        HTTP_500: 'حدث خطأ داخلي في الخادم أثناء التسجيل',
       };
       setAuthError(messages[err.code] || 'تعذر إكمال العملية، حاول مرة أخرى');
     } finally {
@@ -2659,7 +2668,7 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     await signOut();
     setAuthUser(null);
-    setAuthForm((prev) => ({ ...prev, password: '' }));
+    setAuthForm((prev) => ({ ...prev, password: '', confirmPassword: '' }));
   }, []);
 
   /* ─── Breaking Headlines for AI ─── */
@@ -2907,6 +2916,22 @@ export default function App() {
             />
           </label>
 
+          {authMode === 'signup' && (
+            <label className="auth-label">
+              تأكيد كلمة المرور
+              <input
+                className="auth-input"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={authForm.confirmPassword}
+                onChange={(e) => handleAuthField('confirmPassword', e.target.value)}
+                placeholder="Repeat password"
+              />
+            </label>
+          )}
+
           {authError && <div className="auth-error">{authError}</div>}
 
           <button type="submit" className="auth-submit" disabled={authBusy}>
@@ -2914,7 +2939,7 @@ export default function App() {
           </button>
 
           <p className="auth-footnote">
-            {authMode === 'signup' ? 'كلمة المرور يجب أن تحتوي حرف كبير وصغير ورقم.' : 'مرحبًا بعودتك إلى غرفة الأخبار.'}
+            {authMode === 'signup' ? 'كلمة المرور يجب أن تحتوي 8 أحرف على الأقل، مع حرف كبير وحرف صغير ورقم.' : 'مرحبًا بعودتك إلى غرفة الأخبار.'}
           </p>
         </form>
       </div>

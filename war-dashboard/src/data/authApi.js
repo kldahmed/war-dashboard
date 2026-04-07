@@ -4,6 +4,19 @@ function readAccessToken() {
   return window.localStorage.getItem(ACCESS_TOKEN_KEY) || '';
 }
 
+async function ensureAccessToken() {
+  let token = readAccessToken();
+  if (token) return token;
+
+  try {
+    await refreshSession();
+  } catch (_err) {
+    return '';
+  }
+
+  return readAccessToken();
+}
+
 function writeAccessToken(token) {
   if (!token) {
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
@@ -35,6 +48,34 @@ async function request(path, { method = 'GET', body, token } = {}) {
   }
 
   return payload;
+}
+
+export async function authFetch(path, options = {}) {
+  let token = await ensureAccessToken();
+
+  const makeRequest = (accessToken) => {
+    const headers = new Headers(options.headers || {});
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+
+    return fetch(path, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+  };
+
+  let res = await makeRequest(token);
+  if (res.status !== 401) return res;
+
+  try {
+    await refreshSession();
+  } catch (_err) {
+    writeAccessToken('');
+    return res;
+  }
+
+  token = readAccessToken();
+  return makeRequest(token);
 }
 
 export async function signUp({ email, password, displayName }) {

@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const env = require('../../config/env');
 const sseHub = require('../../lib/sse-hub');
 const logger = require('../../lib/logger');
+const { requireAuth } = require('../../lib/auth-middleware');
 const { getSnapshot: getWeatherSnapshot, refreshWeather } = require('../weather/service');
 const { getSnapshot: getMarketsSnapshot, refreshMarkets } = require('../markets/service');
 const { loadSignalSnapshot } = require('./service');
@@ -73,7 +74,7 @@ router.get('/signals/stream', async (req, res) => {
  * Trigger an immediate out-of-schedule refresh of both weather and markets.
  * The new data is pushed to all SSE clients automatically via the hub.
  */
-router.post('/signals/refresh', async (req, res) => {
+router.post('/signals/refresh', requireAuth, async (req, res) => {
   const correlationId = req.correlationId || randomUUID();
   logger.info('signals_manual_refresh', { correlationId });
 
