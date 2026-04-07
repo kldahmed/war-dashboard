@@ -16,6 +16,7 @@ const podcastsRoutes = require('../modules/podcasts/routes');
 const weatherRoutes  = require('../modules/weather/routes');
 const marketsRoutes  = require('../modules/markets/routes');
 const signalsRoutes  = require('../modules/signals/routes');
+const siteCustomizationRoutes = require('../modules/site-customization/routes');
 const legacyClaudeHandler = require('../../api/claude');
 
 function createApp() {
@@ -55,6 +56,7 @@ function createApp() {
   app.use('/api', weatherRoutes);
   app.use('/api', marketsRoutes);
   app.use('/api', signalsRoutes);
+  app.use('/api', siteCustomizationRoutes);
 
   app.use((err, req, res, _next) => {
     logger.error('http_error', {

@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
 import { authFetch, forgotPassword, getCurrentUser, resetPassword, signIn, signOut, signUp } from './data/authApi';
+import { getSiteCustomization, saveSiteCustomization } from './data/siteCustomizationApi';
 import Hls from 'hls.js';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HTMLFlipBook from 'react-pageflip';
@@ -157,6 +158,292 @@ const CATEGORY_COORDS = {
   analysis:   [25.0, 55.0],
   technology: [37.3, -122.0],
 };
+
+const DEFAULT_SITE_CUSTOMIZATION = {
+  copy: {
+    brand_name: 'WorldPulse',
+    brand_tagline: 'أخبار عالمية مباشرة',
+    footer_tagline: 'منصة أخبار عربية مباشرة',
+    guest_upgrade_title: 'الوضع المجاني: أخبار محدودة',
+    guest_upgrade_body: 'يمكنك الآن قراءة 12 خبر فقط. للتغطية الكاملة والتحديثات المستمرة قم بالتسجيل.',
+    guest_upgrade_benefit_1: 'مزايا التسجيل:',
+    guest_upgrade_benefit_2: 'وصول كامل لكل الأخبار بدون حد',
+    guest_upgrade_benefit_3: 'التحديث التلقائي الفوري للمحتوى',
+    guest_upgrade_benefit_4: 'فتح لوحة البث المباشر والتحرير الذكي والخريطة',
+    guest_upgrade_benefit_5: 'صلاحيات تشغيل أدوات غرفة الأخبار (حسب الدور)',
+    ops_title: 'غرفة الأخبار التشغيلية',
+    ops_autopilot_title: 'غرفة القرار الذاتي',
+    ops_autopilot_label: 'Decision Autopilot',
+    stream_discovery_title: 'قمع اعتماد القنوات',
+    stream_discovery_body: 'المسار الجديد يسمح بفحص JSON مرشحين عبر API أو سكربت محلي، ويعيد الموافق عليهم فقط إذا كانوا عربًا ويعملون من داخل الموقع مباشرة.',
+    signals_repair_idle: 'إصلاح الإشارات الآن',
+    signals_repair_busy: 'جاري الإصلاح…',
+    news_empty_state: 'لا توجد أخبار مطابقة',
+    load_more_news: 'تحميل المزيد',
+    editorial_title: 'لوحة التحرير الذكية',
+    editorial_subtitle: 'ترتيب القصص حسب الزخم · التحقق · التعارض · تنوع المصادر',
+    live_title: 'مركز قنوات الأخبار',
+    live_subtitle: 'تغطية استخباراتية على مدار الساعة',
+    map_title: 'خريطة الأحداث',
+    map_subtitle: 'رصد جيوسياسي على مدار الساعة',
+    podcast_title: 'البودكاست العربي',
+    podcast_subtitle: 'تحليلات وأخبار وتقارير صوتية من أبرز المصادر العربية والدولية',
+    login_label: 'Sign in',
+    signup_label: 'Sign up',
+    logout_label: 'Logout',
+  },
+  tabs: {
+    news: 'الأخبار',
+    editorial: 'التحرير الذكي',
+    live: 'البث المباشر',
+    podcast: 'البودكاست',
+    ops: 'غرفة الأخبار',
+    map: 'خريطة الأحداث',
+  },
+  categories: {
+    all: 'الكل',
+    breaking: 'عاجل',
+    war: 'حرب',
+    politics: 'سياسة',
+    economy: 'اقتصاد',
+    gulf: 'gulf',
+    iran: 'إيران',
+    israel: 'إسرائيل',
+    usa: 'أمريكا',
+    world: 'العالم',
+    energy: 'طاقة',
+    analysis: 'تحليل',
+    technology: 'تقنية',
+  },
+  layout: {
+    header_tabs_order: ['news', 'editorial', 'live', 'podcast', 'ops', 'map'],
+    news_sections_order: ['filters', 'freshness', 'sitrep', 'mission', 'guest', 'newspaper', 'load_more', 'empty'],
+    ops_sections_order: ['signals', 'alerts', 'kpi', 'autopilot', 'candidate_inventory', 'health_grid'],
+  },
+};
+
+const SITE_COPY_FIELDS = [
+  { key: 'brand_name', label: 'اسم العلامة' },
+  { key: 'brand_tagline', label: 'وصف العلامة' },
+  { key: 'footer_tagline', label: 'وصف الفوتر' },
+  { key: 'guest_upgrade_title', label: 'عنوان ترقية الزائر' },
+  { key: 'guest_upgrade_body', label: 'وصف ترقية الزائر', multiline: true },
+  { key: 'guest_upgrade_benefit_1', label: 'ميزة 1' },
+  { key: 'guest_upgrade_benefit_2', label: 'ميزة 2' },
+  { key: 'guest_upgrade_benefit_3', label: 'ميزة 3' },
+  { key: 'guest_upgrade_benefit_4', label: 'ميزة 4' },
+  { key: 'guest_upgrade_benefit_5', label: 'ميزة 5' },
+  { key: 'ops_title', label: 'عنوان العمليات' },
+  { key: 'ops_autopilot_label', label: 'وسم Autopilot' },
+  { key: 'ops_autopilot_title', label: 'عنوان Autopilot' },
+  { key: 'stream_discovery_title', label: 'عنوان اكتشاف القنوات' },
+  { key: 'stream_discovery_body', label: 'وصف اكتشاف القنوات', multiline: true },
+  { key: 'signals_repair_idle', label: 'زر إصلاح الإشارات' },
+  { key: 'signals_repair_busy', label: 'زر إصلاح الإشارات أثناء التشغيل' },
+  { key: 'news_empty_state', label: 'رسالة خلو الأخبار' },
+  { key: 'load_more_news', label: 'زر تحميل المزيد' },
+  { key: 'editorial_title', label: 'عنوان التحرير الذكي' },
+  { key: 'editorial_subtitle', label: 'وصف التحرير الذكي', multiline: true },
+  { key: 'live_title', label: 'عنوان البث المباشر' },
+  { key: 'live_subtitle', label: 'وصف البث المباشر' },
+  { key: 'map_title', label: 'عنوان الخريطة' },
+  { key: 'map_subtitle', label: 'وصف الخريطة' },
+  { key: 'podcast_title', label: 'عنوان البودكاست' },
+  { key: 'podcast_subtitle', label: 'وصف البودكاست', multiline: true },
+  { key: 'login_label', label: 'زر تسجيل الدخول' },
+  { key: 'signup_label', label: 'زر إنشاء الحساب' },
+  { key: 'logout_label', label: 'زر تسجيل الخروج' },
+];
+
+const NEWS_LAYOUT_SECTIONS = [
+  { id: 'filters', label: 'شريط البحث والتصنيفات' },
+  { id: 'freshness', label: 'شريط حداثة الأخبار' },
+  { id: 'sitrep', label: 'لوحة SITREP' },
+  { id: 'mission', label: 'Mission Feed' },
+  { id: 'guest', label: 'منطقة ترقية الزائر' },
+  { id: 'newspaper', label: 'الصحيفة الرئيسية' },
+  { id: 'load_more', label: 'زر المزيد' },
+  { id: 'empty', label: 'رسالة عدم وجود نتائج' },
+];
+
+const OPS_LAYOUT_SECTIONS = [
+  { id: 'signals', label: 'شريط صحة الإشارات' },
+  { id: 'alerts', label: 'تنبيهات الإشارات' },
+  { id: 'kpi', label: 'شريط KPI' },
+  { id: 'autopilot', label: 'بطاقة Autopilot' },
+  { id: 'candidate_inventory', label: 'بطاقة القنوات المرشحة' },
+  { id: 'health_grid', label: 'بطاقات الطقس والأسواق ولوحة الأخبار' },
+];
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeSiteCustomization(base, patch) {
+  if (Array.isArray(base)) {
+    return Array.isArray(patch) ? patch.slice() : base.slice();
+  }
+  if (!isPlainObject(base)) {
+    return patch === undefined ? base : patch;
+  }
+  const output = { ...base };
+  const source = isPlainObject(patch) ? patch : {};
+  Object.keys(source).forEach((key) => {
+    output[key] = key in base ? mergeSiteCustomization(base[key], source[key]) : source[key];
+  });
+  return output;
+}
+
+function orderByIds(items, order) {
+  const indexMap = new Map((Array.isArray(order) ? order : []).map((id, index) => [id, index]));
+  return items.slice().sort((left, right) => {
+    const a = indexMap.has(left.id) ? indexMap.get(left.id) : Number.MAX_SAFE_INTEGER;
+    const b = indexMap.has(right.id) ? indexMap.get(right.id) : Number.MAX_SAFE_INTEGER;
+    return a - b;
+  });
+}
+
+function moveOrderItem(order, itemId, direction) {
+  const next = Array.isArray(order) ? order.slice() : [];
+  const currentIndex = next.indexOf(itemId);
+  if (currentIndex === -1) return next;
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= next.length) return next;
+  const temp = next[targetIndex];
+  next[targetIndex] = next[currentIndex];
+  next[currentIndex] = temp;
+  return next;
+}
+
+function AdminSiteEditor({
+  visible,
+  draft,
+  onClose,
+  onChangeCopy,
+  onChangeTab,
+  onChangeCategory,
+  onMoveLayout,
+  onMoveTab,
+  onSave,
+  saving,
+  error,
+  dirty,
+}) {
+  if (!visible) return null;
+
+  return (
+    <aside className="site-editor" dir="rtl">
+      <div className="site-editor__header">
+        <div>
+          <span className="site-editor__eyebrow">Admin editor</span>
+          <h3>محرر الموقع</h3>
+          <p>عدّل النصوص وحرّك ترتيب الأقسام والتبويبات ثم احفظ مباشرة.</p>
+        </div>
+        <button type="button" className="site-editor__close" onClick={onClose}>×</button>
+      </div>
+
+      <div className="site-editor__section">
+        <h4>النصوص العامة</h4>
+        <div className="site-editor__fields">
+          {SITE_COPY_FIELDS.map((field) => {
+            const value = draft.copy?.[field.key] ?? '';
+            return (
+              <label key={field.key} className="site-editor__field">
+                <span>{field.label}</span>
+                {field.multiline ? (
+                  <textarea value={value} rows={3} onChange={(event) => onChangeCopy(field.key, event.target.value)} />
+                ) : (
+                  <input value={value} onChange={(event) => onChangeCopy(field.key, event.target.value)} />
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="site-editor__section">
+        <h4>التبويبات</h4>
+        <div className="site-editor__sortable-list">
+          {orderByIds(TABS, draft.layout?.header_tabs_order).map((tab, index, items) => (
+            <div key={tab.id} className="site-editor__sortable-item">
+              <input value={draft.tabs?.[tab.id] ?? tab.label} onChange={(event) => onChangeTab(tab.id, event.target.value)} />
+              <div className="site-editor__move-buttons">
+                <button type="button" onClick={() => onMoveTab(tab.id, 'up')} disabled={index === 0}>↑</button>
+                <button type="button" onClick={() => onMoveTab(tab.id, 'down')} disabled={index === items.length - 1}>↓</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="site-editor__section">
+        <h4>تصنيفات الأخبار</h4>
+        <div className="site-editor__fields site-editor__fields--compact">
+          {CATEGORIES.map((category) => (
+            <label key={category.id} className="site-editor__field">
+              <span>{category.id}</span>
+              <input value={draft.categories?.[category.id] ?? category.label} onChange={(event) => onChangeCategory(category.id, event.target.value)} />
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="site-editor__section">
+        <h4>ترتيب الصفحة الرئيسية</h4>
+        <div className="site-editor__sortable-list">
+          {NEWS_LAYOUT_SECTIONS.map((section) => {
+            const index = draft.layout?.news_sections_order?.indexOf(section.id) ?? -1;
+            const maxIndex = (draft.layout?.news_sections_order?.length || 1) - 1;
+            return (
+              <div key={section.id} className="site-editor__sortable-item site-editor__sortable-item--label">
+                <span>{section.label}</span>
+                <div className="site-editor__move-buttons">
+                  <button type="button" onClick={() => onMoveLayout('news_sections_order', section.id, 'up')} disabled={index <= 0}>↑</button>
+                  <button type="button" onClick={() => onMoveLayout('news_sections_order', section.id, 'down')} disabled={index === -1 || index >= maxIndex}>↓</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="site-editor__section">
+        <h4>ترتيب غرفة الأخبار</h4>
+        <div className="site-editor__sortable-list">
+          {OPS_LAYOUT_SECTIONS.map((section) => {
+            const index = draft.layout?.ops_sections_order?.indexOf(section.id) ?? -1;
+            const maxIndex = (draft.layout?.ops_sections_order?.length || 1) - 1;
+            return (
+              <div key={section.id} className="site-editor__sortable-item site-editor__sortable-item--label">
+                <span>{section.label}</span>
+                <div className="site-editor__move-buttons">
+                  <button type="button" onClick={() => onMoveLayout('ops_sections_order', section.id, 'up')} disabled={index <= 0}>↑</button>
+                  <button type="button" onClick={() => onMoveLayout('ops_sections_order', section.id, 'down')} disabled={index === -1 || index >= maxIndex}>↓</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {error && <div className="site-editor__error">{error}</div>}
+
+      <div className="site-editor__actions">
+        <span>{dirty ? 'هناك تغييرات غير محفوظة' : 'كل شيء محفوظ في المسودة الحالية'}</span>
+        <button type="button" onClick={onSave} disabled={!dirty || saving}>{saving ? 'جارٍ الحفظ…' : 'حفظ التعديلات'}</button>
+      </div>
+    </aside>
+  );
+}
+
+function EditorSectionSlot({ sectionId, order, children }) {
+  const orderIndex = Array.isArray(order) ? order.indexOf(sectionId) : -1;
+  return (
+    <div className={`editor-section-slot editor-section-slot--${sectionId}`} style={{ order: orderIndex === -1 ? undefined : orderIndex }}>
+      {children}
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────────
    UTILITIES
@@ -2415,6 +2702,11 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [siteCustomization, setSiteCustomization] = useState(DEFAULT_SITE_CUSTOMIZATION);
+  const [siteCustomizationDraft, setSiteCustomizationDraft] = useState(DEFAULT_SITE_CUSTOMIZATION);
+  const [siteEditorOpen, setSiteEditorOpen] = useState(false);
+  const [siteCustomizationSaving, setSiteCustomizationSaving] = useState(false);
+  const [siteCustomizationError, setSiteCustomizationError] = useState('');
   const [authForm, setAuthForm] = useState({
     displayName: '',
     email: '',
@@ -2430,6 +2722,87 @@ export default function App() {
 
   const PAGE_SIZE = 100;
   const isGuest = !authUser;
+  const isAdmin = ['admin', 'superadmin'].includes(String(authUser?.role || '').toLowerCase());
+  const siteCopy = siteCustomizationDraft.copy;
+  const orderedTabs = useMemo(
+    () => orderByIds(TABS, siteCustomizationDraft.layout?.header_tabs_order),
+    [siteCustomizationDraft],
+  );
+  const visibleTabs = isGuest ? orderedTabs.filter((tab) => tab.id === 'news') : orderedTabs;
+  const customizedCategories = useMemo(
+    () => CATEGORIES.map((entry) => ({ ...entry, label: siteCustomizationDraft.categories?.[entry.id] || entry.label })),
+    [siteCustomizationDraft],
+  );
+  const siteCustomizationDirty = useMemo(
+    () => JSON.stringify(siteCustomizationDraft) !== JSON.stringify(siteCustomization),
+    [siteCustomizationDraft, siteCustomization],
+  );
+
+  const updateDraftSection = useCallback((section, key, value) => {
+    setSiteCustomizationDraft((prev) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [key]: value,
+      },
+    }));
+  }, []);
+
+  const moveLayoutSection = useCallback((layoutKey, itemId, direction) => {
+    setSiteCustomizationDraft((prev) => ({
+      ...prev,
+      layout: {
+        ...prev.layout,
+        [layoutKey]: moveOrderItem(prev.layout?.[layoutKey], itemId, direction),
+      },
+    }));
+  }, []);
+
+  const moveTabOrder = useCallback((tabId, direction) => {
+    moveLayoutSection('header_tabs_order', tabId, direction);
+  }, [moveLayoutSection]);
+
+  const handleSaveSiteCustomization = useCallback(async () => {
+    setSiteCustomizationSaving(true);
+    setSiteCustomizationError('');
+    try {
+      const payload = await saveSiteCustomization(siteCustomizationDraft);
+      const next = mergeSiteCustomization(DEFAULT_SITE_CUSTOMIZATION, payload?.customization || {});
+      setSiteCustomization(next);
+      setSiteCustomizationDraft(next);
+    } catch (error) {
+      setSiteCustomizationError(error.message || 'save_failed');
+    } finally {
+      setSiteCustomizationSaving(false);
+    }
+  }, [siteCustomizationDraft]);
+
+  useEffect(() => {
+    let mounted = true;
+    getSiteCustomization()
+      .then((payload) => {
+        if (!mounted) return;
+        const next = mergeSiteCustomization(DEFAULT_SITE_CUSTOMIZATION, payload?.customization || {});
+        setSiteCustomization(next);
+        setSiteCustomizationDraft(next);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSiteCustomization(DEFAULT_SITE_CUSTOMIZATION);
+        setSiteCustomizationDraft(DEFAULT_SITE_CUSTOMIZATION);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setSiteEditorOpen(false);
+      setSiteCustomizationDraft(siteCustomization);
+      setSiteCustomizationError('');
+    }
+  }, [isAdmin, siteCustomization]);
 
   /* ─── News Loader ─── */
   const loadNews = useCallback(async (cat, q, pg) => {
@@ -3565,20 +3938,20 @@ export default function App() {
           <div className="site-header__brand">
             <span className="site-logo">
               <span className="site-logo__pulse">●</span>
-              World<span className="brand-accent">Pulse</span>
+              {siteCopy.brand_name}
             </span>
-            <span className="site-tagline">أخبار عالمية مباشرة</span>
+            <span className="site-tagline">{siteCopy.brand_tagline}</span>
           </div>
 
           <nav className="site-nav">
-            {(isGuest ? TABS.filter((tab) => tab.id === 'news') : TABS).map(tab => (
+            {visibleTabs.map(tab => (
               <button
                 key={tab.id}
                 className={`nav-tab ${activeTab === tab.id ? 'nav-tab--active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
                 <span className="nav-tab__icon">{tab.icon}</span>
-                <span className="nav-tab__label">{tab.label}</span>
+                <span className="nav-tab__label">{siteCustomizationDraft.tabs?.[tab.id] || tab.label}</span>
                 {tab.id === 'live' && liveSummary && (
                   <span className="nav-badge">{liveSummary.active_streams ?? streams.length}</span>
                 )}
@@ -3590,13 +3963,22 @@ export default function App() {
             {authUser ? (
               <div className="auth-user-chip">
                 <span className="auth-user-chip__name">{authUser.display_name}</span>
-                <button className="auth-user-chip__logout" onClick={handleLogout}>Logout</button>
+                <button className="auth-user-chip__logout" onClick={handleLogout}>{siteCopy.logout_label}</button>
               </div>
             ) : (
               <div className="auth-user-chip">
-                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signin')}>Sign in</button>
-                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signup')}>Sign up</button>
+                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signin')}>{siteCopy.login_label}</button>
+                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signup')}>{siteCopy.signup_label}</button>
               </div>
+            )}
+            {isAdmin && (
+              <button
+                className={`site-editor-toggle ${siteEditorOpen ? 'site-editor-toggle--active' : ''}`}
+                onClick={() => setSiteEditorOpen((value) => !value)}
+                title="محرر الموقع"
+              >
+                {siteEditorOpen ? 'إغلاق المحرر' : 'تحرير الموقع'}
+              </button>
             )}
             <button
               className="theme-toggle"
@@ -3608,6 +3990,21 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      <AdminSiteEditor
+        visible={isAdmin && siteEditorOpen}
+        draft={siteCustomizationDraft}
+        onClose={() => setSiteEditorOpen(false)}
+        onChangeCopy={(key, value) => updateDraftSection('copy', key, value)}
+        onChangeTab={(key, value) => updateDraftSection('tabs', key, value)}
+        onChangeCategory={(key, value) => updateDraftSection('categories', key, value)}
+        onMoveLayout={moveLayoutSection}
+        onMoveTab={moveTabOrder}
+        onSave={handleSaveSiteCustomization}
+        saving={siteCustomizationSaving}
+        error={siteCustomizationError}
+        dirty={siteCustomizationDirty}
+      />
 
       {/* BREAKING TICKER */}
       <BreakingTicker items={newsItems} />
@@ -3623,20 +4020,22 @@ export default function App() {
         {activeTab === 'news' && (
           <div className="news-view">
             {/* Filters */}
-            <div className="filters-bar" dir="rtl">
-              <SearchBar value={searchQ} onChange={setSearchQ} />
-              <div className="cat-tabs">
-                {CATEGORIES.map(c => (
-                  <button
-                    key={c.id}
-                    className={`cat-tab ${category === c.id ? 'cat-tab--active' : ''}`}
-                    onClick={() => setCategory(c.id)}
-                  >
-                    {c.label}
-                  </button>
-                ))}
+            <EditorSectionSlot sectionId="filters" order={siteCustomizationDraft.layout?.news_sections_order}>
+              <div className="filters-bar" dir="rtl">
+                <SearchBar value={searchQ} onChange={setSearchQ} />
+                <div className="cat-tabs">
+                  {customizedCategories.map(c => (
+                    <button
+                      key={c.id}
+                      className={`cat-tab ${category === c.id ? 'cat-tab--active' : ''}`}
+                      onClick={() => setCategory(c.id)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            </EditorSectionSlot>
 
             {newsFreshness?.data_age_sec != null && (() => {
               const age = newsFreshness.data_age_sec;
@@ -3644,40 +4043,53 @@ export default function App() {
                         : age < ALERT_THRESHOLDS.feed_stale_critical ? 'yellow'
                         : 'red';
               return (
-                <div className="news-freshness-bar" dir="rtl">
-                  <span className={`news-freshness-dot news-freshness-dot--${dot}`} />
-                  <span className="news-freshness-label">آخر خبر منذ {fmtMs(age * 1000)}</span>
-                  {dot === 'red' && <span className="news-freshness-warn">⚠ البيانات قديمة — جارٍ التحديث تلقائياً</span>}
-                </div>
+                <EditorSectionSlot sectionId="freshness" order={siteCustomizationDraft.layout?.news_sections_order}>
+                  <div className="news-freshness-bar" dir="rtl">
+                    <span className={`news-freshness-dot news-freshness-dot--${dot}`} />
+                    <span className="news-freshness-label">آخر خبر منذ {fmtMs(age * 1000)}</span>
+                    {dot === 'red' && <span className="news-freshness-warn">⚠ البيانات قديمة — جارٍ التحديث تلقائياً</span>}
+                  </div>
+                </EditorSectionSlot>
               );
             })()}
 
             {errorNews && <ErrorBanner message={errorNews} onRetry={() => loadNews(category, searchQ, 1)} />}
 
-            {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
+            {!loadingNews && !sitrepLoading && page === 1 && (
+              <EditorSectionSlot sectionId="sitrep" order={siteCustomizationDraft.layout?.news_sections_order}>
+                <SitrepPanel sitrep={sitrep} />
+              </EditorSectionSlot>
+            )}
 
-            {!loadingNews && missionFeedModel && <MissionFeed model={missionFeedModel} onOpenItem={npOpenFocus} />}
+            {!loadingNews && missionFeedModel && (
+              <EditorSectionSlot sectionId="mission" order={siteCustomizationDraft.layout?.news_sections_order}>
+                <MissionFeed model={missionFeedModel} onOpenItem={npOpenFocus} />
+              </EditorSectionSlot>
+            )}
 
             {isGuest && (
-              <section className="guest-upgrade" dir="rtl">
-                <div className="guest-upgrade__copy">
-                  <h3>الوضع المجاني: أخبار محدودة</h3>
-                  <p>يمكنك الآن قراءة {GUEST_NEWS_LIMIT} خبر فقط. للتغطية الكاملة والتحديثات المستمرة قم بالتسجيل.</p>
-                  <div className="guest-upgrade__benefits">
-                    <span>مزايا التسجيل:</span>
-                    <span>وصول كامل لكل الأخبار بدون حد</span>
-                    <span>التحديث التلقائي الفوري للمحتوى</span>
-                    <span>فتح لوحة البث المباشر والتحرير الذكي والخريطة</span>
-                    <span>صلاحيات تشغيل أدوات غرفة الأخبار (حسب الدور)</span>
+              <EditorSectionSlot sectionId="guest" order={siteCustomizationDraft.layout?.news_sections_order}>
+                <section className="guest-upgrade" dir="rtl">
+                  <div className="guest-upgrade__copy">
+                    <h3>{siteCopy.guest_upgrade_title}</h3>
+                    <p>{siteCopy.guest_upgrade_body.replace('12', String(GUEST_NEWS_LIMIT))}</p>
+                    <div className="guest-upgrade__benefits">
+                      <span>{siteCopy.guest_upgrade_benefit_1}</span>
+                      <span>{siteCopy.guest_upgrade_benefit_2}</span>
+                      <span>{siteCopy.guest_upgrade_benefit_3}</span>
+                      <span>{siteCopy.guest_upgrade_benefit_4}</span>
+                      <span>{siteCopy.guest_upgrade_benefit_5}</span>
+                    </div>
                   </div>
-                </div>
-                {authFormCard}
-              </section>
+                  {authFormCard}
+                </section>
+              </EditorSectionSlot>
             )}
 
 
             {/* ── NEWSPAPER VIEW ── */}
             {!loadingNews && visibleNewsItems.length > 0 && (
+              <EditorSectionSlot sectionId="newspaper" order={siteCustomizationDraft.layout?.news_sections_order}>
               <div className="np-arena">
                 {/* Nav bar */}
                 <div className="np-nav-bar">
@@ -3771,6 +4183,7 @@ export default function App() {
                   </div>
                 )}
               </div>
+              </EditorSectionSlot>
             )}
 
 
@@ -3778,11 +4191,13 @@ export default function App() {
 
             {/* Pagination */}
             {!loadingNews && hasMore && !isGuest && (
-              <div className="load-more-wrap">
-                <button className="btn btn--outline btn--lg" onClick={loadMore}>
-                  تحميل المزيد
-                </button>
-              </div>
+              <EditorSectionSlot sectionId="load_more" order={siteCustomizationDraft.layout?.news_sections_order}>
+                <div className="load-more-wrap">
+                  <button className="btn btn--outline btn--lg" onClick={loadMore}>
+                    {siteCopy.load_more_news}
+                  </button>
+                </div>
+              </EditorSectionSlot>
             )}
 
             {!loadingNews && hasMore && isGuest && (
@@ -3792,10 +4207,12 @@ export default function App() {
             )}
 
             {!loadingNews && visibleNewsItems.length === 0 && !errorNews && (
-              <div className="empty-state">
-                <span className="empty-state__icon">📭</span>
-                <p>لا توجد أخبار مطابقة</p>
-              </div>
+              <EditorSectionSlot sectionId="empty" order={siteCustomizationDraft.layout?.news_sections_order}>
+                <div className="empty-state">
+                  <span className="empty-state__icon">📭</span>
+                  <p>{siteCopy.news_empty_state}</p>
+                </div>
+              </EditorSectionSlot>
             )}
           </div>
         )}
@@ -3806,43 +4223,50 @@ export default function App() {
         {activeTab === 'ops' && (
           <div className="ops-view">
             {errorOps && <ErrorBanner message={errorOps} onRetry={loadOps} />}
-            <div className="signals-health-strip" dir="rtl">
-              <span className={`signals-badge signals-badge--${signalsHealth?.overall_status || 'red'}`}>
-                {signalsHealth?.overall_status === 'green'
-                  ? 'LIVE'
-                  : signalsHealth?.overall_status === 'yellow'
-                    ? 'DEGRADED'
-                    : 'CRITICAL'}
-              </span>
-              <span className="signals-health-item">تحديث الطقس: {fmtMs(signalsHealth?.weather_age_ms)}</span>
-              <span className="signals-health-item">تحديث الأسواق: {fmtMs(signalsHealth?.markets_age_ms)}</span>
-              <button
-                className="signals-heal-btn"
-                onClick={() => triggerSignalsRecovery()}
-                disabled={signalsRecovering}
-              >
-                {signalsRecovering ? 'جاري الإصلاح…' : 'إصلاح الإشارات الآن'}
-              </button>
-              {lastSignalsRecoveryAt && (
-                <span className="signals-health-item">آخر محاولة إصلاح: {relativeTime(new Date(lastSignalsRecoveryAt).toISOString())}</span>
-              )}
-            </div>
-            {Array.isArray(signalsHealth?.alerts) && signalsHealth.alerts.length > 0 && (
-              <div className="signals-alerts" dir="rtl">
-                {signalsHealth.alerts.map((alert, index) => (
-                  <div key={`${alert.code || 'signal'}-${index}`} className={`signal-alert signal-alert--${alert.severity || 'ok'}`}>
-                    <span className="signal-alert__code">{alert.code || 'signal'}</span>
-                    <span className="signal-alert__msg">{alert.message || 'Signal status update'}</span>
-                  </div>
-                ))}
+            <EditorSectionSlot sectionId="signals" order={siteCustomizationDraft.layout?.ops_sections_order}>
+              <div className="signals-health-strip" dir="rtl">
+                <span className={`signals-badge signals-badge--${signalsHealth?.overall_status || 'red'}`}>
+                  {signalsHealth?.overall_status === 'green'
+                    ? 'LIVE'
+                    : signalsHealth?.overall_status === 'yellow'
+                      ? 'DEGRADED'
+                      : 'CRITICAL'}
+                </span>
+                <span className="signals-health-item">تحديث الطقس: {fmtMs(signalsHealth?.weather_age_ms)}</span>
+                <span className="signals-health-item">تحديث الأسواق: {fmtMs(signalsHealth?.markets_age_ms)}</span>
+                <button
+                  className="signals-heal-btn"
+                  onClick={() => triggerSignalsRecovery()}
+                  disabled={signalsRecovering}
+                >
+                  {signalsRecovering ? siteCopy.signals_repair_busy : siteCopy.signals_repair_idle}
+                </button>
+                {lastSignalsRecoveryAt && (
+                  <span className="signals-health-item">آخر محاولة إصلاح: {relativeTime(new Date(lastSignalsRecoveryAt).toISOString())}</span>
+                )}
               </div>
+            </EditorSectionSlot>
+            {Array.isArray(signalsHealth?.alerts) && signalsHealth.alerts.length > 0 && (
+              <EditorSectionSlot sectionId="alerts" order={siteCustomizationDraft.layout?.ops_sections_order}>
+                <div className="signals-alerts" dir="rtl">
+                  {signalsHealth.alerts.map((alert, index) => (
+                    <div key={`${alert.code || 'signal'}-${index}`} className={`signal-alert signal-alert--${alert.severity || 'ok'}`}>
+                      <span className="signal-alert__code">{alert.code || 'signal'}</span>
+                      <span className="signal-alert__msg">{alert.message || 'Signal status update'}</span>
+                    </div>
+                  ))}
+                </div>
+              </EditorSectionSlot>
             )}
             {productKpi && (
-              <section className="ops-kpi-strip" dir="rtl">
-                <div className="ops-kpi-strip__item">
-                  <span>المستخدمون</span>
-                  <strong>{productKpi?.product_kpi?.users_total ?? 0}</strong>
-                </div>
+              <EditorSectionSlot sectionId="kpi" order={siteCustomizationDraft.layout?.ops_sections_order}>
+              <section className="ops-kpi-strip-wrap" dir="rtl">
+                <h3 className="ops-kpi-strip-wrap__title">{siteCopy.ops_title}</h3>
+                <div className="ops-kpi-strip">
+                  <div className="ops-kpi-strip__item">
+                    <span>المستخدمون</span>
+                    <strong>{productKpi?.product_kpi?.users_total ?? 0}</strong>
+                  </div>
                 <div className="ops-kpi-strip__item">
                   <span>الجلسات النشطة</span>
                   <strong>{productKpi?.product_kpi?.sessions_active ?? 0}</strong>
@@ -3908,14 +4332,17 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                </div>
               </section>
+              </EditorSectionSlot>
             )}
             {decisionAutopilot?.autopilot && (
+              <EditorSectionSlot sectionId="autopilot" order={siteCustomizationDraft.layout?.ops_sections_order}>
               <section className="ops-autopilot" dir="rtl">
                 <header className="ops-autopilot__header">
                   <div>
-                    <span>Decision Autopilot</span>
-                    <h3>غرفة القرار الذاتي</h3>
+                    <span>{siteCopy.ops_autopilot_label}</span>
+                    <h3>{siteCopy.ops_autopilot_title}</h3>
                   </div>
                   <div className={`ops-autopilot__mode ops-autopilot__mode--${decisionAutopilot.autopilot.mode || 'hybrid'}`}>
                     {decisionAutopilot.autopilot.mode === 'autonomous'
@@ -3958,13 +4385,15 @@ export default function App() {
                   ))}
                 </div>
               </section>
+              </EditorSectionSlot>
             )}
             {streamCandidates?.candidate_inventory && (
+              <EditorSectionSlot sectionId="candidate_inventory" order={siteCustomizationDraft.layout?.ops_sections_order}>
               <section className="ops-autopilot ops-autopilot--candidates" dir="rtl">
                 <header className="ops-autopilot__header">
                   <div>
                     <span>Stream Discovery</span>
-                    <h3>قمع اعتماد القنوات</h3>
+                    <h3>{siteCopy.stream_discovery_title}</h3>
                   </div>
                   <div className="ops-autopilot__mode ops-autopilot__mode--autonomous">STRICT</div>
                 </header>
@@ -3987,36 +4416,39 @@ export default function App() {
                 <article className="ops-autopilot__primary">
                   <span className="ops-autopilot__code">DIRECT_PLAY_ONLY</span>
                   <h4>أي قناة جديدة يجب أن تنجح في Probe مباشر قبل التفكير بعرضها</h4>
-                  <p>المسار الجديد يسمح بفحص JSON مرشحين عبر API أو سكربت محلي، ويعيد الموافق عليهم فقط إذا كانوا عربًا ويعملون من داخل الموقع مباشرة.</p>
+                  <p>{siteCopy.stream_discovery_body}</p>
                   <small>استخدم npm script: probe:stream:candidates مع ملف JSON مرشحين.</small>
                 </article>
               </section>
+              </EditorSectionSlot>
             )}
-            <div className="ops-signal-grid">
-              <UAEWeatherPanel
-                data={weatherHub}
-                loading={signalsLoading && weatherHubAvailable === null}
-                available={weatherHubAvailable}
-                error={weatherHubError}
-                selectedLocationId={selectedWeatherLocationId}
-                onSelectLocation={setSelectedWeatherLocationId}
-                onRetry={loadSignalPanels}
+            <EditorSectionSlot sectionId="health_grid" order={siteCustomizationDraft.layout?.ops_sections_order}>
+              <div className="ops-signal-grid">
+                <UAEWeatherPanel
+                  data={weatherHub}
+                  loading={signalsLoading && weatherHubAvailable === null}
+                  available={weatherHubAvailable}
+                  error={weatherHubError}
+                  selectedLocationId={selectedWeatherLocationId}
+                  onSelectLocation={setSelectedWeatherLocationId}
+                  onRetry={loadSignalPanels}
+                />
+                <UAEMarketsPanel
+                  data={marketsHub}
+                  loading={signalsLoading && marketsHubAvailable === null}
+                  available={marketsHubAvailable}
+                  error={marketsHubError}
+                  onRetry={loadSignalPanels}
+                />
+              </div>
+              <NewsroomDashboard
+                newsroomStatus={newsroomStatus}
+                metricsBasic={metricsBasic}
+                updatedAt={opsUpdatedAt}
+                onRefresh={refreshOpsView}
+                loading={loadingOps}
               />
-              <UAEMarketsPanel
-                data={marketsHub}
-                loading={signalsLoading && marketsHubAvailable === null}
-                available={marketsHubAvailable}
-                error={marketsHubError}
-                onRetry={loadSignalPanels}
-              />
-            </div>
-            <NewsroomDashboard
-              newsroomStatus={newsroomStatus}
-              metricsBasic={metricsBasic}
-              updatedAt={opsUpdatedAt}
-              onRefresh={refreshOpsView}
-              loading={loadingOps}
-            />
+            </EditorSectionSlot>
           </div>
         )}
 
@@ -4033,8 +4465,8 @@ export default function App() {
                   <span className="eb-hdr__pulse" />
                   تحرير استخباراتي
                 </div>
-                <h2 className="eb-hdr__title">لوحة التحرير الذكية</h2>
-                <p className="eb-hdr__sub">ترتيب القصص حسب الزخم · التحقق · التعارض · تنوع المصادر</p>
+                <h2 className="eb-hdr__title">{siteCopy.editorial_title}</h2>
+                <p className="eb-hdr__sub">{siteCopy.editorial_subtitle}</p>
               </div>
               <button className="eb-hdr__refresh" onClick={() => loadNews('all', '', 1)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -4266,11 +4698,11 @@ export default function App() {
                   <span className="live-hdr__pulse" />
                   بث مباشر
                 </div>
-                <h2 className="live-hdr__title">مركز قنوات الأخبار</h2>
+                <h2 className="live-hdr__title">{siteCopy.live_title}</h2>
                 <p className="live-hdr__sub">
                   {liveSummary
                     ? `${liveSummary.playable_streams ?? streams.length} قناة صالحة للتشغيل · ${liveSummary.total_streams ?? streams.length} إجمالاً`
-                    : 'تغطية استخباراتية على مدار الساعة'}
+                    : siteCopy.live_subtitle}
                 </p>
               </div>
               <button className="live-hdr__refresh" onClick={() => loadLive({ silent: streams.length > 0 })}>
@@ -4538,11 +4970,11 @@ export default function App() {
                   <span className="mp-hdr__pulse" />
                   رصد جيوسياسي
                 </div>
-                <h2 className="mp-hdr__title">خريطة الأحداث</h2>
+                <h2 className="mp-hdr__title">{siteCopy.map_title}</h2>
                 <p className="mp-hdr__sub">
                   {newsItems.length > 0
                     ? `${newsItems.filter(i => CATEGORY_COORDS[i.category]).length} حدث على الخريطة · ${newsItems.filter(i => i.urgency === 'high').length} عاجل`
-                    : 'رصد جيوسياسي على مدار الساعة'}
+                    : siteCopy.map_subtitle}
                 </p>
               </div>
               <button className="mp-hdr__refresh" onClick={() => loadNews('all', '', 1)}>
@@ -4605,8 +5037,8 @@ export default function App() {
                     <span className="pod-header__pulse" />
                     محتوى صوتي
                   </div>
-                  <h2 className="pod-header__title">البودكاست العربي</h2>
-                  <p className="pod-header__sub">تحليلات وأخبار وتقارير صوتية من أبرز المصادر العربية والدولية</p>
+                  <h2 className="pod-header__title">{siteCopy.podcast_title}</h2>
+                  <p className="pod-header__sub">{siteCopy.podcast_subtitle}</p>
                 </div>
               </div>
 
@@ -4795,9 +5227,9 @@ export default function App() {
       {/* FOOTER */}
       <footer className="site-footer" dir="rtl">
         <div className="site-footer__inner">
-          <span className="site-logo">World<span className="brand-accent">Pulse</span></span>
+          <span className="site-logo">{siteCopy.brand_name}</span>
           <span className="footer-sep">·</span>
-          <span>منصة أخبار عربية مباشرة</span>
+          <span>{siteCopy.footer_tagline}</span>
           <span className="footer-sep">·</span>
           <a href="https://new.khalidae.com" className="footer-link">new.khalidae.com</a>
         </div>
@@ -4862,6 +5294,11 @@ img { display: block; max-width: 100%; }
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-view {
   display: flex;
   flex-direction: column;
 }
@@ -5009,6 +5446,200 @@ img { display: block; max-width: 100%; }
   padding: 0 10px;
   cursor: pointer;
   font-size: .74rem;
+}
+
+.site-editor-toggle {
+  border: 1px solid rgba(96,165,250,.38);
+  background: rgba(30,64,175,.24);
+  color: #dbeafe;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.site-editor-toggle--active {
+  background: linear-gradient(135deg, rgba(59,130,246,.9), rgba(30,64,175,.9));
+  color: #fff;
+}
+
+.site-editor {
+  position: fixed;
+  top: 76px;
+  left: 16px;
+  z-index: 500;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(96,165,250,.25);
+  border-radius: 20px;
+  background: rgba(6,10,18,.95);
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  backdrop-filter: blur(18px);
+}
+
+.site-editor__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.site-editor__eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #60a5fa;
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.site-editor__header h3 {
+  font-size: 1.25rem;
+  color: #eff6ff;
+}
+
+.site-editor__header p {
+  margin-top: 6px;
+  color: rgba(219,234,254,.72);
+  line-height: 1.55;
+  font-size: .87rem;
+}
+
+.site-editor__close {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,.28);
+  background: rgba(15,23,42,.6);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.site-editor__section {
+  margin-bottom: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148,163,184,.14);
+}
+
+.site-editor__section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.site-editor__section h4 {
+  margin-bottom: 10px;
+  color: #bfdbfe;
+  font-size: .9rem;
+}
+
+.site-editor__fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.site-editor__fields--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.site-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.site-editor__field span {
+  color: rgba(191,219,254,.82);
+  font-size: .8rem;
+}
+
+.site-editor__field input,
+.site-editor__field textarea,
+.site-editor__sortable-item input {
+  width: 100%;
+  border: 1px solid rgba(148,163,184,.22);
+  background: rgba(15,23,42,.72);
+  color: #f8fafc;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: .88rem;
+  resize: vertical;
+}
+
+.site-editor__sortable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.site-editor__sortable-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.site-editor__sortable-item--label {
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(15,23,42,.38);
+}
+
+.site-editor__move-buttons {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.site-editor__move-buttons button,
+.site-editor__actions button {
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(96,165,250,.28);
+  background: rgba(30,64,175,.28);
+  color: #dbeafe;
+  cursor: pointer;
+}
+
+.site-editor__move-buttons button:disabled,
+.site-editor__actions button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.site-editor__error {
+  margin-top: 10px;
+  border: 1px solid rgba(248,113,113,.28);
+  background: rgba(127,29,29,.35);
+  color: #fecaca;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: .85rem;
+}
+
+.site-editor__actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  background: linear-gradient(180deg, rgba(6,10,18,0), rgba(6,10,18,.98) 28%);
+  color: rgba(191,219,254,.75);
+  font-size: .8rem;
+}
+
+.editor-section-slot {
+  display: block;
 }
 
 .guest-upgrade {
@@ -7932,7 +8563,19 @@ img { display: block; max-width: 100%; }
 /* ════════════════════════════════
    OPS DASHBOARD
 ════════════════════════════════ */
-.ops-view { }
+.ops-view {
+  display: flex;
+  flex-direction: column;
+}
+.ops-kpi-strip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ops-kpi-strip-wrap__title {
+  color: #e2e8f0;
+  font-size: 1.05rem;
+}
 .signals-health-strip {
   display: flex;
   align-items: center;
@@ -8775,15 +9418,14 @@ img { display: block; max-width: 100%; }
 @media (min-width: 1200px) {
   .news-view { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
   .news-view .list-sidebar { margin-top: 0; }
-  .news-view .filters-bar { grid-column: 1 / -1; }
-  .news-view .error-banner  { grid-column: 1 / -1; }
-  .news-view .mission-feed { grid-column: 1 / -1; }
-  .news-view .np-arena { grid-column: 1 / -1; }
-  .news-view .editorial-grid { grid-column: 1; }
-  .news-view .section-label { grid-column: 1; }
-  .news-view .news-grid { grid-column: 1; }
-  .news-view .load-more-wrap { grid-column: 1; }
-  .news-view .empty-state { grid-column: 1; }
+  .news-view > .editor-section-slot--filters { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--freshness { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--sitrep { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--mission { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--guest { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--newspaper { grid-column: 1 / -1; }
+  .news-view > .editor-section-slot--load_more { grid-column: 1; }
+  .news-view > .editor-section-slot--empty { grid-column: 1; }
 }
 
 /* ════════════════════════════════════════════
