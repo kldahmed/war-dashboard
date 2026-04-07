@@ -60,6 +60,12 @@ const ALERT_THRESHOLDS = {
   failing_sources_warning:  2,
 };
 
+const MISSION_STREAMS = [
+  { id: 'now', label: 'ماذا يحدث الآن', tone: 'now' },
+  { id: 'escalate', label: 'ما الذي قد يتصاعد خلال 24 ساعة', tone: 'escalate' },
+  { id: 'action', label: 'ما الذي يتطلب إجراء الآن', tone: 'action' },
+];
+
 const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
 const TRUMP_IRAN_DEADLINE_ISO = '2026-04-07T20:00:00-04:00';
 const TRUMP_DEADLINE_HOURGLASS_WINDOW_MS = 36 * 3600 * 1000;
@@ -315,6 +321,140 @@ function BriefingMetric({ label, value, tone = 'neutral' }) {
       <span className="briefing-metric__label">{label}</span>
       <span className={`briefing-metric__value briefing-metric__value--${tone}`}>{value}</span>
     </div>
+  );
+}
+
+function missionActionHint(item) {
+  const text = `${item?.title || ''} ${item?.summary || ''}`.toLowerCase();
+  if (/(strike|ضربة|missile|صاروخ|drone|طائرة مسيرة)/.test(text)) return 'رفع المراقبة الفورية وتحديث غرفة التنبيه.';
+  if (/(oil|النفط|gas|الغاز|energy|طاقة|shipping|ملاحة|strait|مضيق)/.test(text)) return 'تفعيل مسار تأثير السوق والطاقة مباشرة.';
+  if (/(sanction|عقوبات|ceasefire|هدنة|truce|وقف إطلاق النار|diplom)/.test(text)) return 'مراجعة سيناريو الاحتواء قبل قرار التصعيد.';
+  if (item?.urgency === 'high') return 'إصدار تنبيه أحمر وتحديث التغطية كل 15 دقيقة.';
+  return 'متابعة الحدث مع تحديث سياق المصادر المتقاطعة.';
+}
+
+function titleTokens(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 3);
+}
+
+function hasTitleOverlap(left, right) {
+  const a = titleTokens(left);
+  const b = new Set(titleTokens(right));
+  if (!a.length || !b.size) return false;
+  let shared = 0;
+  for (const token of a) {
+    if (b.has(token)) shared += 1;
+    if (shared >= 2) return true;
+  }
+  return false;
+}
+
+function missionSignals(item, briefing, sitrep) {
+  const signals = [];
+  const provenance = item?.provenance || {};
+  const confidence = Number(provenance?.verification?.confidence_score);
+  const contradictionFlag = Boolean(provenance?.cluster?.contradiction_flag);
+
+  if (Number.isFinite(confidence)) {
+    const pctValue = Math.max(0, Math.min(100, Math.round(confidence * 100)));
+    signals.push({
+      tone: pctValue >= 70 ? 'good' : pctValue >= 45 ? 'warn' : 'risk',
+      text: `ثقة ${pctValue}%`,
+    });
+  }
+
+  if (contradictionFlag) {
+    signals.push({ tone: 'risk', text: 'تعارض مصادر' });
+  }
+
+  const disputed = Array.isArray(briefing?.disputed_stories) ? briefing.disputed_stories : [];
+  const disputedMatch = disputed.some((story) => (
+    (story?.id && item?.id && String(story.id) === String(item.id)) || hasTitleOverlap(story?.title, item?.title)
+  ));
+  if (disputedMatch) {
+    signals.push({ tone: 'risk', text: 'ضمن قصص المراجعة' });
+  }
+
+  const clusters = Array.isArray(briefing?.cluster_watch) ? briefing.cluster_watch : [];
+  const clusterMatch = clusters.find((story) => (
+    (story?.id && item?.id && String(story.id) === String(item.id)) || hasTitleOverlap(story?.title, item?.title)
+  ));
+  if (clusterMatch) {
+    const support = Number(clusterMatch?.corroboration_count || provenance?.cluster?.corroboration_count || 0);
+    signals.push({ tone: 'info', text: `دعم ${support}` });
+  }
+
+  const escalation = String(sitrep?.escalation_level || '').toLowerCase();
+  if (escalation === 'critical' || escalation === 'high') {
+    signals.push({ tone: 'warn', text: 'سياق تصعيدي مرتفع' });
+  }
+
+  const reason = contradictionFlag || disputedMatch
+    ? 'وجود تعارضات يفرض مراجعة سريعة قبل قرار النشر النهائي.'
+    : clusterMatch
+      ? 'الخبر مدعوم بعنقود مصادر، مناسب للرفع في المسار التنفيذي.'
+      : missionActionHint(item);
+
+  return {
+    chips: signals.slice(0, 3),
+    reason,
+  };
+}
+
+function MissionFeed({ model, onOpenItem }) {
+  if (!model) return null;
+
+  return (
+    <section className="mission-feed" dir="rtl">
+      <header className="mission-feed__header">
+        <div>
+          <span className="mission-feed__eyebrow">Mission Feed</span>
+          <h3>مسارات القرار اللحظي</h3>
+        </div>
+        <div className="mission-feed__snapshot">
+          <span>{model.snapshot.total} خبر</span>
+          <span>{model.snapshot.highUrgency} عاجل</span>
+          <span>{model.snapshot.recent} خلال 6 ساعات</span>
+        </div>
+      </header>
+
+      <div className="mission-feed__grid">
+        {MISSION_STREAMS.map((stream) => (
+          <article key={stream.id} className={`mission-col mission-col--${stream.tone}`}>
+            <div className="mission-col__title">{stream.label}</div>
+            <div className="mission-col__items">
+              {(model[stream.id] || []).map((item, index) => (
+                <div key={`${stream.id}-${item.id || index}`} className="mission-item">
+                  <div className="mission-item__meta">
+                    <CategoryBadge category={item.category} />
+                    <span>{relativeTime(item.time || item.publishedAt || item.published_at)}</span>
+                  </div>
+                  <h4>{item.title}</h4>
+                  {Array.isArray(item.missionSignals) && item.missionSignals.length > 0 && (
+                    <div className="mission-item__signals">
+                      {item.missionSignals.map((sig, idx) => (
+                        <span key={`sig-${idx}`} className={`mission-signal mission-signal--${sig.tone || 'info'}`}>{sig.text}</span>
+                      ))}
+                    </div>
+                  )}
+                  <p>{item.missionReason || missionActionHint(item)}</p>
+                  <div className="mission-item__actions">
+                    <button type="button" onClick={() => onOpenItem?.(item)}>قراءة سريعة</button>
+                    {item.link && (
+                      <a href={item.link} target="_blank" rel="noopener noreferrer">المصدر</a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2888,6 +3028,54 @@ export default function App() {
     return isGuest ? newsItems.slice(0, GUEST_NEWS_LIMIT) : newsItems;
   }, [isGuest, newsItems]);
 
+  const missionFeedModel = useMemo(() => {
+    const pool = visibleNewsItems.slice(0, 30);
+    if (!pool.length) return null;
+
+    const toMs = (item) => new Date(item?.time || item?.publishedAt || item?.published_at || 0).getTime() || 0;
+    const nowTs = Date.now();
+
+    const now = [...pool]
+      .sort((a, b) => toMs(b) - toMs(a))
+      .slice(0, 3);
+
+    const escalate = pool
+      .filter((item) => item?.urgency === 'high' || item?.urgency === 'medium' || ['war', 'breaking', 'iran', 'israel'].includes(item?.category))
+      .sort((a, b) => {
+        const urgencyScore = (v) => (v === 'high' ? 3 : v === 'medium' ? 2 : 1);
+        return urgencyScore(b?.urgency) - urgencyScore(a?.urgency) || toMs(b) - toMs(a);
+      })
+      .slice(0, 3);
+
+    const actionKeywords = /(strike|ضربة|missile|صاروخ|oil|نفط|gas|غاز|sanction|عقوبات|ceasefire|هدنة|shipping|ملاحة|deploy|حشد|evacuation|إجلاء)/i;
+    const action = pool
+      .filter((item) => actionKeywords.test(`${item?.title || ''} ${item?.summary || ''}`) || item?.urgency === 'high')
+      .sort((a, b) => toMs(b) - toMs(a))
+      .slice(0, 3);
+
+    const enrich = (item) => {
+      const details = missionSignals(item, editorialBriefing, sitrep);
+      return {
+        ...item,
+        missionSignals: details.chips,
+        missionReason: details.reason,
+      };
+    };
+
+    const fallback = pool.slice(0, 3);
+
+    return {
+      now: (now.length ? now : fallback).map(enrich),
+      escalate: (escalate.length ? escalate : fallback).map(enrich),
+      action: (action.length ? action : fallback).map(enrich),
+      snapshot: {
+        total: pool.length,
+        highUrgency: pool.filter((item) => item?.urgency === 'high').length,
+        recent: pool.filter((item) => (nowTs - toMs(item)) <= 6 * 3600 * 1000).length,
+      },
+    };
+  }, [visibleNewsItems, editorialBriefing, sitrep]);
+
   const npPages = useMemo(() => {
     if (!visibleNewsItems.length) return [];
     const out = [];
@@ -3205,6 +3393,8 @@ export default function App() {
             {errorNews && <ErrorBanner message={errorNews} onRetry={() => loadNews(category, searchQ, 1)} />}
 
             {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
+
+            {!loadingNews && missionFeedModel && <MissionFeed model={missionFeedModel} onOpenItem={npOpenFocus} />}
 
             {isGuest && (
               <section className="guest-upgrade" dir="rtl">
@@ -7409,6 +7599,159 @@ img { display: block; max-width: 100%; }
 .news-freshness-dot--red    { background: #ef4444; box-shadow: 0 0 6px #ef444499; animation: blink .9s ease-in-out infinite; }
 .news-freshness-label { color: var(--text2); }
 .news-freshness-warn  { color: #f59e0b; font-weight: 700; margin-right: 4px; }
+
+/* Mission feed */
+.mission-feed {
+  margin: 0 0 16px;
+  border: 1px solid rgba(148,163,184,.22);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(2,6,23,.74), rgba(15,23,42,.56));
+  padding: 12px;
+}
+.mission-feed__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+.mission-feed__eyebrow {
+  display: inline-flex;
+  font-size: .66rem;
+  letter-spacing: .14em;
+  color: #38bdf8;
+  text-transform: uppercase;
+}
+.mission-feed__header h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+.mission-feed__snapshot {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mission-feed__snapshot span {
+  font-size: .67rem;
+  color: var(--text2);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.24);
+  background: rgba(15,23,42,.45);
+}
+.mission-feed__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.mission-col {
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(15,23,42,.35);
+}
+.mission-col--now { border-top: 2px solid rgba(34,211,238,.8); }
+.mission-col--escalate { border-top: 2px solid rgba(245,158,11,.8); }
+.mission-col--action { border-top: 2px solid rgba(248,113,113,.8); }
+.mission-col__title {
+  font-size: .75rem;
+  color: var(--text);
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+.mission-col__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mission-item {
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 10px;
+  background: rgba(2,6,23,.36);
+  padding: 8px;
+}
+.mission-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.mission-item__meta span {
+  font-size: .67rem;
+  color: var(--text3);
+}
+.mission-item h4 {
+  margin: 0 0 6px;
+  font-size: .83rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+.mission-item p {
+  margin: 0;
+  font-size: .72rem;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.mission-item__signals {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 6px;
+}
+.mission-signal {
+  font-size: .64rem;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+.mission-signal--good {
+  color: #4ade80;
+  border-color: rgba(74,222,128,.34);
+  background: rgba(34,197,94,.14);
+}
+.mission-signal--warn {
+  color: #fbbf24;
+  border-color: rgba(251,191,36,.34);
+  background: rgba(245,158,11,.14);
+}
+.mission-signal--risk {
+  color: #fda4af;
+  border-color: rgba(253,164,175,.34);
+  background: rgba(244,63,94,.14);
+}
+.mission-signal--info {
+  color: #93c5fd;
+  border-color: rgba(147,197,253,.34);
+  background: rgba(59,130,246,.14);
+}
+.mission-item__actions {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mission-item__actions button,
+.mission-item__actions a {
+  border: 1px solid rgba(148,163,184,.26);
+  background: rgba(15,23,42,.56);
+  color: var(--text2);
+  border-radius: 8px;
+  font-size: .67rem;
+  padding: 4px 8px;
+  text-decoration: none;
+}
+.mission-item__actions button {
+  cursor: pointer;
+}
+.mission-item__actions button:hover,
+.mission-item__actions a:hover {
+  color: var(--text);
+  border-color: rgba(56,189,248,.45);
+}
 .ops-dashboard { display: flex; flex-direction: column; gap: 20px; }
 .ops-header {
   display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px;
@@ -7728,12 +8071,14 @@ img { display: block; max-width: 100%; }
   .hero-card__title { font-size: 1.1rem; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .ch-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .mission-feed__grid { grid-template-columns: 1fr; }
 }
 @media (min-width: 1200px) {
   .news-view { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
   .news-view .list-sidebar { margin-top: 0; }
   .news-view .filters-bar { grid-column: 1 / -1; }
   .news-view .error-banner  { grid-column: 1 / -1; }
+  .news-view .mission-feed { grid-column: 1 / -1; }
   .news-view .np-arena { grid-column: 1 / -1; }
   .news-view .editorial-grid { grid-column: 1; }
   .news-view .section-label { grid-column: 1; }
