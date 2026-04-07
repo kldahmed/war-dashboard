@@ -773,6 +773,10 @@ function TvStaticCanvas({ active }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      return;
+    }
     if (!active) {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -7971,7 +7975,7 @@ img { display: block; max-width: 100%; }
 `;
 
 /* Inject CSS once */
-if (typeof document !== 'undefined' && !document.getElementById('wp-styles')) {
+if (typeof document !== 'undefined' && process.env.NODE_ENV !== 'test' && !document.getElementById('wp-styles')) {
   const el = document.createElement('style');
   el.id = 'wp-styles';
   el.textContent = CSS;

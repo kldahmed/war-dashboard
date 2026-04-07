@@ -29,18 +29,6 @@ function buildParser(timeoutMs) {
   });
 }
 
-function withTimeout(promise, timeoutMs, message = 'operation_timeout') {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      const id = setTimeout(() => {
-        clearTimeout(id);
-        reject(new Error(message));
-      }, timeoutMs);
-    }),
-  ]);
-}
-
 async function createJob(correlationId, payload = {}) {
   const res = await query(
     `INSERT INTO processing_jobs (job_type, status, payload_json, started_at, correlation_id)
@@ -383,74 +371,72 @@ async function runRssIngestion({ correlationId = randomUUID(), triggeredBy = 'ma
       };
 
       try {
-        await withTimeout((async () => {
-          const { parsed, attemptCount } = await parseFeedWithRetry(parser, feed.endpoint, feed.retry_limit);
-          feedSummary.attemptCount = attemptCount;
-          const items = Array.isArray(parsed.items) ? parsed.items.slice(0, env.ingestionDefaultLimit) : [];
-          feedSummary.rawSeenCount = items.length;
-          summary.totalRawItems += items.length;
+        const { parsed, attemptCount } = await parseFeedWithRetry(parser, feed.endpoint, feed.retry_limit);
+        feedSummary.attemptCount = attemptCount;
+        const items = Array.isArray(parsed.items) ? parsed.items.slice(0, env.ingestionDefaultLimit) : [];
+        feedSummary.rawSeenCount = items.length;
+        summary.totalRawItems += items.length;
 
-          for (const item of items) {
-            try {
-              const rawResult = await upsertRawItem(feed.id, job.id, item);
-              if (rawResult.inserted) {
-                summary.rawInserted += 1;
-                feedSummary.rawInsertedCount += 1;
-              } else {
-                summary.rawUpdated += 1;
-                feedSummary.rawUpdatedCount += 1;
-              }
-
-              const normalizedResult = await normalizeRawItem(rawResult.id, {
-                correlationId,
-                skipTranslation,
-              });
-              if (normalizedResult?.id) {
-                summary.totalStoredItems += 1;
-                summary.normalizedUpserted += 1;
-                summary.totalNormalizedItems += 1;
-                feedSummary.normalizedCount += 1;
-              }
-              if (normalizedResult?.translated) {
-                summary.totalTranslatedItems += 1;
-                feedSummary.translatedCount += 1;
-              }
-            } catch (itemError) {
-              summary.errors.push({
-                feedId: feed.id,
-                endpoint: feed.endpoint,
-                message: itemError.message,
-                scope: 'item',
-              });
-              feedSummary.status = 'completed_with_errors';
-              logger.warn('rss_feed_item_failed', {
-                correlationId,
-                sourceRegistryId: feed.source_registry_id,
-                sourceId: feed.source_id,
-                endpoint: feed.endpoint,
-                message: itemError.message,
-              });
+        for (const item of items) {
+          try {
+            const rawResult = await upsertRawItem(feed.id, job.id, item);
+            if (rawResult.inserted) {
+              summary.rawInserted += 1;
+              feedSummary.rawInsertedCount += 1;
+            } else {
+              summary.rawUpdated += 1;
+              feedSummary.rawUpdatedCount += 1;
             }
-          }
 
-          await query(
-            `UPDATE source_feeds
-             SET last_success_at = NOW(), last_error_at = NULL, last_error_message = NULL, updated_at = NOW()
-             WHERE id = $1`,
-            [feed.id],
-          );
-          await markSourceRuntimeState(feed.source_id, 'active');
-          summary.feedsSucceeded += 1;
-          summary.successfulSources += 1;
-          await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
-          await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
-          logger.info('rss_feed_completed', {
-            correlationId,
-            sourceRegistryId: feed.source_registry_id,
-            endpoint: feed.endpoint,
-            summary: feedSummary,
-          });
-        })(), env.ingestionFeedTimeoutMs, 'feed_processing_timeout');
+            const normalizedResult = await normalizeRawItem(rawResult.id, {
+              correlationId,
+              skipTranslation,
+            });
+            if (normalizedResult?.id) {
+              summary.totalStoredItems += 1;
+              summary.normalizedUpserted += 1;
+              summary.totalNormalizedItems += 1;
+              feedSummary.normalizedCount += 1;
+            }
+            if (normalizedResult?.translated) {
+              summary.totalTranslatedItems += 1;
+              feedSummary.translatedCount += 1;
+            }
+          } catch (itemError) {
+            summary.errors.push({
+              feedId: feed.id,
+              endpoint: feed.endpoint,
+              message: itemError.message,
+              scope: 'item',
+            });
+            feedSummary.status = 'completed_with_errors';
+            logger.warn('rss_feed_item_failed', {
+              correlationId,
+              sourceRegistryId: feed.source_registry_id,
+              sourceId: feed.source_id,
+              endpoint: feed.endpoint,
+              message: itemError.message,
+            });
+          }
+        }
+
+        await query(
+          `UPDATE source_feeds
+           SET last_success_at = NOW(), last_error_at = NULL, last_error_message = NULL, updated_at = NOW()
+           WHERE id = $1`,
+          [feed.id],
+        );
+        await markSourceRuntimeState(feed.source_id, 'active');
+        summary.feedsSucceeded += 1;
+        summary.successfulSources += 1;
+        await finishFeedRun(feedRun.id, feedRun.started_at, feedSummary);
+        await finishIngestionRun(ingestionRun.id, ingestionRun.created_at, feedSummary);
+        logger.info('rss_feed_completed', {
+          correlationId,
+          sourceRegistryId: feed.source_registry_id,
+          endpoint: feed.endpoint,
+          summary: feedSummary,
+        });
       } catch (feedErr) {
         summary.feedsFailed += 1;
         summary.failedSources += 1;

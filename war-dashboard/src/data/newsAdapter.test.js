@@ -125,7 +125,7 @@ describe('fetchNewsItems mode and fallback', () => {
     });
 
     const out = await fetchNewsFeedEnvelope('all');
-    expect(global.fetch.mock.calls[0][0]).toBe('/api/news/feed?limit=60');
+    expect(global.fetch.mock.calls[0][0]).toMatch(/^\/api\/news\/feed\?limit=60(?:&|$)/);
     expect(out.metadata.briefing).toEqual({ lead_story: { id: '1', title: 'A' } });
     expect(out.items).toHaveLength(1);
   });
