@@ -100,6 +100,23 @@ export async function signIn({ email, password }) {
   return payload?.user || null;
 }
 
+export async function forgotPassword({ email }) {
+  return request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { email },
+  });
+}
+
+export async function resetPassword({ token, newPassword }) {
+  return request('/api/auth/reset-password', {
+    method: 'POST',
+    body: {
+      token,
+      new_password: newPassword,
+    },
+  });
+}
+
 export async function refreshSession() {
   const payload = await request('/api/auth/refresh', {
     method: 'POST',

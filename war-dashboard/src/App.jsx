@@ -7,7 +7,7 @@ import React, {
   useMemo,
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
-import { authFetch, getCurrentUser, signIn, signOut, signUp } from './data/authApi';
+import { authFetch, forgotPassword, getCurrentUser, resetPassword, signIn, signOut, signUp } from './data/authApi';
 import Hls from 'hls.js';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HTMLFlipBook from 'react-pageflip';
@@ -2141,7 +2141,9 @@ export default function App() {
     email: '',
     password: '',
     confirmPassword: '',
+    resetToken: '',
   });
+  const [resetTokenHint, setResetTokenHint] = useState('');
 
   /* ── SITREP ── */
   const [sitrep,        setSitrep]        = useState(null);
@@ -2656,12 +2658,25 @@ export default function App() {
           displayName: authForm.displayName,
         });
         setAuthUser(user);
-      } else {
+      } else if (authMode === 'signin') {
         const user = await signIn({
           email: authForm.email,
           password: authForm.password,
         });
         setAuthUser(user);
+      } else if (authMode === 'forgot') {
+        const out = await forgotPassword({ email: authForm.email });
+        setResetTokenHint(out?.reset_token || '');
+        setAuthError(out?.reset_token
+          ? `تم إنشاء رمز إعادة التعيين: ${out.reset_token}`
+          : 'إذا كان البريد موجودًا ستتلقى رمز إعادة التعيين.');
+      } else if (authMode === 'reset') {
+        if (authForm.password !== authForm.confirmPassword) {
+          throw Object.assign(new Error('password_mismatch'), { code: 'password_mismatch' });
+        }
+        await resetPassword({ token: authForm.resetToken, newPassword: authForm.password });
+        setAuthMode('signin');
+        setAuthError('تم تحديث كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن.');
       }
     } catch (err) {
       const messages = {
@@ -2672,6 +2687,7 @@ export default function App() {
         method_not_allowed: 'خدمة المصادقة غير مفعلة على الخادم الحالي',
         HTTP_404: 'مسار التسجيل غير موجود على الخادم',
         HTTP_500: 'حدث خطأ داخلي في الخادم أثناء التسجيل',
+        invalid_or_expired_reset_token: 'رمز إعادة التعيين غير صالح أو منتهي',
       };
       setAuthError(messages[err.code] || 'تعذر إكمال العملية، حاول مرة أخرى');
     } finally {
@@ -2683,7 +2699,7 @@ export default function App() {
     await signOut();
     setAuthUser(null);
     setActiveTab('news');
-    setAuthForm((prev) => ({ ...prev, password: '', confirmPassword: '' }));
+    setAuthForm((prev) => ({ ...prev, password: '', confirmPassword: '', resetToken: '' }));
   }, []);
 
   useEffect(() => {
@@ -2896,6 +2912,29 @@ export default function App() {
         </button>
       </div>
 
+      <div className="auth-switcher auth-switcher--mini">
+        <button
+          type="button"
+          className={`auth-switch ${authMode === 'forgot' ? 'auth-switch--active' : ''}`}
+          onClick={() => {
+            setAuthMode('forgot');
+            setAuthError('');
+          }}
+        >
+          Forgot Password
+        </button>
+        <button
+          type="button"
+          className={`auth-switch ${authMode === 'reset' ? 'auth-switch--active' : ''}`}
+          onClick={() => {
+            setAuthMode('reset');
+            setAuthError('');
+          }}
+        >
+          Reset Password
+        </button>
+      </div>
+
       {authMode === 'signup' && (
         <label className="auth-label">
           الاسم
@@ -2924,6 +2963,21 @@ export default function App() {
         />
       </label>
 
+      {authMode === 'reset' && (
+        <label className="auth-label">
+          رمز إعادة التعيين
+          <input
+            className="auth-input"
+            type="text"
+            required
+            value={authForm.resetToken}
+            onChange={(e) => handleAuthField('resetToken', e.target.value)}
+            placeholder="Paste reset token"
+          />
+        </label>
+      )}
+
+      {authMode !== 'forgot' && (
       <label className="auth-label">
         كلمة المرور
         <input
@@ -2937,8 +2991,9 @@ export default function App() {
           placeholder="8+ characters"
         />
       </label>
+      )}
 
-      {authMode === 'signup' && (
+      {(authMode === 'signup' || authMode === 'reset') && (
         <label className="auth-label">
           تأكيد كلمة المرور
           <input
@@ -2956,8 +3011,20 @@ export default function App() {
 
       {authError && <div className="auth-error">{authError}</div>}
 
+      {resetTokenHint && authMode !== 'reset' && (
+        <div className="auth-error">رمز التجربة: {resetTokenHint}</div>
+      )}
+
       <button type="submit" className="auth-submit" disabled={authBusy}>
-        {authBusy ? 'جاري المعالجة...' : authMode === 'signup' ? 'إنشاء الحساب' : 'تسجيل الدخول'}
+        {authBusy
+          ? 'جاري المعالجة...'
+          : authMode === 'signup'
+            ? 'إنشاء الحساب'
+            : authMode === 'forgot'
+              ? 'إرسال رمز إعادة التعيين'
+              : authMode === 'reset'
+                ? 'تحديث كلمة المرور'
+                : 'تسجيل الدخول'}
       </button>
 
       <p className="auth-footnote">

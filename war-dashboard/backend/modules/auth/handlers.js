@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { query } = require('../../lib/db');
 const {
   normalizeEmail,
@@ -130,6 +131,14 @@ function validatePassword(password) {
   return null;
 }
 
+function createPasswordResetToken() {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+function hashPasswordResetToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
 async function createSession(req, user) {
   const payload = { sub: String(user.id), email: user.email, role: user.role };
   const accessToken = createAccessToken(payload);
@@ -256,6 +265,122 @@ const signin = withApiPrelude(async (req, res) => {
   return res.json({ access_token: session.accessToken, user: sanitizeUser(user) });
 }, 'POST');
 
+const forgotPassword = withApiPrelude(async (req, res) => {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (_error) {
+    return res.status(400).json({ error: 'invalid_json' });
+  }
+
+  const email = normalizeEmail(body?.email);
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'validation_error', details: ['valid email is required'] });
+  }
+
+  const userRes = await query(
+    `SELECT id, email, is_active
+     FROM users
+     WHERE LOWER(email) = LOWER($1)
+     LIMIT 1`,
+    [email],
+  );
+
+  if (userRes.rowCount === 0 || !userRes.rows[0].is_active) {
+    return res.json({ ok: true, message: 'if_account_exists_reset_link_sent' });
+  }
+
+  const user = userRes.rows[0];
+  const resetToken = createPasswordResetToken();
+  const tokenHash = hashPasswordResetToken(resetToken);
+
+  await query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, NOW() + make_interval(mins => $3))`,
+    [user.id, tokenHash, env.authResetTokenMinutes],
+  );
+
+  const payload = {
+    ok: true,
+    message: 'if_account_exists_reset_link_sent',
+  };
+
+  if (env.nodeEnv !== 'production') {
+    payload.reset_token = resetToken;
+    payload.expires_in_minutes = env.authResetTokenMinutes;
+  }
+
+  return res.json(payload);
+}, 'POST');
+
+const resetPassword = withApiPrelude(async (req, res) => {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (_error) {
+    return res.status(400).json({ error: 'invalid_json' });
+  }
+
+  const resetToken = String(body?.token || '').trim();
+  const newPassword = String(body?.new_password || '');
+  const passwordError = validatePassword(newPassword);
+
+  if (!resetToken) {
+    return res.status(400).json({ error: 'validation_error', details: ['token is required'] });
+  }
+
+  if (passwordError) {
+    return res.status(400).json({ error: 'validation_error', details: [passwordError] });
+  }
+
+  const tokenHash = hashPasswordResetToken(resetToken);
+  const tokenRes = await query(
+    `SELECT id, user_id, expires_at, used_at
+     FROM password_reset_tokens
+     WHERE token_hash = $1
+     LIMIT 1`,
+    [tokenHash],
+  );
+
+  if (tokenRes.rowCount === 0) {
+    return res.status(400).json({ error: 'invalid_or_expired_reset_token' });
+  }
+
+  const row = tokenRes.rows[0];
+  if (row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'invalid_or_expired_reset_token' });
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  await query(
+    `UPDATE users
+     SET password_hash = $1,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [passwordHash, row.user_id],
+  );
+
+  await query(
+    `UPDATE password_reset_tokens
+     SET used_at = NOW()
+     WHERE id = $1`,
+    [row.id],
+  );
+
+  await query(
+    `UPDATE auth_sessions
+     SET revoked_at = NOW(),
+         updated_at = NOW()
+     WHERE user_id = $1 AND revoked_at IS NULL`,
+    [row.user_id],
+  );
+
+  clearRefreshCookie(res);
+
+  return res.json({ ok: true, message: 'password_reset_success' });
+}, 'POST');
+
 const refresh = withApiPrelude(async (req, res) => {
   const refreshToken = getCookies(req)?.wp_refresh_token || null;
   if (!refreshToken) return res.status(401).json({ error: 'missing_refresh_token' });
@@ -348,6 +473,8 @@ function meWithAuth(req, res, next) {
 module.exports = {
   signup,
   signin,
+  forgotPassword,
+  resetPassword,
   refresh,
   logout,
   me,

@@ -55,6 +55,7 @@ module.exports = {
   authJwtAccessExpires: process.env.AUTH_JWT_ACCESS_EXPIRES || '15m',
   authJwtRefreshExpires: process.env.AUTH_JWT_REFRESH_EXPIRES || '7d',
   authRefreshMaxAgeMs: toInt(process.env.AUTH_REFRESH_MAX_AGE_MS, 7 * 24 * 60 * 60 * 1000),
+  authResetTokenMinutes: toInt(process.env.AUTH_RESET_TOKEN_MINUTES, 30),
   authCookieSecure:
     String(process.env.AUTH_COOKIE_SECURE || 'false').toLowerCase() === 'true',
 };

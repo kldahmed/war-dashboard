@@ -37,6 +37,10 @@ function requireRole(...allowedRoles) {
       return res.status(403).json({ error: 'forbidden', detail: 'missing_role' });
     }
 
+    if (role === 'superadmin') {
+      return next();
+    }
+
     if (!normalizedAllowed.has(role)) {
       return res.status(403).json({ error: 'forbidden', detail: 'insufficient_role' });
     }
