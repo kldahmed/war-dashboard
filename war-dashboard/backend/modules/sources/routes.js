@@ -5,7 +5,7 @@ const { query } = require('../../lib/db');
 const { validateSourcePayload, validateFeedPayload } = require('../../lib/validation');
 const { writeAuditLog } = require('../../lib/audit');
 const { asyncHandler } = require('../../lib/async-handler');
-const { requireAuth } = require('../../lib/auth-middleware');
+const { requireAuth, requireRole } = require('../../lib/auth-middleware');
 
 const router = express.Router();
 
@@ -18,7 +18,7 @@ router.get('/sources', asyncHandler(async (req, res) => {
   res.json({ items: result.rows });
 }));
 
-router.post('/sources', requireAuth, asyncHandler(async (req, res) => {
+router.post('/sources', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
   const { errors, value } = validateSourcePayload(req.body || {});
   if (errors.length > 0) return res.status(400).json({ error: 'validation_error', details: errors });
 
@@ -58,7 +58,7 @@ router.post('/sources', requireAuth, asyncHandler(async (req, res) => {
   }
 }));
 
-router.post('/source-feeds', requireAuth, asyncHandler(async (req, res) => {
+router.post('/source-feeds', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
   const { errors, value } = validateFeedPayload(req.body || {});
   if (errors.length > 0) return res.status(400).json({ error: 'validation_error', details: errors });
 

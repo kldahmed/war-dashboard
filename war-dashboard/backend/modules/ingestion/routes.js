@@ -3,11 +3,11 @@
 const express = require('express');
 const { runRssIngestion } = require('./service');
 const { asyncHandler } = require('../../lib/async-handler');
-const { requireAuth } = require('../../lib/auth-middleware');
+const { requireAuth, requireRole } = require('../../lib/auth-middleware');
 
 const router = express.Router();
 
-router.post('/ingestion/jobs/run', requireAuth, asyncHandler(async (req, res) => {
+router.post('/ingestion/jobs/run', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
   let responded = false;
 
   const ingestionPromise = runRssIngestion({
