@@ -3949,6 +3949,8 @@ export default function App() {
                 key={tab.id}
                 className={`nav-tab ${activeTab === tab.id ? 'nav-tab--active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
+                title={siteCustomizationDraft.tabs?.[tab.id] || tab.label}
+                aria-label={siteCustomizationDraft.tabs?.[tab.id] || tab.label}
               >
                 <span className="nav-tab__icon">{tab.icon}</span>
                 <span className="nav-tab__label">{siteCustomizationDraft.tabs?.[tab.id] || tab.label}</span>
@@ -5243,10 +5245,13 @@ export default function App() {
    CSS-IN-JS  (injected as <style> via global scope)
 ───────────────────────────────────────────────── */
 const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600;700&family=Playfair+Display:wght@400;600;700;900&display=swap');
+
 /* ── RESET & ROOT ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
-body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
+body { font-family: 'Noto Naskh Arabic', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; }
+html, body { overflow-x: hidden; }
 a { color: inherit; text-decoration: none; }
 img { display: block; max-width: 100%; }
 
@@ -5256,6 +5261,7 @@ img { display: block; max-width: 100%; }
   --bg2:         #141720;
   --bg3:         #1c2030;
   --border:      #2a2f3e;
+  --text1:       #f0f2f8;
   --text:        #e8eaf0;
   --text2:       #8b92a8;
   --text3:       #555e78;
@@ -5278,6 +5284,7 @@ img { display: block; max-width: 100%; }
   --bg2:         #ffffff;
   --bg3:         #eef0f4;
   --border:      #d8dce8;
+  --text1:       #111827;
   --text:        #1a1d2e;
   --text2:       #4a5172;
   --text3:       #8890ab;
@@ -6041,7 +6048,7 @@ img { display: block; max-width: 100%; }
   background: var(--green); color: #fff; border-radius: 999px;
   font-size: .68rem; padding: 1px 6px; font-weight: 700;
 }
-.site-header__tools { margin-right: auto; display: flex; align-items: center; gap: 8px; }
+.site-header__tools { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
 .theme-toggle {
   background: none; border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 4px 8px;
@@ -6064,7 +6071,7 @@ img { display: block; max-width: 100%; }
   display: inline-flex; white-space: nowrap;
   animation: ticker-scroll 40s linear infinite;
 }
-@keyframes ticker-scroll { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+@keyframes ticker-scroll { 0% { transform: translateX(-100%); } 100% { transform: translateX(100vw); } }
 .ticker-item { padding: 0 12px; font-size: .82rem; }
 .ticker-sep { margin-left: 12px; opacity: .4; }
 
@@ -6425,6 +6432,19 @@ img { display: block; max-width: 100%; }
 .news-card__title a:hover { color: var(--accent2); }
 .news-card__summary { font-size: .82rem; color: var(--text2); line-height: 1.55; margin-bottom: 8px; }
 .news-card__footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; }
+
+[data-theme="light"] .news-card {
+  background: linear-gradient(155deg, #ffffff 0%, #f7f9ff 100%);
+  border-color: rgba(15,23,42,.1);
+  box-shadow: 0 10px 22px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+[data-theme="light"] .news-card__viz {
+  background:
+    radial-gradient(circle at 80% 15%, rgba(59,130,246,.12) 0%, rgba(59,130,246,0) 46%),
+    radial-gradient(circle at 16% 84%, rgba(245,158,11,.1) 0%, rgba(245,158,11,0) 50%),
+    linear-gradient(150deg, #f6f9ff 0%, #eef3ff 100%);
+}
 
 @keyframes holo-drift {
   0% { transform: perspective(900px) rotateX(74deg) translateY(18px) translateX(0); }
@@ -9407,8 +9427,10 @@ img { display: block; max-width: 100%; }
 ════════════════════════════════ */
 @media (max-width: 640px) {
   .site-header__inner { padding: 0 12px; gap: 10px; }
-  .nav-tab__label { display: none; }
-  .nav-tab { padding: 6px 10px; }
+  .site-nav { justify-content: flex-start; overflow-x: auto; scrollbar-width: thin; }
+  .nav-tab { padding: 6px 10px; flex: 0 0 auto; }
+  .nav-tab__label { display: inline; font-size: .74rem; }
+  .nav-tab__icon { display: none; }
   .site-main { padding: 12px 10px; }
   .hero-card__title { font-size: 1.1rem; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
@@ -9416,8 +9438,7 @@ img { display: block; max-width: 100%; }
   .mission-feed__grid { grid-template-columns: 1fr; }
 }
 @media (min-width: 1200px) {
-  .news-view { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
-  .news-view .list-sidebar { margin-top: 0; }
+  .news-view { display: grid; grid-template-columns: 1fr; gap: 24px; align-items: start; }
   .news-view > .editor-section-slot--filters { grid-column: 1 / -1; }
   .news-view > .editor-section-slot--freshness { grid-column: 1 / -1; }
   .news-view > .editor-section-slot--sitrep { grid-column: 1 / -1; }
@@ -9431,8 +9452,6 @@ img { display: block; max-width: 100%; }
 /* ════════════════════════════════════════════
    NEWSPAPER BOOK  —  LUXURY DARK EDITION
 ════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600;700&family=Playfair+Display:wght@400;600;700;900&display=swap');
-
 .np-arena {
   --np-font-head: 'Amiri', 'Noto Naskh Arabic', 'Times New Roman', serif;
   --np-font-body: 'Noto Naskh Arabic', 'Amiri', 'Segoe UI', sans-serif;
@@ -10245,6 +10264,57 @@ img { display: block; max-width: 100%; }
   .pod-player-bar { flex-wrap: wrap; }
   .pod-player-bar__info { max-width: 100%; }
   .pod-player-bar__audio { width: 100%; }
+}
+
+/* RTL typography normalization for Arabic readability */
+.app[dir="rtl"] :where(.site-logo, .site-tagline, .nav-tab__label, .ticker-item, .section-label, .sitrep__label, .sitrep__section-title, .mission-feed__eyebrow, .eb-hdr__eyebrow, .eb-hdr__sub, .mp-hdr__eyebrow, .mp-hdr__sub, .pod-feature-card__signal, .pod-feature-card__eyebrow, .signal-panel__eyebrow, .deadline-alert__eyebrow, .deadline-unit__label) {
+  letter-spacing: 0;
+}
+
+[data-theme="light"] .signal-panel,
+[data-theme="light"] .pod-feature-card,
+[data-theme="light"] .pod-ep,
+[data-theme="light"] .auth-card {
+  border-color: rgba(15,23,42,.12);
+  color: var(--text);
+}
+
+[data-theme="light"] .signal-panel {
+  background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(246,250,255,.95));
+}
+
+[data-theme="light"] .signal-panel--weather {
+  background:
+    radial-gradient(circle at top right, rgba(59,130,246,.12), transparent 32%),
+    linear-gradient(180deg, rgba(246,250,255,.98), rgba(241,247,255,.95));
+}
+
+[data-theme="light"] .signal-panel--markets {
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.12), transparent 28%),
+    linear-gradient(180deg, rgba(255,251,241,.98), rgba(255,247,234,.95));
+}
+
+[data-theme="light"] .auth-card {
+  background: rgba(255,255,255,.95);
+}
+
+[data-theme="light"] .pod-feature-card {
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.12), transparent 34%),
+    linear-gradient(135deg, rgba(255,252,244,.98), rgba(255,247,233,.95));
+}
+
+[data-theme="light"] .pod-ep {
+  background: rgba(255,255,255,.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Ops signal panels */
