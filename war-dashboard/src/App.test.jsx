@@ -2,6 +2,14 @@ import React from "react";
 import { act } from "react-dom/test-utils";
 import { createRoot } from "react-dom/client";
 import Dashboard from "./App";
+import { getCurrentUser } from "./data/authApi";
+
+jest.mock("./data/authApi", () => ({
+  getCurrentUser: jest.fn(),
+  signIn: jest.fn(),
+  signUp: jest.fn(),
+  signOut: jest.fn(),
+}));
 
 jest.mock("react-leaflet", () => {
   const ReactLib = require("react");
@@ -58,6 +66,12 @@ describe("Dashboard", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    getCurrentUser.mockResolvedValue({
+      id: "1",
+      email: "test@example.com",
+      display_name: "Tester",
+      role: "user",
+    });
   });
 
   afterEach(async () => {

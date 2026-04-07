@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const { correlationMiddleware } = require('../lib/correlation');
 const logger = require('../lib/logger');
 const metrics = require('../lib/metrics');
 
+const authRoutes = require('../modules/auth/routes');
 const sourcesRoutes = require('../modules/sources/routes');
 const ingestionRoutes = require('../modules/ingestion/routes');
 const newsFeedRoutes = require('../modules/news-feed/routes');
@@ -19,6 +21,7 @@ const legacyClaudeHandler = require('../../api/claude');
 function createApp() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  app.use(cookieParser());
   app.use(correlationMiddleware);
 
   app.use((req, res, next) => {
@@ -42,6 +45,7 @@ function createApp() {
   // Legacy path remains available as fallback.
   app.post('/api/claude', legacyClaudeHandler);
 
+  app.use('/api', authRoutes);
   app.use('/api', observabilityRoutes);
   app.use('/api', intelligenceRoutes);
   app.use('/api', sourcesRoutes);

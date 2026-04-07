@@ -48,4 +48,13 @@ module.exports = {
     String(process.env.MARKETS_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
   marketsGoldScheduleMs: toInt(process.env.MARKETS_GOLD_SCHEDULE_MS, 60_000),  // default 60s
   marketsOilScheduleMs:  toInt(process.env.MARKETS_OIL_SCHEDULE_MS, 3_600_000), // default 1h
+
+  // Auth
+  authJwtAccessSecret: process.env.AUTH_JWT_ACCESS_SECRET || 'dev_access_secret_change_me',
+  authJwtRefreshSecret: process.env.AUTH_JWT_REFRESH_SECRET || 'dev_refresh_secret_change_me',
+  authJwtAccessExpires: process.env.AUTH_JWT_ACCESS_EXPIRES || '15m',
+  authJwtRefreshExpires: process.env.AUTH_JWT_REFRESH_EXPIRES || '7d',
+  authRefreshMaxAgeMs: toInt(process.env.AUTH_REFRESH_MAX_AGE_MS, 7 * 24 * 60 * 60 * 1000),
+  authCookieSecure:
+    String(process.env.AUTH_COOKIE_SECURE || 'false').toLowerCase() === 'true',
 };

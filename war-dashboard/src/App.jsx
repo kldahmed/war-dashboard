@@ -7,6 +7,7 @@ import React, {
   useMemo,
 } from 'react';
 import { fetchNewsFeedEnvelope } from './data/newsAdapter';
+import { getCurrentUser, signIn, signOut, signUp } from './data/authApi';
 import Hls from 'hls.js';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import HTMLFlipBook from 'react-pageflip';
@@ -2128,6 +2129,16 @@ export default function App() {
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
   const [globalAlert, setGlobalAlert] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [authMode, setAuthMode] = useState('signin');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authForm, setAuthForm] = useState({
+    displayName: '',
+    email: '',
+    password: '',
+  });
 
   /* ── SITREP ── */
   const [sitrep,        setSitrep]        = useState(null);
@@ -2438,6 +2449,25 @@ export default function App() {
   }, []);
 
   /* ─── Initial Loads ─── */
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        if (mounted) setAuthUser(user);
+      } catch (_err) {
+        if (mounted) setAuthUser(null);
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   useEffect(() => { loadNews('all', '', 1); }, [loadNews]);
   useEffect(() => { loadLive({ silent: false }); }, [loadLive]);
   useEffect(() => { loadOps(); }, [loadOps]);
@@ -2589,6 +2619,48 @@ export default function App() {
     setPage(next);
     loadNews(category, searchQ, next);
   }, [page, category, searchQ, loadNews]);
+
+  const handleAuthField = useCallback((key, value) => {
+    setAuthForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleAuthSubmit = useCallback(async (event) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    setAuthError('');
+
+    try {
+      if (authMode === 'signup') {
+        const user = await signUp({
+          email: authForm.email,
+          password: authForm.password,
+          displayName: authForm.displayName,
+        });
+        setAuthUser(user);
+      } else {
+        const user = await signIn({
+          email: authForm.email,
+          password: authForm.password,
+        });
+        setAuthUser(user);
+      }
+    } catch (err) {
+      const messages = {
+        invalid_credentials: 'بيانات الدخول غير صحيحة',
+        email_already_exists: 'البريد الإلكتروني مستخدم بالفعل',
+        validation_error: 'تحقق من الحقول المطلوبة وقوة كلمة المرور',
+      };
+      setAuthError(messages[err.code] || 'تعذر إكمال العملية، حاول مرة أخرى');
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [authMode, authForm]);
+
+  const handleLogout = useCallback(async () => {
+    await signOut();
+    setAuthUser(null);
+    setAuthForm((prev) => ({ ...prev, password: '' }));
+  }, []);
 
   /* ─── Breaking Headlines for AI ─── */
   const breakingHeadlines = useMemo(() =>
@@ -2755,6 +2827,100 @@ export default function App() {
   useEffect(() => { setNpFocusItem(null); }, [category, searchQ, npCurrentPage]);
 
   /* ── RENDER ── */
+  if (authLoading) {
+    return (
+      <div className="auth-shell" dir="rtl">
+        <div className="auth-card auth-card--loading">جاري تجهيز الجلسة...</div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div className="auth-shell" dir="rtl">
+        <form className="auth-card" onSubmit={handleAuthSubmit}>
+          <h1 className="auth-title">WorldPulse</h1>
+          <p className="auth-subtitle">تسجيل احترافي للوصول إلى لوحة الأخبار</p>
+
+          <div className="auth-switcher">
+            <button
+              type="button"
+              className={`auth-switch ${authMode === 'signin' ? 'auth-switch--active' : ''}`}
+              onClick={() => {
+                setAuthMode('signin');
+                setAuthError('');
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={`auth-switch ${authMode === 'signup' ? 'auth-switch--active' : ''}`}
+              onClick={() => {
+                setAuthMode('signup');
+                setAuthError('');
+              }}
+            >
+              Sign up
+            </button>
+          </div>
+
+          {authMode === 'signup' && (
+            <label className="auth-label">
+              الاسم
+              <input
+                className="auth-input"
+                type="text"
+                required
+                minLength={2}
+                value={authForm.displayName}
+                onChange={(e) => handleAuthField('displayName', e.target.value)}
+                placeholder="اسم العرض"
+              />
+            </label>
+          )}
+
+          <label className="auth-label">
+            البريد الإلكتروني
+            <input
+              className="auth-input"
+              type="email"
+              autoComplete="email"
+              required
+              value={authForm.email}
+              onChange={(e) => handleAuthField('email', e.target.value)}
+              placeholder="name@example.com"
+            />
+          </label>
+
+          <label className="auth-label">
+            كلمة المرور
+            <input
+              className="auth-input"
+              type="password"
+              autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+              required
+              minLength={8}
+              value={authForm.password}
+              onChange={(e) => handleAuthField('password', e.target.value)}
+              placeholder="8+ characters"
+            />
+          </label>
+
+          {authError && <div className="auth-error">{authError}</div>}
+
+          <button type="submit" className="auth-submit" disabled={authBusy}>
+            {authBusy ? 'جاري المعالجة...' : authMode === 'signup' ? 'إنشاء الحساب' : 'تسجيل الدخول'}
+          </button>
+
+          <p className="auth-footnote">
+            {authMode === 'signup' ? 'كلمة المرور يجب أن تحتوي حرف كبير وصغير ورقم.' : 'مرحبًا بعودتك إلى غرفة الأخبار.'}
+          </p>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="app" dir="rtl">
 
@@ -2794,6 +2960,10 @@ export default function App() {
           </nav>
 
           <div className="site-header__tools">
+            <div className="auth-user-chip">
+              <span className="auth-user-chip__name">{authUser.display_name}</span>
+              <button className="auth-user-chip__logout" onClick={handleLogout}>Logout</button>
+            </div>
             <button
               className="theme-toggle"
               onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
@@ -3814,6 +3984,151 @@ img { display: block; max-width: 100%; }
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(59,130,246,.25), transparent 40%),
+    radial-gradient(circle at 80% 0%, rgba(34,197,94,.2), transparent 32%),
+    linear-gradient(180deg, #090d16 0%, #0f1628 100%);
+}
+
+.auth-card {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.13);
+  background: rgba(10,14,24,.92);
+  box-shadow: 0 18px 50px rgba(0,0,0,.45);
+}
+
+.auth-card--loading {
+  text-align: center;
+  color: #dbeafe;
+  font-weight: 700;
+}
+
+.auth-title {
+  font-size: 1.55rem;
+  color: #eff6ff;
+}
+
+.auth-subtitle {
+  color: rgba(219,234,254,.8);
+  font-size: .92rem;
+}
+
+.auth-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.auth-switch {
+  border: 1px solid rgba(255,255,255,.15);
+  background: rgba(255,255,255,.04);
+  color: #cbd5e1;
+  border-radius: 10px;
+  min-height: 40px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.auth-switch--active {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border-color: rgba(59,130,246,.75);
+  color: #fff;
+}
+
+.auth-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #d1d5db;
+  font-size: .9rem;
+}
+
+.auth-input {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.04);
+  color: #f8fafc;
+  padding: 0 12px;
+  outline: none;
+}
+
+.auth-input:focus {
+  border-color: rgba(147,197,253,.95);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.25);
+}
+
+.auth-error {
+  border: 1px solid rgba(248,113,113,.4);
+  background: rgba(127,29,29,.35);
+  color: #fecaca;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: .85rem;
+}
+
+.auth-submit {
+  min-height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  color: #f0fdf4;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.auth-submit:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.auth-footnote {
+  color: #9ca3af;
+  font-size: .8rem;
+}
+
+.auth-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.38);
+  background: rgba(15,23,42,.55);
+}
+
+.auth-user-chip__name {
+  font-size: .78rem;
+  color: #cbd5e1;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-user-chip__logout {
+  border: 1px solid rgba(248,113,113,.35);
+  background: rgba(127,29,29,.35);
+  color: #fecaca;
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: .74rem;
 }
 
 /* ── GLOBAL ALERT BANNER ── */
