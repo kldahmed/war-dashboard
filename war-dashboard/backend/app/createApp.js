@@ -18,6 +18,7 @@ const marketsRoutes  = require('../modules/markets/routes');
 const signalsRoutes  = require('../modules/signals/routes');
 const siteCustomizationRoutes = require('../modules/site-customization/routes');
 const legacyClaudeHandler = require('../../api/claude');
+const matchScoreHandler = require('../../api/health/match-score');
 
 function createApp() {
   const app = express();
@@ -45,6 +46,7 @@ function createApp() {
 
   // Legacy path remains available as fallback.
   app.post('/api/claude', legacyClaudeHandler);
+  app.get('/api/health/match-score', matchScoreHandler);
 
   app.use('/api', authRoutes);
   app.use('/api', observabilityRoutes);
