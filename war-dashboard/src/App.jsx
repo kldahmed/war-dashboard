@@ -2065,6 +2065,8 @@ function UAEMarketsPanel({ data, loading, available, error, onRetry }) {
    MAIN APP
 ───────────────────────────────────────────────── */
 export default function App() {
+  const GUEST_NEWS_LIMIT = 12;
+
   /* ── Tab ── */
   const [activeTab, setActiveTab] = useState('news');
 
@@ -2146,6 +2148,7 @@ export default function App() {
   const [sitrepLoading, setSitrepLoading] = useState(false);
 
   const PAGE_SIZE = 100;
+  const isGuest = !authUser;
 
   /* ─── News Loader ─── */
   const loadNews = useCallback(async (cat, q, pg) => {
@@ -2306,6 +2309,8 @@ export default function App() {
   }, []);
 
   const triggerNewsIngestionRecovery = useCallback(async ({ silent = true } = {}) => {
+    if (!authUser) return;
+
     const now = Date.now();
     if ((now - lastNewsIngestionKickAtRef.current) < 120_000) return;
     lastNewsIngestionKickAtRef.current = now;
@@ -2327,7 +2332,7 @@ export default function App() {
         setGlobalAlert({ severity: 'critical', message: `تعذر إطلاق النشر الفوري: ${err.message === 'HTTP 401' ? 'يجب تسجيل الدخول أولاً' : (err.message || 'network_error')}` });
       }
     }
-  }, [category, searchQ, loadNews, loadOps]);
+  }, [authUser, category, searchQ, loadNews, loadOps]);
 
   /* ─── Weather & Markets — instant HTTP fetch + SSE live push ─── */
   // Step 1: loadSignalPanels() fires two parallel HTTP GETs → data appears in < 500ms.
@@ -2471,9 +2476,18 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadNews('all', '', 1); }, [loadNews]);
-  useEffect(() => { loadLive({ silent: false }); }, [loadLive]);
-  useEffect(() => { loadOps(); }, [loadOps]);
-  useEffect(() => { loadSitrep(); }, [loadSitrep]);
+  useEffect(() => {
+    if (!authUser) return;
+    loadLive({ silent: false });
+  }, [authUser, loadLive]);
+  useEffect(() => {
+    if (!authUser) return;
+    loadOps();
+  }, [authUser, loadOps]);
+  useEffect(() => {
+    if (!authUser) return;
+    loadSitrep();
+  }, [authUser, loadSitrep]);
   useEffect(() => {
     if (selectedWeatherLocationId) return;
     const firstLocationId = weatherHub?.locations?.[0]?.id;
@@ -2668,8 +2682,14 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     await signOut();
     setAuthUser(null);
+    setActiveTab('news');
     setAuthForm((prev) => ({ ...prev, password: '', confirmPassword: '' }));
   }, []);
+
+  useEffect(() => {
+    if (!isGuest) return;
+    if (activeTab !== 'news') setActiveTab('news');
+  }, [isGuest, activeTab]);
 
   /* ─── Breaking Headlines for AI ─── */
   const breakingHeadlines = useMemo(() =>
@@ -2783,14 +2803,18 @@ export default function App() {
 
   /* ─── Newspaper pages ─── */
   const NP_PER_PAGE = 6;
+  const visibleNewsItems = useMemo(() => {
+    return isGuest ? newsItems.slice(0, GUEST_NEWS_LIMIT) : newsItems;
+  }, [isGuest, newsItems]);
+
   const npPages = useMemo(() => {
-    if (!newsItems.length) return [];
+    if (!visibleNewsItems.length) return [];
     const out = [];
-    for (let i = 0; i < newsItems.length; i += NP_PER_PAGE) {
-      out.push(newsItems.slice(i, i + NP_PER_PAGE));
+    for (let i = 0; i < visibleNewsItems.length; i += NP_PER_PAGE) {
+      out.push(visibleNewsItems.slice(i, i + NP_PER_PAGE));
     }
     return out;
-  }, [newsItems]);
+  }, [visibleNewsItems]);
 
   const npUsePortrait = viewportW < 980;
   const npBookPageWidth = useMemo(() => {
@@ -2844,107 +2868,103 @@ export default function App() {
     );
   }
 
-  if (!authUser) {
-    return (
-      <div className="auth-shell" dir="rtl">
-        <form className="auth-card" onSubmit={handleAuthSubmit}>
-          <h1 className="auth-title">WorldPulse</h1>
-          <p className="auth-subtitle">تسجيل احترافي للوصول إلى لوحة الأخبار</p>
+  const authFormCard = (
+    <form className="auth-card" onSubmit={handleAuthSubmit} id="auth-upgrade">
+      <h1 className="auth-title">WorldPulse</h1>
+      <p className="auth-subtitle">للمزيد من الأخبار والتحكم الكامل، سجّل الآن</p>
 
-          <div className="auth-switcher">
-            <button
-              type="button"
-              className={`auth-switch ${authMode === 'signin' ? 'auth-switch--active' : ''}`}
-              onClick={() => {
-                setAuthMode('signin');
-                setAuthError('');
-              }}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              className={`auth-switch ${authMode === 'signup' ? 'auth-switch--active' : ''}`}
-              onClick={() => {
-                setAuthMode('signup');
-                setAuthError('');
-              }}
-            >
-              Sign up
-            </button>
-          </div>
-
-          {authMode === 'signup' && (
-            <label className="auth-label">
-              الاسم
-              <input
-                className="auth-input"
-                type="text"
-                required
-                minLength={2}
-                value={authForm.displayName}
-                onChange={(e) => handleAuthField('displayName', e.target.value)}
-                placeholder="اسم العرض"
-              />
-            </label>
-          )}
-
-          <label className="auth-label">
-            البريد الإلكتروني
-            <input
-              className="auth-input"
-              type="email"
-              autoComplete="email"
-              required
-              value={authForm.email}
-              onChange={(e) => handleAuthField('email', e.target.value)}
-              placeholder="name@example.com"
-            />
-          </label>
-
-          <label className="auth-label">
-            كلمة المرور
-            <input
-              className="auth-input"
-              type="password"
-              autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-              required
-              minLength={8}
-              value={authForm.password}
-              onChange={(e) => handleAuthField('password', e.target.value)}
-              placeholder="8+ characters"
-            />
-          </label>
-
-          {authMode === 'signup' && (
-            <label className="auth-label">
-              تأكيد كلمة المرور
-              <input
-                className="auth-input"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={8}
-                value={authForm.confirmPassword}
-                onChange={(e) => handleAuthField('confirmPassword', e.target.value)}
-                placeholder="Repeat password"
-              />
-            </label>
-          )}
-
-          {authError && <div className="auth-error">{authError}</div>}
-
-          <button type="submit" className="auth-submit" disabled={authBusy}>
-            {authBusy ? 'جاري المعالجة...' : authMode === 'signup' ? 'إنشاء الحساب' : 'تسجيل الدخول'}
-          </button>
-
-          <p className="auth-footnote">
-            {authMode === 'signup' ? 'كلمة المرور يجب أن تحتوي 8 أحرف على الأقل، مع حرف كبير وحرف صغير ورقم.' : 'مرحبًا بعودتك إلى غرفة الأخبار.'}
-          </p>
-        </form>
+      <div className="auth-switcher">
+        <button
+          type="button"
+          className={`auth-switch ${authMode === 'signin' ? 'auth-switch--active' : ''}`}
+          onClick={() => {
+            setAuthMode('signin');
+            setAuthError('');
+          }}
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          className={`auth-switch ${authMode === 'signup' ? 'auth-switch--active' : ''}`}
+          onClick={() => {
+            setAuthMode('signup');
+            setAuthError('');
+          }}
+        >
+          Sign up
+        </button>
       </div>
-    );
-  }
+
+      {authMode === 'signup' && (
+        <label className="auth-label">
+          الاسم
+          <input
+            className="auth-input"
+            type="text"
+            required
+            minLength={2}
+            value={authForm.displayName}
+            onChange={(e) => handleAuthField('displayName', e.target.value)}
+            placeholder="اسم العرض"
+          />
+        </label>
+      )}
+
+      <label className="auth-label">
+        البريد الإلكتروني
+        <input
+          className="auth-input"
+          type="email"
+          autoComplete="email"
+          required
+          value={authForm.email}
+          onChange={(e) => handleAuthField('email', e.target.value)}
+          placeholder="name@example.com"
+        />
+      </label>
+
+      <label className="auth-label">
+        كلمة المرور
+        <input
+          className="auth-input"
+          type="password"
+          autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+          required
+          minLength={8}
+          value={authForm.password}
+          onChange={(e) => handleAuthField('password', e.target.value)}
+          placeholder="8+ characters"
+        />
+      </label>
+
+      {authMode === 'signup' && (
+        <label className="auth-label">
+          تأكيد كلمة المرور
+          <input
+            className="auth-input"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={8}
+            value={authForm.confirmPassword}
+            onChange={(e) => handleAuthField('confirmPassword', e.target.value)}
+            placeholder="Repeat password"
+          />
+        </label>
+      )}
+
+      {authError && <div className="auth-error">{authError}</div>}
+
+      <button type="submit" className="auth-submit" disabled={authBusy}>
+        {authBusy ? 'جاري المعالجة...' : authMode === 'signup' ? 'إنشاء الحساب' : 'تسجيل الدخول'}
+      </button>
+
+      <p className="auth-footnote">
+        {authMode === 'signup' ? 'كلمة المرور يجب أن تحتوي 8 أحرف على الأقل، مع حرف كبير وحرف صغير ورقم.' : 'مرحبًا بعودتك إلى غرفة الأخبار.'}
+      </p>
+    </form>
+  );
 
   return (
     <div className="app" dir="rtl">
@@ -2969,7 +2989,7 @@ export default function App() {
           </div>
 
           <nav className="site-nav">
-            {TABS.map(tab => (
+            {(isGuest ? TABS.filter((tab) => tab.id === 'news') : TABS).map(tab => (
               <button
                 key={tab.id}
                 className={`nav-tab ${activeTab === tab.id ? 'nav-tab--active' : ''}`}
@@ -2985,10 +3005,17 @@ export default function App() {
           </nav>
 
           <div className="site-header__tools">
-            <div className="auth-user-chip">
-              <span className="auth-user-chip__name">{authUser.display_name}</span>
-              <button className="auth-user-chip__logout" onClick={handleLogout}>Logout</button>
-            </div>
+            {authUser ? (
+              <div className="auth-user-chip">
+                <span className="auth-user-chip__name">{authUser.display_name}</span>
+                <button className="auth-user-chip__logout" onClick={handleLogout}>Logout</button>
+              </div>
+            ) : (
+              <div className="auth-user-chip">
+                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signin')}>Sign in</button>
+                <button className="auth-user-chip__logout" onClick={() => setAuthMode('signup')}>Sign up</button>
+              </div>
+            )}
             <button
               className="theme-toggle"
               onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
@@ -3047,9 +3074,26 @@ export default function App() {
 
             {!loadingNews && !sitrepLoading && page === 1 && <SitrepPanel sitrep={sitrep} />}
 
+            {isGuest && (
+              <section className="guest-upgrade" dir="rtl">
+                <div className="guest-upgrade__copy">
+                  <h3>الوضع المجاني: أخبار محدودة</h3>
+                  <p>يمكنك الآن قراءة {GUEST_NEWS_LIMIT} خبر فقط. للتغطية الكاملة والتحديثات المستمرة قم بالتسجيل.</p>
+                  <div className="guest-upgrade__benefits">
+                    <span>مزايا التسجيل:</span>
+                    <span>وصول كامل لكل الأخبار بدون حد</span>
+                    <span>التحديث التلقائي الفوري للمحتوى</span>
+                    <span>فتح لوحة البث المباشر والتحرير الذكي والخريطة</span>
+                    <span>صلاحيات تشغيل أدوات غرفة الأخبار (حسب الدور)</span>
+                  </div>
+                </div>
+                {authFormCard}
+              </section>
+            )}
+
 
             {/* ── NEWSPAPER VIEW ── */}
-            {!loadingNews && newsItems.length > 0 && (
+            {!loadingNews && visibleNewsItems.length > 0 && (
               <div className="np-arena">
                 {/* Nav bar */}
                 <div className="np-nav-bar">
@@ -3064,7 +3108,7 @@ export default function App() {
                     <span className="np-nav__label">من</span>
                     <span className="np-nav__num">{Math.ceil(npPages.length / 2)}</span>
                     <span className="np-nav__sep"> · </span>
-                    <span className="np-nav__count">{newsItems.length} خبر</span>
+                    <span className="np-nav__count">{visibleNewsItems.length} خبر</span>
                   </span>
                   <button
                     className="np-nav__btn"
@@ -3149,7 +3193,7 @@ export default function App() {
             {loadingNews && <LoadingSpinner />}
 
             {/* Pagination */}
-            {!loadingNews && hasMore && (
+            {!loadingNews && hasMore && !isGuest && (
               <div className="load-more-wrap">
                 <button className="btn btn--outline btn--lg" onClick={loadMore}>
                   تحميل المزيد
@@ -3157,7 +3201,13 @@ export default function App() {
               </div>
             )}
 
-            {!loadingNews && newsItems.length === 0 && !errorNews && (
+            {!loadingNews && hasMore && isGuest && (
+              <div className="load-more-wrap">
+                <a className="btn btn--outline btn--lg" href="#auth-upgrade">للمزيد من الأخبار سجّل الآن</a>
+              </div>
+            )}
+
+            {!loadingNews && visibleNewsItems.length === 0 && !errorNews && (
               <div className="empty-state">
                 <span className="empty-state__icon">📭</span>
                 <p>لا توجد أخبار مطابقة</p>
@@ -4154,6 +4204,49 @@ img { display: block; max-width: 100%; }
   padding: 0 10px;
   cursor: pointer;
   font-size: .74rem;
+}
+
+.guest-upgrade {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14px;
+  margin: 14px 0 20px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(56,189,248,.28);
+  background: linear-gradient(135deg, rgba(2,132,199,.16), rgba(15,23,42,.62));
+}
+
+.guest-upgrade__copy h3 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+  color: #e0f2fe;
+}
+
+.guest-upgrade__copy p {
+  color: rgba(224,242,254,.86);
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+.guest-upgrade__benefits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #bae6fd;
+  font-size: .86rem;
+}
+
+.guest-upgrade .auth-card {
+  width: 100%;
+  margin: 0;
+  padding: 18px;
+}
+
+@media (max-width: 980px) {
+  .guest-upgrade {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── GLOBAL ALERT BANNER ── */
