@@ -80,6 +80,8 @@ const MATCH_TICKER_BASELINE = {
   matchState: 'pre',
   detail: 'جارِ الاتصال بمزود النتائج المباشرة...',
   source: 'espn',
+  competition: 'Top Global Matches',
+  featuredClubLabel: 'ريال مدريد',
   matchFound: false,
   syncedAtIso: null,
 };
@@ -638,6 +640,8 @@ function LiveMatchTicker({
   matchFound,
   syncedAtIso,
   source,
+  competition,
+  featuredClubLabel,
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
 
@@ -670,6 +674,12 @@ function LiveMatchTicker({
         <div className="match-ticker__inner">
           {[0, 1].map((i) => (
             <span key={i} className="match-ticker__item">
+              <span className="match-ticker__league">ملعب النخبة</span>
+              <span className="match-ticker__dot">•</span>
+              <span>{competition || 'Top Global Matches'}</span>
+              <span className="match-ticker__dot">•</span>
+              <span>تركيزنا الآن: {featuredClubLabel || homeTeam}</span>
+              <span className="match-ticker__dot">•</span>
               <strong>{homeTeam}</strong>
               <span className="match-ticker__score">{homeScore}</span>
               <span className="match-ticker__dash">-</span>
@@ -2864,6 +2874,8 @@ export default function App() {
         matchState: String(payload?.state || 'pre').toLowerCase(),
         detail: payload?.detail || MATCH_TICKER_BASELINE.detail,
         source: payload?.source || 'espn',
+        competition: payload?.competition || MATCH_TICKER_BASELINE.competition,
+        featuredClubLabel: payload?.featured_club_label || MATCH_TICKER_BASELINE.featuredClubLabel,
         matchFound: Boolean(payload?.match_found),
         syncedAtIso: payload?.fetched_at || new Date().toISOString(),
       });
@@ -4142,6 +4154,8 @@ export default function App() {
         matchFound={liveMatchData.matchFound}
         syncedAtIso={liveMatchData.syncedAtIso}
         source={liveMatchData.source}
+        competition={liveMatchData.competition}
+        featuredClubLabel={liveMatchData.featuredClubLabel}
       />
 
       <DeadlineAlertClock deadlineIso={TRUMP_IRAN_DEADLINE_ISO} />
@@ -6209,16 +6223,52 @@ img { display: block; max-width: 100%; }
 .ticker-sep { margin-left: 12px; opacity: .4; }
 
 .match-ticker {
-  background: linear-gradient(90deg, rgba(22,101,52,.96), rgba(21,128,61,.96));
+  position: relative;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(22,101,52,.98) 0,
+      rgba(22,101,52,.98) 36px,
+      rgba(21,128,61,.98) 36px,
+      rgba(21,128,61,.98) 72px
+    );
   color: #f0fdf4;
   display: flex;
   align-items: center;
   overflow: hidden;
-  height: 34px;
-  border-bottom: 1px solid rgba(255,255,255,.14);
+  height: 38px;
+  border-bottom: 1px solid rgba(255,255,255,.2);
+  box-shadow:
+    inset 0 -1px 0 rgba(255,255,255,.16),
+    inset 0 10px 20px rgba(255,255,255,.06),
+    0 8px 18px rgba(0,0,0,.18);
+}
+
+.match-ticker::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 49.5%, rgba(255,255,255,.2) 50%, transparent 50.5%),
+    radial-gradient(circle at center, transparent 0 22%, rgba(255,255,255,.18) 22.5%, transparent 23%);
+  opacity: .35;
+}
+
+.match-ticker::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(200px 38px at 0% 0%, rgba(255,255,255,.12), transparent 60%),
+    radial-gradient(220px 38px at 100% 0%, rgba(255,255,255,.12), transparent 60%);
+  opacity: .7;
 }
 
 .match-ticker__label {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   height: 100%;
   display: inline-flex;
@@ -6228,6 +6278,7 @@ img { display: block; max-width: 100%; }
   font-weight: 900;
   letter-spacing: .06em;
   background: rgba(0,0,0,.2);
+  text-shadow: 0 0 10px rgba(255,255,255,.32);
 }
 
 .match-ticker__label--in {
@@ -6243,6 +6294,8 @@ img { display: block; max-width: 100%; }
 }
 
 .match-ticker__track {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow: hidden;
 }
@@ -6256,9 +6309,21 @@ img { display: block; max-width: 100%; }
 .match-ticker__item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 0 14px;
   font-size: .82rem;
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
+
+.match-ticker__league {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: .7rem;
+  font-weight: 800;
+  background: rgba(15,23,42,.45);
 }
 
 .match-ticker__score {
