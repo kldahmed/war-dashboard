@@ -72,12 +72,75 @@ const TRUMP_DEADLINE_HOURGLASS_WINDOW_MS = 36 * 3600 * 1000;
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
+  politics: { label: 'سياسة' },
+  government: { label: 'حكومي' },
+  society: { label: 'مجتمعي' },
+  family: { label: 'عائلي' },
+  kids: { label: 'أطفال' },
   sports: { label: 'رياضة' },
   entertainment: { label: 'ترفيه' },
   economy: { label: 'اقتصاد' },
   documentary: { label: 'وثائقي' },
   live: { label: 'مباشر' },
   other: { label: 'أخرى' },
+};
+
+const LIVE_DISPLAY_NAME_OVERRIDES = {
+  'al-jazeera-ar-live': 'الجزيرة',
+  'al-jazeera-mubasher': 'الجزيرة مباشر',
+  'al-hadath-live': 'الحدث',
+  'sky-news-arabia-live': 'سكاي نيوز عربية',
+  'saudi-ekhbariya-live': 'السعودية الإخبارية',
+  'al-mayadeen-live': 'الميادين',
+  'alaraby-tv-live': 'التلفزيون العربي',
+  'asharq-news-live': 'الشرق للأخبار',
+  'al-manar-live': 'المنار',
+  'palestine-today-live': 'فلسطين اليوم',
+  'rt-ar-live': 'آر تي العربية',
+  'al-sharqiya-live': 'الشرقية',
+  'al-sharqiya-news-live': 'الشرقية نيوز',
+  'france24-ar-live': 'فرانس 24 عربي',
+  'dw-ar-live': 'دويتشه فيله عربي',
+  'trt-arabi-live': 'TRT عربي',
+  'kurdistan24-live': 'كردستان 24',
+  'alkass-one-live': 'الكأس 1',
+  'alkass-two-live': 'الكأس 2',
+  'alkass-three-live': 'الكأس 3',
+  'alkass-four-live': 'الكأس 4',
+  'alkass-five-live': 'الكأس 5',
+  'alkass-shoof-live': 'الكأس شوف',
+  'mbc1-live': 'MBC 1',
+  'mbc4-live': 'MBC 4',
+  'mbc5-live': 'MBC 5',
+  'mbc-drama-live': 'MBC دراما',
+  'mbc-masr-live': 'MBC مصر',
+  'mbc-masr2-live': 'MBC مصر 2',
+  'mbc-iraq-live': 'MBC العراق',
+  'mtv-lebanon-live': 'إم تي في لبنان',
+  'spacetoon-ar-live': 'سبيستون',
+  'cnbc-arabia-live': 'CNBC عربية',
+};
+
+const LIVE_CATEGORY_OVERRIDES = {
+  'al-jazeera-ar-live': 'politics',
+  'al-jazeera-mubasher': 'politics',
+  'al-hadath-live': 'politics',
+  'sky-news-arabia-live': 'politics',
+  'saudi-ekhbariya-live': 'government',
+  'asharq-news-live': 'politics',
+  'france24-ar-live': 'politics',
+  'dw-ar-live': 'politics',
+  'trt-arabi-live': 'politics',
+  'mbc-masr-live': 'society',
+  'mbc-masr2-live': 'society',
+  'mbc-iraq-live': 'society',
+  'mtv-lebanon-live': 'society',
+  'spacetoon-ar-live': 'kids',
+  'mbc1-live': 'family',
+  'mbc4-live': 'family',
+  'mbc5-live': 'family',
+  'mbc-drama-live': 'entertainment',
+  'cnbc-arabia-live': 'economy',
 };
 
 const CATEGORY_COORDS = {
@@ -850,7 +913,12 @@ function getStreamId(entry) {
 
 function getStreamName(entry) {
   const stream = getStreamRecord(entry);
-  return entry?.source?.name || stream.name || stream.registry_id || 'قناة غير معروفة';
+  const registryId = getStreamId(entry);
+  return LIVE_DISPLAY_NAME_OVERRIDES[registryId]
+    || entry?.source?.name
+    || stream.name
+    || stream.registry_id
+    || 'قناة غير معروفة';
 }
 
 function getStreamLanguage(entry) {
@@ -859,7 +927,11 @@ function getStreamLanguage(entry) {
 }
 
 function getStreamCategory(entry) {
-  return entry?.source?.category || getStreamRecord(entry).category || 'other';
+  const registryId = getStreamId(entry);
+  return LIVE_CATEGORY_OVERRIDES[registryId]
+    || entry?.source?.category
+    || getStreamRecord(entry).category
+    || 'other';
 }
 
 function getLiveCategoryLabel(category) {
@@ -2318,6 +2390,7 @@ export default function App() {
   const [metricsBasic,   setMetricsBasic]   = useState(null);
   const [productKpi, setProductKpi] = useState(null);
   const [decisionAutopilot, setDecisionAutopilot] = useState(null);
+  const [streamCandidates, setStreamCandidates] = useState(null);
   const [loadingOps,     setLoadingOps]     = useState(false);
   const [errorOps,       setErrorOps]       = useState(null);
   const [opsUpdatedAt,   setOpsUpdatedAt]   = useState(null);
@@ -2488,25 +2561,28 @@ export default function App() {
     setLoadingOps(true);
     setErrorOps(null);
     try {
-      const [nrRes, mbRes, shRes, pkRes, daRes] = await Promise.all([
+      const [nrRes, mbRes, shRes, pkRes, daRes, scRes] = await Promise.all([
         fetch('/api/health/newsroom'),
         fetch('/api/health/metrics-basic'),
         fetch('/api/health/signals'),
         authFetch('/api/health/product-kpi'),
         authFetch('/api/health/decision-autopilot'),
+        authFetch('/api/health/stream-candidates'),
       ]);
-      const [nrData, mbData, shData, pkData, daData] = await Promise.all([
+      const [nrData, mbData, shData, pkData, daData, scData] = await Promise.all([
         nrRes.ok ? nrRes.json() : Promise.resolve(null),
         mbRes.ok ? mbRes.json() : Promise.resolve(null),
         shRes.ok ? shRes.json() : Promise.resolve(null),
         pkRes.ok ? pkRes.json() : Promise.resolve(null),
         daRes.ok ? daRes.json() : Promise.resolve(null),
+        scRes.ok ? scRes.json() : Promise.resolve(null),
       ]);
       setNewsroomStatus(nrData);
       setMetricsBasic(mbData);
       setSignalsHealth(shData);
       setProductKpi(pkData);
       setDecisionAutopilot(daData);
+      setStreamCandidates(scData);
       setOpsUpdatedAt(new Date().toISOString());
       // Global critical banner?
       const feedMs = nrData?.feed_staleness?.seconds_since_last_feed;
@@ -2518,6 +2594,7 @@ export default function App() {
     } catch (err) {
       setProductKpi(null);
       setDecisionAutopilot(null);
+      setStreamCandidates(null);
       setErrorOps(err.message);
     } finally {
       setLoadingOps(false);
@@ -3880,6 +3957,39 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </section>
+            )}
+            {streamCandidates?.candidate_inventory && (
+              <section className="ops-autopilot ops-autopilot--candidates" dir="rtl">
+                <header className="ops-autopilot__header">
+                  <div>
+                    <span>Stream Discovery</span>
+                    <h3>قمع اعتماد القنوات</h3>
+                  </div>
+                  <div className="ops-autopilot__mode ops-autopilot__mode--autonomous">STRICT</div>
+                </header>
+
+                <div className="ops-autopilot__stats">
+                  <div>
+                    <span>السجل الرسمي</span>
+                    <strong>{formatNumeric(streamCandidates.candidate_inventory.official_registry_total)}</strong>
+                  </div>
+                  <div>
+                    <span>مرشحون seeded</span>
+                    <strong>{formatNumeric(streamCandidates.candidate_inventory.seeded_candidates_total)}</strong>
+                  </div>
+                  <div>
+                    <span>موافق عليهم</span>
+                    <strong>{formatNumeric(streamCandidates.candidate_inventory.approved_candidates)}</strong>
+                  </div>
+                </div>
+
+                <article className="ops-autopilot__primary">
+                  <span className="ops-autopilot__code">DIRECT_PLAY_ONLY</span>
+                  <h4>أي قناة جديدة يجب أن تنجح في Probe مباشر قبل التفكير بعرضها</h4>
+                  <p>المسار الجديد يسمح بفحص JSON مرشحين عبر API أو سكربت محلي، ويعيد الموافق عليهم فقط إذا كانوا عربًا ويعملون من داخل الموقع مباشرة.</p>
+                  <small>استخدم npm script: probe:stream:candidates مع ملف JSON مرشحين.</small>
+                </article>
               </section>
             )}
             <div className="ops-signal-grid">

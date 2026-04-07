@@ -321,6 +321,12 @@ async function getStreamStatusSnapshot() {
         story_relevance_score: Number(row.latest_story_relevance_score || 0),
       },
     };
+  }).filter((stream) => {
+    return stream.source.language === 'ar'
+      && stream.stream.playback_mode === 'playable'
+      && stream.stream.embed_supported === true
+      && stream.stream.verification_status === 'embed_ok'
+      && stream.stream.uptime_status === 'up';
   }).sort((left, right) => {
     if (right.stream.score !== left.stream.score) return right.stream.score - left.stream.score;
     return String(right.stream.last_success_at || '').localeCompare(String(left.stream.last_success_at || ''));

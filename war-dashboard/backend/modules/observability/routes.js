@@ -9,6 +9,7 @@ const { getStreamStatusSnapshot } = require('./stream-status');
 const { getNewsroomStatusSnapshot } = require('./newsroom-status');
 const { getProductKpiSnapshot } = require('./product-kpi');
 const { getDecisionAutopilotSnapshot } = require('./decision-autopilot');
+const { getStreamCandidateSnapshot, probeStreamCandidates } = require('./stream-candidates');
 const sseHub = require('../../lib/sse-hub');
 const { getSignalsHealth } = require('../signals/service');
 
@@ -143,6 +144,29 @@ router.get('/health/decision-autopilot', requireAuth, requireRole('admin'), asyn
 
   res.json({
     ...snapshot,
+    correlation_id: req.correlationId || null,
+  });
+}));
+
+router.get('/health/stream-candidates', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
+  const snapshot = await getStreamCandidateSnapshot();
+
+  res.json({
+    ...snapshot,
+    correlation_id: req.correlationId || null,
+  });
+}));
+
+router.post('/health/stream-candidates/probe', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
+  const candidates = Array.isArray(req.body?.candidates) ? req.body.candidates : [];
+  const probe = await probeStreamCandidates(candidates, {
+    arabicOnly: true,
+    directOnly: true,
+  });
+
+  res.json({
+    generated_at: new Date().toISOString(),
+    ...probe,
     correlation_id: req.correlationId || null,
   });
 }));
