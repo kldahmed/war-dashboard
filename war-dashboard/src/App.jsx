@@ -2126,6 +2126,7 @@ export default function App() {
   const [newsroomStatus, setNewsroomStatus] = useState(null);
   const [metricsBasic,   setMetricsBasic]   = useState(null);
   const [productKpi, setProductKpi] = useState(null);
+  const [decisionAutopilot, setDecisionAutopilot] = useState(null);
   const [loadingOps,     setLoadingOps]     = useState(false);
   const [errorOps,       setErrorOps]       = useState(null);
   const [opsUpdatedAt,   setOpsUpdatedAt]   = useState(null);
@@ -2296,22 +2297,25 @@ export default function App() {
     setLoadingOps(true);
     setErrorOps(null);
     try {
-      const [nrRes, mbRes, shRes, pkRes] = await Promise.all([
+      const [nrRes, mbRes, shRes, pkRes, daRes] = await Promise.all([
         fetch('/api/health/newsroom'),
         fetch('/api/health/metrics-basic'),
         fetch('/api/health/signals'),
         authFetch('/api/health/product-kpi'),
+        authFetch('/api/health/decision-autopilot'),
       ]);
-      const [nrData, mbData, shData, pkData] = await Promise.all([
+      const [nrData, mbData, shData, pkData, daData] = await Promise.all([
         nrRes.ok ? nrRes.json() : Promise.resolve(null),
         mbRes.ok ? mbRes.json() : Promise.resolve(null),
         shRes.ok ? shRes.json() : Promise.resolve(null),
         pkRes.ok ? pkRes.json() : Promise.resolve(null),
+        daRes.ok ? daRes.json() : Promise.resolve(null),
       ]);
       setNewsroomStatus(nrData);
       setMetricsBasic(mbData);
       setSignalsHealth(shData);
       setProductKpi(pkData);
+      setDecisionAutopilot(daData);
       setOpsUpdatedAt(new Date().toISOString());
       // Global critical banner?
       const feedMs = nrData?.feed_staleness?.seconds_since_last_feed;
@@ -2322,6 +2326,7 @@ export default function App() {
       }
     } catch (err) {
       setProductKpi(null);
+      setDecisionAutopilot(null);
       setErrorOps(err.message);
     } finally {
       setLoadingOps(false);
@@ -3451,6 +3456,55 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </section>
+            )}
+            {decisionAutopilot?.autopilot && (
+              <section className="ops-autopilot" dir="rtl">
+                <header className="ops-autopilot__header">
+                  <div>
+                    <span>Decision Autopilot</span>
+                    <h3>غرفة القرار الذاتي</h3>
+                  </div>
+                  <div className={`ops-autopilot__mode ops-autopilot__mode--${decisionAutopilot.autopilot.mode || 'hybrid'}`}>
+                    {decisionAutopilot.autopilot.mode === 'autonomous'
+                      ? 'AUTONOMOUS'
+                      : decisionAutopilot.autopilot.mode === 'human_gate'
+                        ? 'HUMAN GATE'
+                        : 'HYBRID'}
+                  </div>
+                </header>
+
+                <div className="ops-autopilot__stats">
+                  <div>
+                    <span>Risk Score</span>
+                    <strong>{formatNumeric(decisionAutopilot.autopilot.risk_score)}</strong>
+                  </div>
+                  <div>
+                    <span>Reliability</span>
+                    <strong>{formatNumeric(decisionAutopilot.autopilot.reliability_score)}%</strong>
+                  </div>
+                  <div>
+                    <span>Band</span>
+                    <strong>{decisionAutopilot.autopilot.risk_band || 'stable'}</strong>
+                  </div>
+                </div>
+
+                <article className="ops-autopilot__primary">
+                  <span className="ops-autopilot__code">{decisionAutopilot.autopilot.primary_action?.code || 'NO_ACTION'}</span>
+                  <h4>{decisionAutopilot.autopilot.primary_action?.title || 'لا يوجد قرار أساسي'}</h4>
+                  <p>{decisionAutopilot.autopilot.primary_action?.reason || '—'}</p>
+                  <small>{decisionAutopilot.autopilot.primary_action?.expected_impact || '—'}</small>
+                </article>
+
+                <div className="ops-autopilot__counterfactuals">
+                  {(decisionAutopilot.autopilot.counterfactuals || []).map((cf) => (
+                    <div key={cf.strategy} className="ops-autopilot__cf-item">
+                      <span>{cf.title}</span>
+                      <strong>{cf.expected_gain}</strong>
+                      <p>{cf.opportunity_loss_if_skipped}</p>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
             <div className="ops-signal-grid">
@@ -7108,6 +7162,136 @@ img { display: block; max-width: 100%; }
   text-align: center;
   font-size: .64rem;
   color: var(--text3);
+}
+.ops-autopilot {
+  margin: 0 0 14px;
+  border: 1px solid rgba(148,163,184,.24);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(2,6,23,.7) 0%, rgba(15,23,42,.55) 100%);
+  padding: 14px;
+}
+.ops-autopilot__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.ops-autopilot__header span {
+  font-size: .72rem;
+  color: var(--text2);
+}
+.ops-autopilot__header h3 {
+  margin: 3px 0 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+.ops-autopilot__mode {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  border: 1px solid transparent;
+}
+.ops-autopilot__mode--autonomous {
+  color: #34d399;
+  border-color: rgba(52,211,153,.35);
+  background: rgba(52,211,153,.12);
+}
+.ops-autopilot__mode--hybrid {
+  color: #f59e0b;
+  border-color: rgba(245,158,11,.35);
+  background: rgba(245,158,11,.12);
+}
+.ops-autopilot__mode--human_gate {
+  color: #f87171;
+  border-color: rgba(248,113,113,.35);
+  background: rgba(248,113,113,.12);
+}
+.ops-autopilot__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.ops-autopilot__stats div {
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 10px;
+  padding: 9px;
+  background: rgba(15,23,42,.48);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ops-autopilot__stats span {
+  color: var(--text2);
+  font-size: .69rem;
+}
+.ops-autopilot__stats strong {
+  color: var(--text);
+  font-size: .95rem;
+}
+.ops-autopilot__primary {
+  border: 1px solid rgba(59,130,246,.3);
+  border-radius: 11px;
+  background: rgba(30,64,175,.13);
+  padding: 10px 12px;
+  margin: 0 0 10px;
+}
+.ops-autopilot__code {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: .64rem;
+  letter-spacing: .04em;
+  color: #93c5fd;
+  border: 1px solid rgba(147,197,253,.32);
+  background: rgba(30,58,138,.25);
+}
+.ops-autopilot__primary h4 {
+  margin: 8px 0 6px;
+  font-size: .9rem;
+  color: var(--text);
+}
+.ops-autopilot__primary p {
+  margin: 0;
+  color: var(--text2);
+  font-size: .8rem;
+}
+.ops-autopilot__primary small {
+  display: block;
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: .73rem;
+}
+.ops-autopilot__counterfactuals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+.ops-autopilot__cf-item {
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 10px;
+  background: rgba(15,23,42,.42);
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ops-autopilot__cf-item span {
+  color: var(--text);
+  font-size: .76rem;
+  font-weight: 700;
+}
+.ops-autopilot__cf-item strong {
+  color: #a7f3d0;
+  font-size: .76rem;
+}
+.ops-autopilot__cf-item p {
+  margin: 0;
+  color: var(--text2);
+  font-size: .73rem;
 }
 .signals-badge {
   display: inline-flex;

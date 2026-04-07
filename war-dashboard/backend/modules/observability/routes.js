@@ -8,6 +8,7 @@ const { requireAuth, requireRole } = require('../../lib/auth-middleware');
 const { getStreamStatusSnapshot } = require('./stream-status');
 const { getNewsroomStatusSnapshot } = require('./newsroom-status');
 const { getProductKpiSnapshot } = require('./product-kpi');
+const { getDecisionAutopilotSnapshot } = require('./decision-autopilot');
 const sseHub = require('../../lib/sse-hub');
 const { getSignalsHealth } = require('../signals/service');
 
@@ -130,6 +131,15 @@ router.get('/health/optimizer', asyncHandler(async (req, res) => {
 
 router.get('/health/product-kpi', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
   const snapshot = await getProductKpiSnapshot();
+
+  res.json({
+    ...snapshot,
+    correlation_id: req.correlationId || null,
+  });
+}));
+
+router.get('/health/decision-autopilot', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
+  const snapshot = await getDecisionAutopilotSnapshot();
 
   res.json({
     ...snapshot,
