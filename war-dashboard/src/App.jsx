@@ -5000,6 +5000,7 @@ img { display: block; max-width: 100%; }
 :root, [data-theme="dark"] {
   --bg-8k-a: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7680 4320'%3E%3Cdefs%3E%3CradialGradient id='g1' cx='18%25' cy='22%25' r='62%25'%3E%3Cstop offset='0%25' stop-color='%2317a2ff' stop-opacity='0.40'/%3E%3Cstop offset='55%25' stop-color='%2317a2ff' stop-opacity='0.08'/%3E%3Cstop offset='100%25' stop-color='%23000000' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='g2' cx='78%25' cy='72%25' r='56%25'%3E%3Cstop offset='0%25' stop-color='%2322d3ee' stop-opacity='0.30'/%3E%3Cstop offset='60%25' stop-color='%2322d3ee' stop-opacity='0.06'/%3E%3Cstop offset='100%25' stop-color='%23000000' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='7680' height='4320' fill='%23060c16'/%3E%3Crect width='7680' height='4320' fill='url(%23g1)'/%3E%3Crect width='7680' height='4320' fill='url(%23g2)'/%3E%3Cg fill='%23ffffff' fill-opacity='0.09'%3E%3Ccircle cx='660' cy='720' r='2.8'/%3E%3Ccircle cx='1290' cy='540' r='2.4'/%3E%3Ccircle cx='1830' cy='1020' r='2.1'/%3E%3Ccircle cx='2480' cy='680' r='2.7'/%3E%3Ccircle cx='3010' cy='980' r='2.2'/%3E%3Ccircle cx='3580' cy='730' r='2.6'/%3E%3Ccircle cx='4180' cy='1140' r='2.1'/%3E%3Ccircle cx='4760' cy='790' r='2.5'/%3E%3Ccircle cx='5320' cy='1280' r='2.3'/%3E%3Ccircle cx='5900' cy='700' r='2.7'/%3E%3Ccircle cx='6510' cy='1080' r='2.4'/%3E%3Ccircle cx='7120' cy='860' r='2.8'/%3E%3C/g%3E%3C/svg%3E");
   --bg-8k-b: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7680 4320'%3E%3Cdefs%3E%3ClinearGradient id='l1' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%230b1323'/%3E%3Cstop offset='48%25' stop-color='%230c1d34'/%3E%3Cstop offset='100%25' stop-color='%23091527'/%3E%3C/linearGradient%3E%3CradialGradient id='r1' cx='72%25' cy='20%25' r='52%25'%3E%3Cstop offset='0%25' stop-color='%2322c55e' stop-opacity='0.18'/%3E%3Cstop offset='100%25' stop-color='%23000000' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='7680' height='4320' fill='url(%23l1)'/%3E%3Crect width='7680' height='4320' fill='url(%23r1)'/%3E%3Cpath d='M0 2920C710 2580 1340 2740 1980 2510C2660 2270 3380 2330 4050 2130C4680 1940 5310 1700 5970 1620C6560 1540 7130 1600 7680 1460V4320H0Z' fill='%230ea5e9' fill-opacity='0.08'/%3E%3Cpath d='M0 3320C760 3160 1460 3180 2160 2990C2840 2810 3520 2630 4210 2540C4880 2450 5550 2500 6210 2380C6740 2280 7220 2130 7680 2010V4320H0Z' fill='%2310b981' fill-opacity='0.08'/%3E%3C/svg%3E");
+  --bg-8k-war-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7680 4320'%3E%3Cdefs%3E%3ClinearGradient id='s' x1='0%25' y1='0%25' x2='100%25' y2='0%25'%3E%3Cstop offset='0%25' stop-color='%23ef4444' stop-opacity='0'/%3E%3Cstop offset='14%25' stop-color='%23ef4444' stop-opacity='0.17'/%3E%3Cstop offset='50%25' stop-color='%23f59e0b' stop-opacity='0.13'/%3E%3Cstop offset='82%25' stop-color='%23ef4444' stop-opacity='0.17'/%3E%3Cstop offset='100%25' stop-color='%23ef4444' stop-opacity='0'/%3E%3C/linearGradient%3E%3CradialGradient id='r' cx='50%25' cy='38%25' r='42%25'%3E%3Cstop offset='0%25' stop-color='%23fb7185' stop-opacity='0.16'/%3E%3Cstop offset='100%25' stop-color='%23000000' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='7680' height='4320' fill='url(%23r)'/%3E%3Cg stroke='url(%23s)' fill='none' stroke-width='4'%3E%3Cpath d='M0 920 L620 920 L760 780 L980 1080 L1190 920 L1680 920 L1820 760 L2030 1120 L2280 920 L2860 920 L3050 700 L3270 1180 L3490 920 L4120 920 L4300 770 L4510 1100 L4750 920 L5360 920 L5530 760 L5750 1090 L5980 920 L7680 920'/%3E%3Cpath d='M0 1730 L640 1730 L840 1540 L1060 1940 L1260 1730 L1720 1730 L1910 1510 L2140 1980 L2360 1730 L2920 1730 L3120 1490 L3360 2010 L3580 1730 L4180 1730 L4380 1510 L4600 1960 L4840 1730 L5380 1730 L5570 1530 L5790 1930 L6020 1730 L7680 1730'/%3E%3Cpath d='M0 2540 L620 2540 L800 2420 L980 2670 L1200 2540 L1660 2540 L1860 2380 L2080 2710 L2300 2540 L2860 2540 L3060 2360 L3300 2740 L3520 2540 L4100 2540 L4300 2390 L4520 2680 L4740 2540 L5340 2540 L5530 2380 L5750 2690 L5980 2540 L7680 2540'/%3E%3C/g%3E%3C/svg%3E");
   --bg:          #090f1a;
   --bg2:         #0f1727;
   --bg3:         #182238;
@@ -5058,15 +5059,16 @@ img { display: block; max-width: 100%; }
   background:
     var(--bg-8k-a),
     var(--bg-8k-b),
+    var(--bg-8k-war-wave),
     radial-gradient(38rem 20rem at 12% -5%, rgba(14,165,233,.22), transparent 68%),
     radial-gradient(32rem 18rem at 92% 0%, rgba(34,197,94,.14), transparent 74%),
     linear-gradient(180deg, #09101d 0%, #0a1425 45%, #0b1729 100%);
-  background-size: 112% 112%, 126% 126%, auto, auto, auto;
-  background-position: center center, 52% 48%, center top, right top, center;
+  background-size: 112% 112%, 126% 126%, 116% 116%, auto, auto, auto;
+  background-position: center center, 52% 48%, 50% 46%, center top, right top, center;
   filter: saturate(1.06) contrast(1.04);
   transform-origin: center center;
   will-change: transform, background-position, filter;
-  animation: bg-8k-pan 42s ease-in-out infinite alternate, bg-8k-breathe 16s ease-in-out infinite;
+  animation: bg-8k-pan 42s ease-in-out infinite alternate, bg-8k-breathe 16s ease-in-out infinite, bg-siren-wave 7.2s ease-in-out infinite;
 }
 .app::after {
   content: '';
@@ -5086,18 +5088,19 @@ img { display: block; max-width: 100%; }
   background:
     var(--bg-8k-a),
     var(--bg-8k-b),
+    var(--bg-8k-war-wave),
     radial-gradient(40rem 18rem at 12% -8%, rgba(14,165,233,.2), transparent 70%),
     radial-gradient(34rem 16rem at 92% 0%, rgba(34,197,94,.14), transparent 74%),
     linear-gradient(180deg, #f7faff 0%, #eef5ff 52%, #edf3ff 100%);
-  background-size: 112% 112%, 124% 124%, auto, auto, auto;
-  background-position: center center, 52% 48%, center top, right top, center;
+  background-size: 112% 112%, 124% 124%, 114% 114%, auto, auto, auto;
+  background-position: center center, 52% 48%, 50% 46%, center top, right top, center;
   filter: saturate(1) brightness(1.08);
 }
 
 @media (min-width: 1280px) {
   .app::before {
-    background-size: 120% 120%, 136% 136%, auto, auto, auto;
-    animation-duration: 36s, 14s;
+    background-size: 120% 120%, 136% 136%, 124% 124%, auto, auto, auto;
+    animation-duration: 36s, 14s, 6.2s;
   }
   .app::after {
     opacity: .3;
@@ -5108,9 +5111,9 @@ img { display: block; max-width: 100%; }
 
 @media (max-width: 760px) {
   .app::before {
-    background-size: 106% 106%, 112% 112%, auto, auto, auto;
+    background-size: 106% 106%, 112% 112%, 108% 108%, auto, auto, auto;
     filter: saturate(1.03) contrast(1.02);
-    animation-duration: 68s, 24s;
+    animation-duration: 68s, 24s, 10.5s;
   }
   .app::after {
     opacity: .14;
@@ -5178,15 +5181,15 @@ img { display: block; max-width: 100%; }
 
 @keyframes bg-8k-pan {
   0% {
-    background-position: 50% 50%, 52% 48%, center top, right top, center;
+    background-position: 50% 50%, 52% 48%, 50% 46%, center top, right top, center;
     transform: scale(1);
   }
   50% {
-    background-position: 49% 51%, 54% 46%, center top, right top, center;
+    background-position: 49% 51%, 54% 46%, 52% 44%, center top, right top, center;
     transform: scale(1.018);
   }
   100% {
-    background-position: 51% 49%, 50% 50%, center top, right top, center;
+    background-position: 51% 49%, 50% 50%, 48% 48%, center top, right top, center;
     transform: scale(1.03);
   }
 }
@@ -5202,6 +5205,21 @@ img { display: block; max-width: 100%; }
   }
   50% {
     filter: saturate(1.14) contrast(1.08) brightness(1.03);
+  }
+}
+
+@keyframes bg-siren-wave {
+  0%, 100% {
+    opacity: .8;
+    transform: scale(1);
+  }
+  35% {
+    opacity: .58;
+    transform: scale(1.02);
+  }
+  68% {
+    opacity: .92;
+    transform: scale(1.01);
   }
 }
 
