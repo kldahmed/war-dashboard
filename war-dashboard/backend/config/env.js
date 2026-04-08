@@ -20,7 +20,7 @@ module.exports = {
   ingestionStaleJobMinutes: toInt(process.env.INGESTION_STALE_JOB_MINUTES, 45),
   ingestionConcurrency: toInt(process.env.INGESTION_CONCURRENCY, 32),
   ingestionSkipTranslation:
-    String(process.env.INGESTION_SKIP_TRANSLATION || 'true').toLowerCase() === 'true',
+    String(process.env.INGESTION_SKIP_TRANSLATION || 'false').toLowerCase() === 'true',
   ingestionScheduleEnabled:
     String(process.env.INGESTION_SCHEDULE_ENABLED || 'true').toLowerCase() === 'true',
   ingestionScheduleMs: toInt(process.env.INGESTION_SCHEDULE_MS, 15000),

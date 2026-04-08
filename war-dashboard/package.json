@@ -40,7 +40,9 @@
     "probe:stream:candidates": "node scripts/probe-stream-candidates.js",
     "optimizer:run": "node backend/jobs/auto-optimize.js",
     "sitrep:run": "node backend/jobs/generate-sitrep.js",
-    "sitrep:force": "node backend/jobs/generate-sitrep.js --force"
+    "sitrep:force": "node backend/jobs/generate-sitrep.js --force",
+    "translate:backfill": "node scripts/backfill-translations.js",
+    "translate:backfill:dry": "node scripts/backfill-translations.js --dry-run"
   },
   "browserslist": {
     "production": [
