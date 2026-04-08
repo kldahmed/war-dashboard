@@ -68,22 +68,6 @@ const MISSION_STREAMS = [
 ];
 
 const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
-const MATCH_TICKER_BASELINE = {
-  homeTeam: 'ريال مدريد',
-  awayTeam: 'بايرن ميونخ',
-  homeScore: 0,
-  awayScore: 0,
-  startedAtIso: null,
-  clockSeconds: 0,
-  matchState: 'pre',
-  detail: 'جارِ الاتصال بمزود النتائج المباشرة...',
-  source: 'espn',
-  competition: 'Top Global Matches',
-  featuredClubLabel: 'ريال مدريد',
-  matchFound: false,
-  nextMatch: null,
-  syncedAtIso: null,
-};
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
@@ -622,105 +606,6 @@ function BreakingTicker({ items }) {
             </span>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function LiveMatchTicker({
-  homeTeam,
-  awayTeam,
-  homeScore,
-  awayScore,
-  startedAtIso,
-  clockSeconds,
-  matchState,
-  detail,
-  matchFound,
-  syncedAtIso,
-  source,
-  competition,
-  featuredClubLabel,
-  nextMatch,
-}) {
-  const [nowMs, setNowMs] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const syncedMs = Number.isFinite(Date.parse(syncedAtIso || '')) ? Date.parse(syncedAtIso) : nowMs;
-  const driftSec = Math.max(0, Math.floor((nowMs - syncedMs) / 1000));
-  const baseClock = Number.isFinite(Number(clockSeconds)) ? Number(clockSeconds) : 0;
-  const elapsedSec = String(matchState || '').toLowerCase() === 'in'
-    ? Math.max(0, Math.floor(baseClock + driftSec))
-    : Math.max(0, Math.floor(baseClock));
-
-  const startMs = Number.isFinite(Date.parse(startedAtIso || '')) ? Date.parse(startedAtIso) : null;
-  const kickoffText = startMs ? new Date(startMs).toLocaleString('ar-EG') : 'غير متوفر';
-  const minutes = Math.floor(elapsedSec / 60);
-  const seconds = elapsedSec % 60;
-  const stateLabel = String(matchState || '').toLowerCase() === 'in'
-    ? 'LIVE'
-    : String(matchState || '').toLowerCase() === 'post'
-      ? 'FT'
-      : 'PRE';
-
-  return (
-    <div className="match-ticker" dir="rtl" role="status" aria-live="polite">
-      <span className={`match-ticker__label match-ticker__label--${String(matchState || 'pre').toLowerCase()}`}>{stateLabel}</span>
-      <div className="match-ticker__track">
-        <div className="match-ticker__inner">
-          {[0, 1].map((i) => (
-            <span key={i} className="match-ticker__item">
-              <span className="match-ticker__league">ملعب النخبة</span>
-              <span className="match-ticker__dot">•</span>
-              <span>{competition || 'Top Global Matches'}</span>
-              <span className="match-ticker__dot">•</span>
-              <span>تركيزنا الآن: {featuredClubLabel || homeTeam}</span>
-              <span className="match-ticker__dot">•</span>
-              <strong>{homeTeam}</strong>
-              <span className="match-ticker__score">{homeScore}</span>
-              <span className="match-ticker__dash">-</span>
-              <span className="match-ticker__score">{awayScore}</span>
-              <strong>{awayTeam}</strong>
-              <span className="match-ticker__dot">•</span>
-              <span>دقيقة {minutes}</span>
-              <span className="match-ticker__dot">•</span>
-              <span>ثانية {String(seconds).padStart(2, '0')}</span>
-              <span className="match-ticker__dot">•</span>
-              <span>{detail || 'تحديث حي كل ثانية'}</span>
-              {!matchFound && (
-                <>
-                  <span className="match-ticker__dot">•</span>
-                  <span>لا توجد مواجهة مباشرة حالياً</span>
-                </>
-              )}
-              <span className="match-ticker__dot">•</span>
-              <span>بداية المباراة: {kickoffText}</span>
-              <span className="match-ticker__dot">•</span>
-              <span>المصدر: {String(source || 'espn').toUpperCase()}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="match-ticker-next" aria-live="polite">
-        <span className="match-ticker-next__label">NOW</span>
-        <span className="match-ticker-next__pair">{homeTeam} {homeScore} - {awayScore} {awayTeam}</span>
-        <span className="match-ticker-next__sep">|</span>
-        <span className="match-ticker-next__label">NEXT</span>
-        {nextMatch ? (
-          <>
-            <span className="match-ticker-next__pair">
-              {nextMatch.homeTeam} {Number(nextMatch.homeScore) || 0} - {Number(nextMatch.awayScore) || 0} {nextMatch.awayTeam}
-            </span>
-            <span className="match-ticker-next__meta">{nextMatch.detail || 'موعد قريب'}</span>
-          </>
-        ) : (
-          <span className="match-ticker-next__meta">جارِ ترشيح المواجهة العالمية التالية</span>
-        )}
       </div>
     </div>
   );
@@ -2561,7 +2446,6 @@ export default function App() {
   const [siteEditorOpen, setSiteEditorOpen] = useState(false);
   const [siteCustomizationSaving, setSiteCustomizationSaving] = useState(false);
   const [siteCustomizationError, setSiteCustomizationError] = useState('');
-  const [liveMatchData, setLiveMatchData] = useState(MATCH_TICKER_BASELINE);
   const [authForm, setAuthForm] = useState({
     displayName: '',
     email: '',
@@ -2617,43 +2501,6 @@ export default function App() {
     moveLayoutSection('header_tabs_order', tabId, direction);
   }, [moveLayoutSection]);
 
-  const loadLiveMatch = useCallback(async () => {
-    try {
-      const res = await fetch('/api/health/match-score');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = await res.json();
-      setLiveMatchData({
-        homeTeam: payload?.homeTeam || MATCH_TICKER_BASELINE.homeTeam,
-        awayTeam: payload?.awayTeam || MATCH_TICKER_BASELINE.awayTeam,
-        homeScore: Number(payload?.homeScore) || 0,
-        awayScore: Number(payload?.awayScore) || 0,
-        startedAtIso: payload?.startedAt || null,
-        clockSeconds: Number.isFinite(Number(payload?.clockSeconds)) ? Number(payload.clockSeconds) : 0,
-        matchState: String(payload?.state || 'pre').toLowerCase(),
-        detail: payload?.detail || MATCH_TICKER_BASELINE.detail,
-        source: payload?.source || 'espn',
-        competition: payload?.competition || MATCH_TICKER_BASELINE.competition,
-        featuredClubLabel: payload?.featured_club_label || MATCH_TICKER_BASELINE.featuredClubLabel,
-        matchFound: Boolean(payload?.match_found),
-        nextMatch: payload?.next_match ? {
-          homeTeam: payload.next_match.homeTeam || '',
-          awayTeam: payload.next_match.awayTeam || '',
-          homeScore: Number(payload.next_match.homeScore) || 0,
-          awayScore: Number(payload.next_match.awayScore) || 0,
-          detail: payload.next_match.detail || '',
-          state: String(payload.next_match.state || '').toLowerCase(),
-        } : null,
-        syncedAtIso: payload?.fetched_at || new Date().toISOString(),
-      });
-    } catch {
-      setLiveMatchData((prev) => ({
-        ...prev,
-        detail: 'تعذر تحديث النتيجة المباشرة حالياً',
-        syncedAtIso: new Date().toISOString(),
-      }));
-    }
-  }, []);
-
   const handleSaveSiteCustomization = useCallback(async () => {
     setSiteCustomizationSaving(true);
     setSiteCustomizationError('');
@@ -2687,12 +2534,6 @@ export default function App() {
       mounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    loadLiveMatch();
-    const intervalId = setInterval(loadLiveMatch, 5000);
-    return () => clearInterval(intervalId);
-  }, [loadLiveMatch]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -3908,22 +3749,6 @@ export default function App() {
 
       {/* BREAKING TICKER */}
       <BreakingTicker items={newsItems} />
-      <LiveMatchTicker
-        homeTeam={liveMatchData.homeTeam}
-        awayTeam={liveMatchData.awayTeam}
-        homeScore={liveMatchData.homeScore}
-        awayScore={liveMatchData.awayScore}
-        startedAtIso={liveMatchData.startedAtIso}
-        clockSeconds={liveMatchData.clockSeconds}
-        matchState={liveMatchData.matchState}
-        detail={liveMatchData.detail}
-        matchFound={liveMatchData.matchFound}
-        syncedAtIso={liveMatchData.syncedAtIso}
-        source={liveMatchData.source}
-        competition={liveMatchData.competition}
-        featuredClubLabel={liveMatchData.featuredClubLabel}
-        nextMatch={liveMatchData.nextMatch}
-      />
 
       {/* ── MAIN CONTENT ── */}
       <main className={`site-main ${activeTab === 'news' ? 'site-main--news' : ''}`}>
@@ -5617,13 +5442,6 @@ img { display: block; max-width: 100%; }
   color: inherit; opacity: .7; padding: 0 4px;
 }
 
-@media (max-width: 760px) {
-  .match-ticker-next {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-}
-
 /* ── HEADER ── */
 .site-header {
   background: var(--bg2);
@@ -5684,166 +5502,6 @@ img { display: block; max-width: 100%; }
 @keyframes ticker-scroll { 0% { transform: translateX(-100%); } 100% { transform: translateX(100vw); } }
 .ticker-item { padding: 0 12px; font-size: .82rem; }
 .ticker-sep { margin-left: 12px; opacity: .4; }
-
-.match-ticker {
-  position: relative;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(22,101,52,.98) 0,
-      rgba(22,101,52,.98) 36px,
-      rgba(21,128,61,.98) 36px,
-      rgba(21,128,61,.98) 72px
-    );
-  color: #f0fdf4;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  height: 38px;
-  border-bottom: 1px solid rgba(255,255,255,.2);
-  box-shadow:
-    inset 0 -1px 0 rgba(255,255,255,.16),
-    inset 0 10px 20px rgba(255,255,255,.06),
-    0 8px 18px rgba(0,0,0,.18);
-  flex-wrap: wrap;
-  height: auto;
-}
-
-.match-ticker::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, transparent 49.5%, rgba(255,255,255,.2) 50%, transparent 50.5%),
-    radial-gradient(circle at center, transparent 0 22%, rgba(255,255,255,.18) 22.5%, transparent 23%);
-  opacity: .35;
-}
-
-.match-ticker::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(200px 38px at 0% 0%, rgba(255,255,255,.12), transparent 60%),
-    radial-gradient(220px 38px at 100% 0%, rgba(255,255,255,.12), transparent 60%);
-  opacity: .7;
-}
-
-.match-ticker__label {
-  position: relative;
-  z-index: 1;
-  flex-shrink: 0;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 14px;
-  font-size: .75rem;
-  font-weight: 900;
-  letter-spacing: .06em;
-  background: rgba(0,0,0,.2);
-  text-shadow: 0 0 10px rgba(255,255,255,.32);
-}
-
-.match-ticker__label--in {
-  background: rgba(127,29,29,.55);
-}
-
-.match-ticker__label--post {
-  background: rgba(30,41,59,.58);
-}
-
-.match-ticker__label--pre {
-  background: rgba(30,64,175,.5);
-}
-
-.match-ticker__track {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 100%;
-  overflow: hidden;
-  height: 38px;
-}
-
-.match-ticker__inner {
-  display: inline-flex;
-  white-space: nowrap;
-  animation: match-ticker-scroll 22s linear infinite;
-}
-
-.match-ticker__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 14px;
-  font-size: .82rem;
-  text-shadow: 0 1px 2px rgba(0,0,0,.45);
-}
-
-.match-ticker__league {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(255,255,255,.3);
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: .7rem;
-  font-weight: 800;
-  background: rgba(15,23,42,.45);
-}
-
-.match-ticker__score {
-  font-weight: 900;
-  font-size: .95rem;
-  color: #dcfce7;
-}
-
-.match-ticker__dash {
-  opacity: .9;
-}
-
-.match-ticker__dot {
-  opacity: .65;
-}
-
-.match-ticker-next {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-top: 1px solid rgba(255,255,255,.2);
-  background: linear-gradient(90deg, rgba(3,7,18,.52), rgba(15,23,42,.4));
-  color: #eaffef;
-  font-size: .78rem;
-  font-weight: 700;
-}
-
-.match-ticker-next__label {
-  border: 1px solid rgba(255,255,255,.35);
-  border-radius: 999px;
-  padding: 1px 8px;
-  background: rgba(2,6,23,.4);
-  font-size: .68rem;
-  letter-spacing: .05em;
-}
-
-.match-ticker-next__pair {
-  font-weight: 800;
-}
-
-.match-ticker-next__sep {
-  opacity: .6;
-}
-
-.match-ticker-next__meta {
-  color: rgba(240,253,244,.88);
-}
-
-@keyframes match-ticker-scroll {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100vw); }
-}
 
 /* ── MAIN ── */
 .site-main { flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding: 20px 16px; }
