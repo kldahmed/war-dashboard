@@ -2435,6 +2435,7 @@ export default function App() {
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
+  const [warSoundEnabled, setWarSoundEnabled] = useState(false);
   const [globalAlert, setGlobalAlert] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   const [authMode, setAuthMode] = useState('signin');
@@ -2454,6 +2455,7 @@ export default function App() {
     resetToken: '',
   });
   const [resetTokenHint, setResetTokenHint] = useState('');
+  const warAudioEngineRef = useRef(null);
 
   /* ── SITREP ── */
   const [sitrep,        setSitrep]        = useState(null);
@@ -2542,6 +2544,145 @@ export default function App() {
       setSiteCustomizationError('');
     }
   }, [isAdmin, siteCustomization]);
+
+  useEffect(() => {
+    let stopTimer = null;
+
+    const buildNoiseBuffer = (ctx) => {
+      const seconds = 2;
+      const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < channel.length; i += 1) {
+        channel[i] = (Math.random() * 2 - 1) * 0.45;
+      }
+      return buffer;
+    };
+
+    const getEngine = () => {
+      if (warAudioEngineRef.current) return warAudioEngineRef.current;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('audio_context_unavailable');
+
+      const ctx = new AudioCtx();
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = 0;
+      masterGain.connect(ctx.destination);
+
+      warAudioEngineRef.current = {
+        ctx,
+        masterGain,
+        noiseBuffer: buildNoiseBuffer(ctx),
+        nodes: [],
+      };
+      return warAudioEngineRef.current;
+    };
+
+    const clearNodes = (engine) => {
+      for (const node of engine.nodes) {
+        try {
+          if (typeof node.stop === 'function') node.stop();
+        } catch (_error) {}
+        try {
+          node.disconnect();
+        } catch (_error) {}
+      }
+      engine.nodes = [];
+    };
+
+    const startWarAudio = async () => {
+      const engine = getEngine();
+      const { ctx, masterGain, noiseBuffer } = engine;
+      await ctx.resume();
+      clearNodes(engine);
+
+      const rumbleOsc = ctx.createOscillator();
+      rumbleOsc.type = 'sawtooth';
+      rumbleOsc.frequency.value = 46;
+      const rumbleGain = ctx.createGain();
+      rumbleGain.gain.value = 0.06;
+      rumbleOsc.connect(rumbleGain).connect(masterGain);
+
+      const sirenOsc = ctx.createOscillator();
+      sirenOsc.type = 'triangle';
+      sirenOsc.frequency.value = 420;
+      const sirenGain = ctx.createGain();
+      sirenGain.gain.value = 0.03;
+      const sirenLfo = ctx.createOscillator();
+      sirenLfo.frequency.value = 0.11;
+      const sirenDepth = ctx.createGain();
+      sirenDepth.gain.value = 130;
+      sirenLfo.connect(sirenDepth).connect(sirenOsc.frequency);
+      sirenOsc.connect(sirenGain).connect(masterGain);
+
+      const noiseSource = ctx.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+      noiseSource.loop = true;
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.value = 950;
+      noiseFilter.Q.value = 0.8;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0.022;
+      noiseSource.connect(noiseFilter).connect(noiseGain).connect(masterGain);
+
+      rumbleOsc.start();
+      sirenOsc.start();
+      sirenLfo.start();
+      noiseSource.start();
+
+      engine.nodes = [rumbleOsc, rumbleGain, sirenOsc, sirenGain, sirenLfo, sirenDepth, noiseSource, noiseFilter, noiseGain];
+
+      const now = ctx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(Math.max(0.0001, masterGain.gain.value), now);
+      masterGain.gain.exponentialRampToValueAtTime(0.2, now + 1.2);
+    };
+
+    const stopWarAudio = () => {
+      const engine = warAudioEngineRef.current;
+      if (!engine) return;
+
+      const { ctx, masterGain } = engine;
+      const now = ctx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(Math.max(0.0001, masterGain.gain.value), now);
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+
+      stopTimer = window.setTimeout(() => {
+        clearNodes(engine);
+      }, 900);
+    };
+
+    if (warSoundEnabled) {
+      startWarAudio().catch(() => {
+        setWarSoundEnabled(false);
+        setGlobalAlert((prev) => prev || { tone: 'warn', title: 'تعذر تشغيل الصوت', body: 'اضغط زر الصوت مرة أخرى أو تحقق من سماح المتصفح بالصوت.' });
+      });
+    } else {
+      stopWarAudio();
+    }
+
+    return () => {
+      if (stopTimer) window.clearTimeout(stopTimer);
+    };
+  }, [warSoundEnabled]);
+
+  useEffect(() => () => {
+    const engine = warAudioEngineRef.current;
+    if (!engine) return;
+    for (const node of engine.nodes || []) {
+      try {
+        if (typeof node.stop === 'function') node.stop();
+      } catch (_error) {}
+      try {
+        node.disconnect();
+      } catch (_error) {}
+    }
+    engine.nodes = [];
+    engine.masterGain?.disconnect?.();
+    engine.ctx?.close?.().catch(() => {});
+    warAudioEngineRef.current = null;
+  }, []);
 
   /* ─── News Loader ─── */
   const loadNews = useCallback(async (cat, q, pg) => {
@@ -3721,6 +3862,14 @@ export default function App() {
                 {siteEditorOpen ? 'إغلاق المحرر' : 'تحرير الموقع'}
               </button>
             )}
+            <button
+              className={`sound-toggle ${warSoundEnabled ? 'sound-toggle--on' : ''}`}
+              onClick={() => setWarSoundEnabled((value) => !value)}
+              title={warSoundEnabled ? 'إيقاف الصوت السينمائي' : 'تشغيل الصوت السينمائي'}
+              aria-label={warSoundEnabled ? 'إيقاف الصوت السينمائي' : 'تشغيل الصوت السينمائي'}
+            >
+              {warSoundEnabled ? '🔊' : '🔈'}
+            </button>
             <button
               className="theme-toggle"
               onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
@@ -5795,6 +5944,28 @@ img { display: block; max-width: 100%; }
   color: var(--text1);
   border-color: rgba(125,211,252,.5);
   box-shadow: 0 0 0 3px rgba(14,165,233,.12);
+}
+.sound-toggle {
+  background: linear-gradient(135deg, rgba(127,29,29,.26), rgba(120,53,15,.2));
+  border: 1px solid rgba(248,113,113,.38);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #fecaca;
+  transition: all .2s;
+}
+.sound-toggle:hover {
+  color: #fff1f2;
+  border-color: rgba(248,113,113,.6);
+  box-shadow: 0 0 0 3px rgba(248,113,113,.14);
+}
+.sound-toggle--on {
+  background: linear-gradient(135deg, rgba(239,68,68,.28), rgba(217,119,6,.28));
+  border-color: rgba(251,113,133,.72);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(248,113,113,.16), 0 8px 20px rgba(239,68,68,.18);
+  animation: alert-glow-red 2.4s ease-in-out infinite;
 }
 
 /* ── TICKER ── */
