@@ -2435,6 +2435,7 @@ export default function App() {
 
   /* ── UI ── */
   const [theme, setTheme]   = useState('dark');
+  const [fxUltraEnabled, setFxUltraEnabled] = useState(false);
   const [warSoundEnabled, setWarSoundEnabled] = useState(false);
   const [globalAlert, setGlobalAlert] = useState(null);
   const [authUser, setAuthUser] = useState(null);
@@ -2456,6 +2457,7 @@ export default function App() {
   });
   const [resetTokenHint, setResetTokenHint] = useState('');
   const warAudioEngineRef = useRef(null);
+  const appRef = useRef(null);
 
   /* ── SITREP ── */
   const [sitrep,        setSitrep]        = useState(null);
@@ -2544,6 +2546,56 @@ export default function App() {
       setSiteCustomizationError('');
     }
   }, [isAdmin, siteCustomization]);
+
+  useEffect(() => {
+    const root = appRef.current;
+    if (!root) return;
+
+    let targetX = 0;
+    let targetY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let phase = 0;
+    let rafId = null;
+
+    const onPointerMove = (event) => {
+      const w = Math.max(window.innerWidth || 1, 1);
+      const h = Math.max(window.innerHeight || 1, 1);
+      const x = ('touches' in event && event.touches?.[0] ? event.touches[0].clientX : event.clientX) || w / 2;
+      const y = ('touches' in event && event.touches?.[0] ? event.touches[0].clientY : event.clientY) || h / 2;
+      targetX = ((x / w) - 0.5) * 2;
+      targetY = ((y / h) - 0.5) * 2;
+    };
+
+    const onPointerLeave = () => {
+      targetX = 0;
+      targetY = 0;
+    };
+
+    const animate = () => {
+      currentX += (targetX - currentX) * 0.06;
+      currentY += (targetY - currentY) * 0.06;
+      phase += 0.55;
+
+      root.style.setProperty('--fx-x', currentX.toFixed(4));
+      root.style.setProperty('--fx-y', currentY.toFixed(4));
+      root.style.setProperty('--fx-phase', phase.toFixed(2));
+
+      rafId = window.requestAnimationFrame(animate);
+    };
+
+    window.addEventListener('mousemove', onPointerMove, { passive: true });
+    window.addEventListener('touchmove', onPointerMove, { passive: true });
+    window.addEventListener('mouseleave', onPointerLeave, { passive: true });
+    rafId = window.requestAnimationFrame(animate);
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('touchmove', onPointerMove);
+      window.removeEventListener('mouseleave', onPointerLeave);
+    };
+  }, []);
 
   useEffect(() => {
     let stopTimer = null;
@@ -3802,7 +3854,10 @@ export default function App() {
   );
 
   return (
-    <div className="app" dir="rtl">
+    <div className={`app ${fxUltraEnabled ? 'app--fx-ultra' : ''}`} dir="rtl" ref={appRef}>
+      <div className="bg-4d-layer bg-4d-layer--far" aria-hidden="true" />
+      <div className="bg-4d-layer bg-4d-layer--mid" aria-hidden="true" />
+      <div className="bg-4d-layer bg-4d-layer--near" aria-hidden="true" />
 
       {/* GLOBAL CRITICAL BANNER */}
       {globalAlert && (
@@ -3862,6 +3917,14 @@ export default function App() {
                 {siteEditorOpen ? 'إغلاق المحرر' : 'تحرير الموقع'}
               </button>
             )}
+            <button
+              className={`fx-toggle ${fxUltraEnabled ? 'fx-toggle--on' : ''}`}
+              onClick={() => setFxUltraEnabled((value) => !value)}
+              title={fxUltraEnabled ? 'إيقاف 4D Ultra' : 'تشغيل 4D Ultra'}
+              aria-label={fxUltraEnabled ? 'إيقاف 4D Ultra' : 'تشغيل 4D Ultra'}
+            >
+              {fxUltraEnabled ? '4D+' : '4D'}
+            </button>
             <button
               className={`sound-toggle ${warSoundEnabled ? 'sound-toggle--on' : ''}`}
               onClick={() => setWarSoundEnabled((value) => !value)}
@@ -5193,11 +5256,78 @@ img { display: block; max-width: 100%; }
 .app {
   position: relative;
   isolation: isolate;
+  --fx-x: 0;
+  --fx-y: 0;
+  --fx-phase: 0;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+.bg-4d-layer {
+  position: fixed;
+  inset: -6%;
+  pointer-events: none;
+  z-index: -4;
+  transform-origin: center center;
+  will-change: transform, opacity, filter;
+}
+.bg-4d-layer--far {
+  background:
+    radial-gradient(1200px 900px at 16% 18%, rgba(59,130,246,.12), transparent 72%),
+    radial-gradient(1100px 780px at 84% 84%, rgba(34,197,94,.1), transparent 74%);
+  opacity: .52;
+  filter: blur(12px) saturate(1.08);
+  transform: translate3d(calc(var(--fx-x) * -20px), calc(var(--fx-y) * -14px), 0) scale(1.08);
+  animation: bg-4d-far 22s ease-in-out infinite alternate;
+}
+.bg-4d-layer--mid {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(14,165,233,.085),
+      rgba(14,165,233,.085) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(56,189,248,.06),
+      rgba(56,189,248,.06) 1px,
+      transparent 1px,
+      transparent 24px
+    );
+  background-size: 100% 100%, 100% 100%;
+  opacity: .22;
+  transform: translate3d(calc(var(--fx-x) * 10px), calc(var(--fx-y) * 8px), 0) rotate(calc(var(--fx-phase) * .02deg)) scale(1.03);
+  animation: bg-4d-mid 16s linear infinite;
+}
+.bg-4d-layer--near {
+  background:
+    radial-gradient(900px 520px at 50% 16%, rgba(248,113,113,.11), transparent 75%),
+    radial-gradient(700px 460px at 58% 24%, rgba(245,158,11,.09), transparent 72%);
+  opacity: .28;
+  filter: saturate(1.2);
+  transform: translate3d(calc(var(--fx-x) * 16px), calc(var(--fx-y) * 12px), 0) scale(1.06);
+  animation: bg-4d-near 9.5s ease-in-out infinite;
+}
+.app--fx-ultra .bg-4d-layer--far {
+  opacity: .7;
+  filter: blur(10px) saturate(1.24);
+  transform: translate3d(calc(var(--fx-x) * -36px), calc(var(--fx-y) * -30px), 0) scale(1.16);
+  animation-duration: 14s;
+}
+.app--fx-ultra .bg-4d-layer--mid {
+  opacity: .32;
+  transform: translate3d(calc(var(--fx-x) * 24px), calc(var(--fx-y) * 20px), 0) rotate(calc(var(--fx-phase) * .06deg)) scale(1.08);
+  animation-duration: 10s;
+}
+.app--fx-ultra .bg-4d-layer--near {
+  opacity: .42;
+  filter: saturate(1.35);
+  transform: translate3d(calc(var(--fx-x) * 34px), calc(var(--fx-y) * 28px), 0) scale(1.14);
+  animation-duration: 6.2s;
 }
 .app::before {
   content: '';
@@ -5219,6 +5349,10 @@ img { display: block; max-width: 100%; }
   will-change: transform, background-position, filter;
   animation: bg-8k-pan 42s ease-in-out infinite alternate, bg-8k-breathe 16s ease-in-out infinite, bg-siren-wave 7.2s ease-in-out infinite;
 }
+.app--fx-ultra::before {
+  filter: saturate(1.2) contrast(1.1) brightness(1.03);
+  animation-duration: 28s, 10s, 5.2s;
+}
 .app::after {
   content: '';
   position: fixed;
@@ -5232,6 +5366,10 @@ img { display: block; max-width: 100%; }
     linear-gradient(90deg, rgba(148,163,184,.24) 1px, transparent 1px);
   background-size: auto, 40px 40px, 40px 40px;
   animation: bg-grid-drift 26s linear infinite;
+}
+.app--fx-ultra::after {
+  opacity: .34;
+  animation-duration: 14s;
 }
 [data-theme="light"] .app::before {
   background:
@@ -5269,6 +5407,11 @@ img { display: block; max-width: 100%; }
     background-size: auto, 52px 52px, 52px 52px;
     animation-duration: 44s;
   }
+  .app--fx-ultra .bg-4d-layer--far { opacity: .34; transform: translate3d(calc(var(--fx-x) * -14px), calc(var(--fx-y) * -10px), 0) scale(1.08); }
+  .app--fx-ultra .bg-4d-layer--mid { opacity: .17; transform: translate3d(calc(var(--fx-x) * 10px), calc(var(--fx-y) * 8px), 0) scale(1.04); }
+  .app--fx-ultra .bg-4d-layer--near { opacity: .22; transform: translate3d(calc(var(--fx-x) * 14px), calc(var(--fx-y) * 10px), 0) scale(1.08); }
+  .app--fx-ultra::before { animation-duration: 52s, 18s, 8s; }
+  .app--fx-ultra::after { animation-duration: 30s; }
 }
 
 .news-view {
@@ -5369,6 +5512,43 @@ img { display: block; max-width: 100%; }
   68% {
     opacity: .92;
     transform: scale(1.01);
+  }
+}
+
+@keyframes bg-4d-far {
+  0% {
+    transform: translate3d(calc(var(--fx-x) * -18px), calc(var(--fx-y) * -12px), 0) scale(1.06);
+    opacity: .46;
+  }
+  100% {
+    transform: translate3d(calc(var(--fx-x) * -28px), calc(var(--fx-y) * -20px), 0) scale(1.11);
+    opacity: .6;
+  }
+}
+
+@keyframes bg-4d-mid {
+  0% {
+    background-position: 0 0, 0 0;
+    opacity: .17;
+  }
+  50% {
+    background-position: 0 18px, 18px 0;
+    opacity: .24;
+  }
+  100% {
+    background-position: 0 36px, 36px 0;
+    opacity: .18;
+  }
+}
+
+@keyframes bg-4d-near {
+  0%, 100% {
+    transform: translate3d(calc(var(--fx-x) * 12px), calc(var(--fx-y) * 10px), 0) scale(1.03);
+    opacity: .2;
+  }
+  50% {
+    transform: translate3d(calc(var(--fx-x) * 24px), calc(var(--fx-y) * 16px), 0) scale(1.09);
+    opacity: .32;
   }
 }
 
@@ -5944,6 +6124,29 @@ img { display: block; max-width: 100%; }
   color: var(--text1);
   border-color: rgba(125,211,252,.5);
   box-shadow: 0 0 0 3px rgba(14,165,233,.12);
+}
+.fx-toggle {
+  background: linear-gradient(135deg, rgba(15,23,42,.45), rgba(30,41,59,.35));
+  border: 1px solid rgba(125,211,252,.32);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  color: #dbeafe;
+  transition: all .2s;
+}
+.fx-toggle:hover {
+  color: #ffffff;
+  border-color: rgba(125,211,252,.62);
+  box-shadow: 0 0 0 3px rgba(56,189,248,.14);
+}
+.fx-toggle--on {
+  background: linear-gradient(135deg, rgba(14,165,233,.35), rgba(34,211,238,.3));
+  border-color: rgba(125,211,252,.8);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(14,165,233,.18), 0 10px 24px rgba(14,165,233,.2);
 }
 .sound-toggle {
   background: linear-gradient(135deg, rgba(127,29,29,.26), rgba(120,53,15,.2));
@@ -10628,6 +10831,13 @@ img { display: block; max-width: 100%; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .bg-4d-layer { opacity: .12 !important; filter: none !important; }
+}
+
+@media (max-width: 760px) {
+  .bg-4d-layer--far { opacity: .28; filter: blur(8px) saturate(1.02); }
+  .bg-4d-layer--mid { opacity: .12; }
+  .bg-4d-layer--near { opacity: .16; }
 }
 
 /* Ops signal panels */
