@@ -68,8 +68,6 @@ const MISSION_STREAMS = [
 ];
 
 const SIGNAL_SELF_HEAL_COOLDOWN_MS = 2 * 60 * 1000;
-const TRUMP_IRAN_DEADLINE_ISO = '2026-04-07T20:00:00-04:00';
-const TRUMP_DEADLINE_HOURGLASS_WINDOW_MS = 36 * 3600 * 1000;
 const MATCH_TICKER_BASELINE = {
   homeTeam: 'ريال مدريد',
   awayTeam: 'بايرن ميونخ',
@@ -86,11 +84,6 @@ const MATCH_TICKER_BASELINE = {
   nextMatch: null,
   syncedAtIso: null,
 };
-
-const COUNTDOWN_NUM_FMT_AR = new Intl.NumberFormat('ar-EG', {
-  useGrouping: false,
-  minimumIntegerDigits: 2,
-});
 
 const LIVE_CATEGORY_META = {
   news: { label: 'أخبار' },
@@ -1565,12 +1558,16 @@ function LivePosterCard({ stream, onSelect, rank }) {
       <div className="live-poster__media">
         {s.logo_url ? <img src={s.logo_url} alt={name} loading="lazy" /> : <span>{name.slice(0, 2)}</span>}
         <div className="live-poster__shade" />
+        <span className={`live-poster__signal live-poster__signal--${status.cls}`} aria-hidden="true" />
         <span className={`live-poster__badge live-poster__badge--${status.cls}`}>{status.label}</span>
         <span className="live-poster__rank">#{rank}</span>
       </div>
       <div className="live-poster__meta">
         <strong>{name}</strong>
-        <span>{category} · Score {score}</span>
+        <div className="live-poster__meta-row">
+          <span className="live-poster__meta-text">{category}</span>
+          <span className="live-poster__score">{score}%</span>
+        </div>
       </div>
     </button>
   );
@@ -2217,269 +2214,6 @@ function fmtMs(ms) {
   if (min < 60) return `${min}د`;
   const hr = Math.floor(min / 60);
   return `${hr}س`;
-}
-
-function splitCountdown(ms) {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const days = Math.floor(totalSec / 86400);
-  const hours = Math.floor((totalSec % 86400) / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-  const seconds = totalSec % 60;
-  return { days, hours, minutes, seconds };
-}
-
-function deadlineTone(remainingMs) {
-  if (remainingMs <= 0) return 'expired';
-  if (remainingMs <= 2 * 3600 * 1000) return 'critical';
-  if (remainingMs <= 6 * 3600 * 1000) return 'warning';
-  return 'info';
-}
-
-function HourglassMetric({ remainingMs, tone, compact = false }) {
-  const clampedRemaining = Math.max(0, Math.min(TRUMP_DEADLINE_HOURGLASS_WINDOW_MS, remainingMs));
-  const topRatio = clampedRemaining / TRUMP_DEADLINE_HOURGLASS_WINDOW_MS;
-  const bottomRatio = 1 - topRatio;
-  const topHeight = 90 * topRatio;
-  const bottomHeight = 90 * bottomRatio;
-  const flowDurationSec = tone === 'critical' ? 0.35 : tone === 'warning' ? 0.55 : 0.85;
-
-  return (
-    <div className={`hourglass-4d hourglass-4d--${tone}${compact ? ' hourglass-4d--compact' : ''}`} style={{ '--hg-flow-speed': `${flowDurationSec}s` }}>
-      {!compact && (
-        <div className="hourglass-4d__head">
-          <strong>مقياس الساعة الرملية</strong>
-          <span>4D Time Sync · 8K Vector</span>
-        </div>
-      )}
-
-      <svg className="hourglass-4d__svg" viewBox="0 0 220 300" role="img" aria-label="ساعة رملية متزامنة مع المهلة">
-        <defs>
-          <linearGradient id="hgFrame" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#f8fafc" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#94a3b8" stopOpacity="0.72" />
-          </linearGradient>
-          <linearGradient id="hgSand" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#fde68a" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.92" />
-          </linearGradient>
-          <clipPath id="hgTopClip">
-            <polygon points="62,34 158,34 121,126 99,126" />
-          </clipPath>
-          <clipPath id="hgBottomClip">
-            <polygon points="99,174 121,174 158,266 62,266" />
-          </clipPath>
-        </defs>
-
-        <path d="M54 20 H166 M54 280 H166" stroke="url(#hgFrame)" strokeWidth="10" strokeLinecap="round" />
-        <path d="M62 34 H158 L121 126 L121 174 L158 266 H62 L99 174 L99 126 Z" fill="rgba(15,23,42,0.22)" stroke="url(#hgFrame)" strokeWidth="4" />
-
-        <g clipPath="url(#hgTopClip)">
-          <rect x="62" y={126 - topHeight} width="96" height={topHeight} fill="url(#hgSand)" />
-        </g>
-        <g clipPath="url(#hgBottomClip)">
-          <rect x="62" y={266 - bottomHeight} width="96" height={bottomHeight} fill="url(#hgSand)" />
-        </g>
-
-        {remainingMs > 0 && (
-          <>
-            <line x1="110" y1="126" x2="110" y2="174" stroke="#fcd34d" strokeWidth="3" opacity="0.92" className="hourglass-4d__stream" />
-            <circle cx="110" cy="150" r="4" fill="#fde68a" className="hourglass-4d__grain hourglass-4d__grain--a" />
-            <circle cx="110" cy="150" r="3" fill="#fcd34d" className="hourglass-4d__grain hourglass-4d__grain--b" />
-          </>
-        )}
-      </svg>
-
-      {!compact && (
-        <div className="hourglass-4d__meta">
-          <span>الامتلاء العلوي: {Math.round(topRatio * 100)}%</span>
-          <span>التراكم السفلي: {Math.round(bottomRatio * 100)}%</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DeadlineAlertClock({ deadlineIso }) {
-  const [nowMs, setNowMs] = useState(Date.now());
-  const [clockOffsetMs, setClockOffsetMs] = useState(0);
-  const [lastSyncAtMs, setLastSyncAtMs] = useState(null);
-  const [syncErrorCount, setSyncErrorCount] = useState(0);
-  const [collapsed, setCollapsed] = useState(false);
-  const clockOffsetRef = useRef(0);
-
-  useEffect(() => {
-    clockOffsetRef.current = clockOffsetMs;
-  }, [clockOffsetMs]);
-
-  const syncClock = useCallback(async () => {
-    try {
-      const res = await fetch('/api/health/signals', { method: 'HEAD', cache: 'no-store' });
-      const dateHeader = res.headers.get('date');
-      if (!dateHeader) return;
-      const serverMs = Date.parse(dateHeader);
-      if (!Number.isFinite(serverMs)) return;
-      const nextOffset = serverMs - Date.now();
-      setLastSyncAtMs(Date.now());
-      setSyncErrorCount(0);
-      if (Math.abs(nextOffset - clockOffsetRef.current) < 250) return;
-      setClockOffsetMs(nextOffset);
-    } catch {
-      // Keep local clock when server date header is unavailable.
-      setSyncErrorCount((prev) => prev + 1);
-    }
-  }, []);
-
-  useEffect(() => {
-    syncClock();
-    const intervalId = setInterval(syncClock, 60_000);
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') syncClock();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [syncClock]);
-
-  useEffect(() => {
-    let timeoutId;
-    const tick = () => {
-      const correctedNow = Date.now() + clockOffsetRef.current;
-      setNowMs(correctedNow);
-      const toNextSecond = 1000 - (correctedNow % 1000);
-      timeoutId = setTimeout(tick, Math.max(60, toNextSecond));
-    };
-    tick();
-    return () => clearTimeout(timeoutId);
-  }, []);
-
-  const deadlineMs = new Date(deadlineIso).getTime();
-  if (Number.isNaN(deadlineMs)) return null;
-
-  const remainingMs = deadlineMs - nowMs;
-  const tone = deadlineTone(remainingMs);
-  const ended = remainingMs <= 0;
-  const countdown = splitCountdown(remainingMs);
-  const pressurePct = Math.max(0, Math.min(100, (Math.max(0, remainingMs) / (24 * 3600 * 1000)) * 100));
-  const syncAgeSec = lastSyncAtMs != null ? Math.max(0, Math.floor((Date.now() - lastSyncAtMs) / 1000)) : null;
-  const syncHealth = (() => {
-    if (lastSyncAtMs == null) return 'warning';
-    const offsetAbs = Math.abs(clockOffsetMs);
-    if (syncAgeSec <= 75 && offsetAbs <= 2000 && syncErrorCount === 0) return 'ok';
-    if (syncAgeSec <= 180 && offsetAbs <= 5000 && syncErrorCount <= 2) return 'warning';
-    return 'critical';
-  })();
-
-  const syncHealthLabel =
-    syncHealth === 'ok'
-      ? 'دقة ممتازة'
-      : syncHealth === 'warning'
-        ? 'دقة متوسطة'
-        : 'دقة حرجة';
-
-  const targetEt = new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/New_York',
-  }).format(new Date(deadlineMs));
-
-  const targetLocal = new Intl.DateTimeFormat('ar-AE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(deadlineMs));
-
-  const statusText = ended
-    ? 'انتهت المهلة.. ماذا ستفعل الآن يا ترامب؟'
-    : tone === 'critical'
-      ? 'إنذار حرج - نافذة القرار ضيقة جدا'
-      : tone === 'warning'
-        ? 'إنذار مرتفع - المهلة تقترب بسرعة'
-        : 'مراقبة نشطة - المهلة ما زالت قائمة';
-
-  if (collapsed) {
-    return (
-      <button
-        className={`deadline-dock deadline-dock--${tone}`}
-        onClick={() => setCollapsed(false)}
-        aria-label="إظهار تنبيه المهلة"
-        title="إظهار تنبيه المهلة"
-      >
-        <HourglassMetric remainingMs={remainingMs} tone={tone} compact />
-        <span className="deadline-dock__label">مهلة ترامب</span>
-      </button>
-    );
-  }
-
-  return (
-    <section className={`deadline-alert deadline-alert--${tone}`} dir="rtl">
-      <span className={`deadline-alert__beacon deadline-alert__beacon--${tone}`} aria-hidden="true" />
-
-      <div className="deadline-alert__content">
-        <div className="deadline-alert__toprow">
-          <div>
-            <div className="deadline-alert__eyebrow">تنبيه استراتيجي مباشر</div>
-            <h3 className="deadline-alert__title">عداد مهلة ترامب لإيران</h3>
-          </div>
-          <button
-            className="deadline-alert__dismiss"
-            onClick={() => setCollapsed(true)}
-            aria-label="إغلاق التنبيه"
-            title="إغلاق التنبيه"
-          >
-            ✕
-          </button>
-        </div>
-        <p className="deadline-alert__status">{statusText}</p>
-
-        <div className="deadline-alert__meta">
-          <span>الموعد ET: {targetEt}</span>
-          <span>الموعد المحلي: {targetLocal}</span>
-        </div>
-
-        <div className="deadline-alert__integrity" dir="rtl">
-          <span className={`deadline-health deadline-health--${syncHealth}`}>فحص داخلي: {syncHealthLabel}</span>
-          <span className="deadline-health__metric">فرق الساعة: {clockOffsetMs >= 0 ? '+' : ''}{clockOffsetMs}ms</span>
-          <span className="deadline-health__metric">آخر مزامنة: {syncAgeSec == null ? '—' : `${syncAgeSec}ث`}</span>
-        </div>
-
-        <div className="deadline-alert__visuals">
-          <HourglassMetric remainingMs={remainingMs} tone={tone} />
-
-          {!ended && (
-            <div className="deadline-alert__grid" role="timer" aria-live="polite">
-              <div className="deadline-unit">
-                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.days) || 0))}</span>
-                <span className="deadline-unit__label">يوم</span>
-              </div>
-              <div className="deadline-unit">
-                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.hours) || 0))}</span>
-                <span className="deadline-unit__label">ساعة</span>
-              </div>
-              <div className="deadline-unit">
-                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.minutes) || 0))}</span>
-                <span className="deadline-unit__label">دقيقة</span>
-              </div>
-              <div className="deadline-unit">
-                <span className="deadline-unit__num">{COUNTDOWN_NUM_FMT_AR.format(Math.max(0, Number(countdown.seconds) || 0))}</span>
-                <span className="deadline-unit__label">ثانية</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {!ended && (
-          <div className="deadline-alert__pressure" aria-hidden="true">
-            <span className="deadline-alert__pressure-fill" style={{ width: `${pressurePct}%` }} />
-          </div>
-        )}
-      </div>
-    </section>
-  );
 }
 
 /* ─────────────────────────────────────────────────
@@ -4191,8 +3925,6 @@ export default function App() {
         nextMatch={liveMatchData.nextMatch}
       />
 
-      <DeadlineAlertClock deadlineIso={TRUMP_IRAN_DEADLINE_ISO} />
-
       {/* ── MAIN CONTENT ── */}
       <main className={`site-main ${activeTab === 'news' ? 'site-main--news' : ''}`}>
 
@@ -5885,322 +5617,10 @@ img { display: block; max-width: 100%; }
   color: inherit; opacity: .7; padding: 0 4px;
 }
 
-/* ── STRATEGIC DEADLINE ALERT ── */
-.deadline-alert {
-  position: sticky;
-  top: 0;
-  z-index: 220;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-  align-items: start;
-  padding: 12px 14px;
-  border-bottom: 1px solid transparent;
-  backdrop-filter: blur(8px);
-}
-.deadline-alert--info {
-  background: linear-gradient(90deg, rgba(30,41,59,.96), rgba(17,24,39,.96));
-  border-bottom-color: rgba(59,130,246,.45);
-}
-.deadline-alert--warning {
-  background: linear-gradient(90deg, rgba(120,53,15,.97), rgba(66,32,6,.97));
-  border-bottom-color: rgba(245,158,11,.55);
-}
-.deadline-alert--critical {
-  background: linear-gradient(90deg, rgba(127,29,29,.97), rgba(69,10,10,.97));
-  border-bottom-color: rgba(248,113,113,.62);
-}
-.deadline-alert--expired {
-  background: linear-gradient(90deg, rgba(55,65,81,.97), rgba(17,24,39,.97));
-  border-bottom-color: rgba(148,163,184,.45);
-}
-.deadline-alert__beacon {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  margin-top: 6px;
-}
-.deadline-alert__beacon--info { background: #22d3ee; box-shadow: 0 0 14px rgba(34,211,238,.85); }
-.deadline-alert__beacon--warning { background: #f59e0b; box-shadow: 0 0 14px rgba(245,158,11,.92); animation: blink 1.2s ease-in-out infinite; }
-.deadline-alert__beacon--critical { background: #ef4444; box-shadow: 0 0 15px rgba(239,68,68,.95); animation: blink .8s ease-in-out infinite; }
-.deadline-alert__beacon--expired { background: #94a3b8; box-shadow: 0 0 12px rgba(148,163,184,.45); }
-.deadline-alert__content { min-width: 0; }
-.deadline-alert__eyebrow {
-  font-size: .68rem;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  opacity: .92;
-}
-.deadline-alert__title {
-  margin: 2px 0 4px;
-  font-size: 1rem;
-  font-weight: 800;
-  color: #f8fafc;
-}
-.deadline-alert__status {
-  margin: 0 0 8px;
-  font-size: .82rem;
-  color: rgba(248,250,252,.92);
-}
-.deadline-alert__toprow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-.deadline-alert__dismiss {
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(15,23,42,.45);
-  color: #f8fafc;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.deadline-alert__visuals {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
-  gap: 12px;
-  align-items: stretch;
-}
-.deadline-alert__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(88px, 1fr));
-  gap: 10px;
-}
-.deadline-unit {
-  border: 1px solid rgba(255,255,255,.2);
-  border-radius: 12px;
-  background: rgba(15,23,42,.35);
-  padding: 10px 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.deadline-unit__num {
-  font-size: clamp(1.55rem, 2.5vw, 2.25rem);
-  line-height: .95;
-  font-weight: 900;
-  color: #f8fafc;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 14px rgba(255,255,255,.26);
-}
-.deadline-unit__label {
-  font-size: .78rem;
-  font-weight: 700;
-  color: rgba(248,250,252,.82);
-}
-.deadline-alert__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: .73rem;
-  color: rgba(248,250,252,.82);
-}
-.deadline-alert__integrity {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.deadline-health {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: .72rem;
-  border: 1px solid transparent;
-  font-weight: 700;
-}
-.deadline-health--ok {
-  color: #bbf7d0;
-  background: rgba(34,197,94,.14);
-  border-color: rgba(34,197,94,.38);
-}
-.deadline-health--warning {
-  color: #fde68a;
-  background: rgba(245,158,11,.14);
-  border-color: rgba(245,158,11,.42);
-}
-.deadline-health--critical {
-  color: #fecaca;
-  background: rgba(239,68,68,.16);
-  border-color: rgba(239,68,68,.45);
-}
-.deadline-health__metric {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: .72rem;
-  border: 1px solid rgba(255,255,255,.24);
-  background: rgba(15,23,42,.36);
-  color: rgba(248,250,252,.9);
-}
-
-.hourglass-4d {
-  border: 1px solid rgba(255,255,255,.18);
-  background: radial-gradient(circle at 14% 12%, rgba(56,189,248,.18), rgba(15,23,42,.45) 42%),
-              linear-gradient(170deg, rgba(15,23,42,.5), rgba(30,41,59,.28));
-  border-radius: 14px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: inset 0 0 18px rgba(255,255,255,.04), 0 8px 20px rgba(2,6,23,.35);
-}
-.hourglass-4d--compact {
-  padding: 6px;
-  border-radius: 10px;
-}
-.hourglass-4d--compact .hourglass-4d__svg {
-  max-height: 92px;
-}
-.hourglass-4d__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-.hourglass-4d__head strong {
-  font-size: .78rem;
-  color: #f8fafc;
-}
-.hourglass-4d__head span {
-  font-size: .64rem;
-  color: rgba(248,250,252,.68);
-  letter-spacing: .03em;
-}
-.hourglass-4d__svg {
-  width: 100%;
-  max-height: 190px;
-  filter: drop-shadow(0 8px 14px rgba(0,0,0,.35));
-}
-.hourglass-4d__stream {
-  animation: hourglass-stream var(--hg-flow-speed) linear infinite;
-}
-.hourglass-4d__grain {
-  transform-origin: center;
-}
-.hourglass-4d__grain--a {
-  animation: hourglass-grain-a var(--hg-flow-speed) linear infinite;
-}
-.hourglass-4d__grain--b {
-  animation: hourglass-grain-b calc(var(--hg-flow-speed) * 1.15) linear infinite;
-}
-.hourglass-4d__meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: .68rem;
-  color: rgba(248,250,252,.8);
-}
-.hourglass-4d__meta span {
-  border: 1px solid rgba(255,255,255,.18);
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: rgba(15,23,42,.35);
-}
-.hourglass-4d--warning {
-  border-color: rgba(245,158,11,.35);
-}
-.hourglass-4d--critical {
-  border-color: rgba(248,113,113,.42);
-  box-shadow: inset 0 0 20px rgba(248,113,113,.08), 0 10px 22px rgba(69,10,10,.4);
-}
-.hourglass-4d--expired {
-  border-color: rgba(148,163,184,.38);
-  opacity: .86;
-}
-
-.deadline-dock {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 280;
-  width: 128px;
-  border: 1px solid rgba(255,255,255,.2);
-  border-radius: 12px;
-  background: rgba(2,6,23,.78);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  cursor: pointer;
-  box-shadow: 0 10px 24px rgba(2,6,23,.45);
-}
-.deadline-dock__label {
-  text-align: center;
-  font-size: .67rem;
-  color: rgba(248,250,252,.85);
-  font-weight: 700;
-}
-.deadline-dock--critical {
-  border-color: rgba(248,113,113,.55);
-}
-.deadline-dock--warning {
-  border-color: rgba(245,158,11,.5);
-}
-
-@keyframes hourglass-stream {
-  0% { opacity: .9; }
-  50% { opacity: .4; }
-  100% { opacity: .9; }
-}
-@keyframes hourglass-grain-a {
-  0% { transform: translateY(-20px) scale(1); opacity: 0; }
-  10% { opacity: .95; }
-  90% { opacity: .95; }
-  100% { transform: translateY(20px) scale(.6); opacity: 0; }
-}
-@keyframes hourglass-grain-b {
-  0% { transform: translateY(-18px) scale(.9); opacity: 0; }
-  14% { opacity: .8; }
-  88% { opacity: .8; }
-  100% { transform: translateY(18px) scale(.55); opacity: 0; }
-}
-
-.deadline-alert__pressure {
-  margin-top: 8px;
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(15,23,42,.55);
-  overflow: hidden;
-}
-.deadline-alert__pressure-fill {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #22d3ee, #f59e0b, #ef4444);
-  transition: width .6s ease;
-}
 @media (max-width: 760px) {
-  .deadline-alert {
-    grid-template-columns: auto 1fr;
-    gap: 10px;
-    padding: 10px 12px;
-  }
-  .deadline-alert__visuals {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .deadline-alert__grid {
-    grid-template-columns: repeat(2, minmax(112px, 1fr));
-    gap: 12px;
-  }
-  .deadline-unit__num {
-    font-size: clamp(1.85rem, 7vw, 2.35rem);
-  }
   .match-ticker-next {
     flex-wrap: wrap;
     row-gap: 6px;
-  }
-  .deadline-dock {
-    right: 8px;
-    bottom: 8px;
-    width: 114px;
   }
 }
 
@@ -6928,20 +6348,52 @@ img { display: block; max-width: 100%; }
 
 /* ── Arena wrapper ── */
 .live-arena {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 0;
+  padding-bottom: 10px;
+}
+.live-arena::before,
+.live-arena::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.live-arena::before {
+  background:
+    radial-gradient(42rem 20rem at 12% 0%, rgba(14,165,233,.12), transparent 72%),
+    radial-gradient(36rem 18rem at 88% 8%, rgba(34,197,94,.1), transparent 76%);
+}
+.live-arena::after {
+  background:
+    linear-gradient(180deg, rgba(15,23,42,.08) 0%, rgba(15,23,42,0) 24%, rgba(15,23,42,.1) 100%);
 }
 
 /* ── Command Header ── */
 .live-hdr {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 28px 0 22px;
-  border-bottom: 1px solid rgba(255,255,255,.05);
+  padding: 22px 20px;
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(15,23,42,.9) 0%, rgba(30,41,59,.76) 56%, rgba(15,23,42,.84) 100%);
   margin-bottom: 24px;
+  overflow: hidden;
+}
+.live-hdr::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 18% 20%, rgba(56,189,248,.14), transparent 42%);
+  pointer-events: none;
 }
 .live-hdr__left { display: flex; flex-direction: column; gap: 4px; }
 .live-hdr__eyebrow {
@@ -6991,8 +6443,8 @@ img { display: block; max-width: 100%; }
   gap: 7px;
   padding: 9px 18px;
   border-radius: 10px;
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(15,23,42,.5);
+  border: 1px solid rgba(148,163,184,.35);
   color: var(--text2);
   font-size: .78rem;
   font-weight: 700;
@@ -7002,10 +6454,10 @@ img { display: block; max-width: 100%; }
   letter-spacing: .02em;
 }
 .live-hdr__refresh:hover {
-  background: rgba(59,130,246,.12);
-  border-color: rgba(59,130,246,.38);
-  color: #93c5fd;
-  box-shadow: 0 0 16px rgba(59,130,246,.1);
+  background: rgba(14,165,233,.2);
+  border-color: rgba(125,211,252,.52);
+  color: #e0f2fe;
+  box-shadow: 0 0 24px rgba(14,165,233,.2);
 }
 
 /* ── HUD Command Strip ── */
@@ -7016,7 +6468,7 @@ img { display: block; max-width: 100%; }
   background:
     linear-gradient(135deg, rgba(6,8,16,.96) 0%, rgba(14,18,30,.94) 100%);
   border: 1px solid rgba(255,255,255,.07);
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
   margin-bottom: 24px;
   box-shadow:
@@ -7028,7 +6480,9 @@ img { display: block; max-width: 100%; }
 .live-hud-bar::before {
   content: '';
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(59,130,246,.04) 0%, transparent 100%);
+  background:
+    radial-gradient(ellipse 60% 80% at 20% 50%, rgba(59,130,246,.08) 0%, transparent 100%),
+    linear-gradient(90deg, rgba(34,197,94,.04), transparent 42%);
   pointer-events: none;
 }
 .live-hud-bar__inner {
@@ -7127,6 +6581,7 @@ img { display: block; max-width: 100%; }
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 18px;
   box-shadow: 0 18px 44px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(8px);
 }
 .live-filter-panel {
   display: flex;
@@ -7196,6 +6651,16 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
   text-align: right;
   transition: transform .22s, border-color .22s, box-shadow .22s;
+  position: relative;
+  overflow: hidden;
+}
+.live-spotlight-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -10% -55% -10%;
+  height: 70%;
+  background: radial-gradient(circle at 50% 0%, rgba(14,165,233,.2), transparent 72%);
+  pointer-events: none;
 }
 .live-spotlight-card:hover {
   transform: translateY(-2px);
@@ -7230,7 +6695,7 @@ img { display: block; max-width: 100%; }
     rgba(14,18,28,.90) 60%,
     rgba(10,12,22,.95) 100%);
   border: 1px solid rgba(34,197,94,.1);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 10px 18px;
   margin-bottom: 20px;
   overflow: hidden;
@@ -7310,16 +6775,17 @@ img { display: block; max-width: 100%; }
   border-radius: 18px;
   border: 1px solid rgba(148,163,184,.24);
   overflow: hidden;
-  min-height: 220px;
+  min-height: 236px;
   margin: 0 0 18px;
-  background: linear-gradient(115deg, rgba(2,6,23,.96) 0%, rgba(30,41,59,.9) 48%, rgba(15,23,42,.82) 100%);
+  background: linear-gradient(115deg, rgba(2,6,23,.96) 0%, rgba(30,41,59,.92) 48%, rgba(15,23,42,.84) 100%);
+  box-shadow: 0 22px 48px rgba(2,6,23,.45), inset 0 1px 0 rgba(255,255,255,.07);
 }
 .live-hero__bg {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 20% 30%, rgba(59,130,246,.35), transparent 46%),
-    radial-gradient(circle at 76% 18%, rgba(239,68,68,.2), transparent 38%),
+    radial-gradient(circle at 20% 30%, rgba(59,130,246,.4), transparent 46%),
+    radial-gradient(circle at 76% 18%, rgba(239,68,68,.24), transparent 38%),
     linear-gradient(120deg, rgba(15,23,42,.8), rgba(2,6,23,.6));
 }
 .live-hero__content {
@@ -7367,16 +6833,22 @@ img { display: block; max-width: 100%; }
   text-decoration: none;
   font-size: .77rem;
   font-weight: 700;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
 .live-hero__actions button {
-  background: #f8fafc;
+  background: linear-gradient(135deg, #f8fafc, #e2e8f0);
   color: #0f172a;
   cursor: pointer;
+  box-shadow: 0 10px 24px rgba(148,163,184,.26);
 }
 .live-hero__actions a {
   background: rgba(15,23,42,.45);
   border-color: rgba(148,163,184,.28);
   color: #cbd5e1;
+}
+.live-hero__actions button:hover,
+.live-hero__actions a:hover {
+  transform: translateY(-1px);
 }
 
 .live-rails {
@@ -7385,24 +6857,28 @@ img { display: block; max-width: 100%; }
   gap: 14px;
 }
 .live-rail {
-  border-radius: 14px;
-  border: 1px solid rgba(148,163,184,.18);
-  background: rgba(2,6,23,.45);
-  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(148,163,184,.22);
+  background: linear-gradient(160deg, rgba(2,6,23,.52), rgba(15,23,42,.44));
+  padding: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 .live-rail__header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 .live-rail__header h4 {
   margin: 0;
-  font-size: .92rem;
+  font-size: .88rem;
   color: var(--text);
+  letter-spacing: .03em;
 }
 .live-rail__header span {
-  font-size: .7rem;
+  font-size: .66rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--text3);
 }
 .live-rail__track {
@@ -7422,33 +6898,35 @@ img { display: block; max-width: 100%; }
 }
 
 .live-poster {
-  border: 1px solid rgba(148,163,184,.22);
-  background: rgba(15,23,42,.46);
-  border-radius: 12px;
+  position: relative;
+  border: 1px solid rgba(148,163,184,.24);
+  background: linear-gradient(180deg, rgba(30,41,59,.36), rgba(15,23,42,.56));
+  border-radius: 14px;
   padding: 0;
   overflow: hidden;
   text-align: right;
   cursor: pointer;
-  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  transition: transform .24s ease, border-color .24s ease, box-shadow .24s ease;
 }
 .live-poster:hover {
-  transform: translateY(-3px);
-  border-color: rgba(96,165,250,.42);
-  box-shadow: 0 10px 28px rgba(15,23,42,.55);
+  transform: translateY(-4px);
+  border-color: rgba(125,211,252,.5);
+  box-shadow: 0 16px 34px rgba(15,23,42,.58);
 }
 .live-poster__media {
   position: relative;
-  height: 112px;
+  height: 118px;
   background: linear-gradient(130deg, rgba(30,41,59,.95), rgba(15,23,42,.86));
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .live-poster__media img {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
   z-index: 1;
+  filter: drop-shadow(0 8px 14px rgba(2,6,23,.42));
 }
 .live-poster__media span {
   z-index: 1;
@@ -7459,7 +6937,28 @@ img { display: block; max-width: 100%; }
 .live-poster__shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(2,6,23,.08) 25%, rgba(2,6,23,.78) 100%);
+  background: linear-gradient(180deg, rgba(2,6,23,.04) 20%, rgba(2,6,23,.82) 100%);
+}
+.live-poster__signal {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  z-index: 2;
+}
+.live-poster__signal--online {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34,197,94,.2), 0 0 10px rgba(34,197,94,.7);
+}
+.live-poster__signal--degraded {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245,158,11,.18), 0 0 10px rgba(245,158,11,.6);
+}
+.live-poster__signal--offline {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239,68,68,.16), 0 0 10px rgba(239,68,68,.6);
 }
 .live-poster__badge,
 .live-poster__rank {
@@ -7489,13 +6988,13 @@ img { display: block; max-width: 100%; }
   border: 1px solid rgba(148,163,184,.26);
 }
 .live-poster__meta {
-  padding: 8px 10px;
+  padding: 9px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .live-poster__meta strong {
-  font-size: .74rem;
+  font-size: .76rem;
   color: var(--text);
   line-height: 1.3;
   display: -webkit-box;
@@ -7503,9 +7002,28 @@ img { display: block; max-width: 100%; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.live-poster__meta span {
+.live-poster__meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.live-poster__meta-text {
   font-size: .64rem;
   color: var(--text3);
+}
+.live-poster__score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56,189,248,.4);
+  background: rgba(14,165,233,.14);
+  color: #bae6fd;
+  font-size: .62rem;
+  font-weight: 800;
 }
 
 /* ── Cinematic Player (cp) ── */
@@ -8100,6 +7618,14 @@ img { display: block; max-width: 100%; }
   }
 }
 @media (max-width: 760px) {
+  .live-arena {
+    padding-bottom: 4px;
+  }
+  .live-hdr {
+    padding: 16px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .live-hero__content {
     padding: 16px;
   }
@@ -8108,6 +7634,9 @@ img { display: block; max-width: 100%; }
   }
   .live-rail__track {
     grid-auto-columns: minmax(150px, 150px);
+  }
+  .live-poster__media {
+    height: 108px;
   }
   .live-effectiveness {
     grid-template-columns: 1fr;
@@ -10617,7 +10146,7 @@ img { display: block; max-width: 100%; }
 }
 
 /* RTL typography normalization for Arabic readability */
-.app[dir="rtl"] :where(.site-logo, .site-tagline, .nav-tab__label, .ticker-item, .section-label, .sitrep__label, .sitrep__section-title, .mission-feed__eyebrow, .eb-hdr__eyebrow, .eb-hdr__sub, .mp-hdr__eyebrow, .mp-hdr__sub, .pod-feature-card__signal, .pod-feature-card__eyebrow, .signal-panel__eyebrow, .deadline-alert__eyebrow, .deadline-unit__label) {
+.app[dir="rtl"] :where(.site-logo, .site-tagline, .nav-tab__label, .ticker-item, .section-label, .sitrep__label, .sitrep__section-title, .mission-feed__eyebrow, .eb-hdr__eyebrow, .eb-hdr__sub, .mp-hdr__eyebrow, .mp-hdr__sub, .pod-feature-card__signal, .pod-feature-card__eyebrow, .signal-panel__eyebrow) {
   letter-spacing: 0;
 }
 
